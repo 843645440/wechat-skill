@@ -1,0 +1,4 @@
+interface:
+  display_name: "公众号文章配图"
+  short_description: "分析长文结构、识别关键配图位置，并生成适合公众号阅读节奏的正文插图"
+  default_prompt: "使用 $baoyu-article-illustrator 分析这篇文章，并生成适合微信公众号的正文配图。"

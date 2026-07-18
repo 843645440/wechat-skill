@@ -1,12 +1,15 @@
 # 贡献指南 · Contributing
 
-欢迎为 gzh-design 贡献新主题风格、修复排版问题或改进文档。
+欢迎为 wechat-skill 贡献新主题、工作流、排版修复或文档改进。
 
 ## 项目结构速览
 
 - `SKILL.md` — 排版工作流主文档（Agent 入口）
+- `.agents/skills/` — 写作、图片、去 AI 味和完整内容流水线 Skill
+- `.baoyu-skills/` — Baoyu 图片 Skill 的项目级默认配置
+- `config/` — 可提交的账号内容档案，不得放凭证
 - `references/` — 6 套主题组件库 + 通用增量库 + 主题索引 + 主题生成器 + 触发用例
-- `scripts/` — 两个校验脚本（见下方「可验证循环」）
+- `scripts/` — HTML 校验、DOCX 提取与多账号发布脚本
 - `assets/` — 演示输入文章
 - `docs/gallery/` — 主题风格的浏览器预览
 
@@ -26,6 +29,14 @@ python3 scripts/validate_gzh_html.py <生成的.html>
 - `validate_gzh_html.py` 须 **0 ERROR、半角标点 0 WARN**
 
 细节见 `references/eval-cases.md` 的「维护 · 可验证循环」一节。
+
+发布脚本改动还须运行离线测试，禁止在测试中连接真实公众号：
+
+```bash
+python3 -m unittest discover -s tests -v
+```
+
+修改项目级 Skill 后，还要运行 Skill Creator 的 `quick_validate.py`。完整流水线复用 `work/<account>/current/` 作为内部交接区；不要提交真实文章、来源记录、封面、草稿 ID 或发布结果。定时由外部 Agent 配置，不要在 Skill 中加入 cron 或固定发布时间。
 
 ## 新增一套主题风格
 

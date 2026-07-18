@@ -1,0 +1,23 @@
+{
+  "token_cache_dir": "~/.cache/wechat-skill",
+  "accounts": {
+    "a": {
+      "label": "公众号 A",
+      "appid_env": "WECHAT_A_APP_ID",
+      "secret_env": "WECHAT_A_APP_SECRET",
+      "default_author": "作者名 A",
+      "default_thumb_media_id_env": "WECHAT_A_THUMB_MEDIA_ID",
+      "need_open_comment": 0,
+      "only_fans_can_comment": 0
+    },
+    "b": {
+      "label": "公众号 B",
+      "appid_env": "WECHAT_B_APP_ID",
+      "secret_env": "WECHAT_B_APP_SECRET",
+      "default_author": "作者名 B",
+      "default_thumb_media_id_env": "WECHAT_B_THUMB_MEDIA_ID",
+      "need_open_comment": 0,
+      "only_fans_can_comment": 0
+    }
+  }
+}

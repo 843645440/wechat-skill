@@ -19,6 +19,11 @@ node_modules/
 # 本地临时产物（排版输出的 HTML 不入库，除 docs/gallery 示例外）
 /*.html
 *_排版_*.html
+/wechat-accounts.json
+/work/
+.env
+.env.*
+!.env.example
 
 # 预览图托管在 GitHub Release，不入库
 docs/screenshots/

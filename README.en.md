@@ -2,9 +2,9 @@
 
 <div align="center">
 
-# xiaocong-wechat · WeChat Layout Skill
+# wechat-skill · WeChat Content Skill Toolkit
 
-**Turn Markdown into polished HTML you can paste straight into the WeChat editor**
+**Reusable Skills for topic discovery, writing, humanization, images, layout, and multi-account drafts**
 
 6 curated themes + theme generator · code blocks / images / GIFs · auto section numbers & keyword marks · two-gate quality checks
 
@@ -20,7 +20,7 @@ English ｜ [中文](README.md)
 
 ---
 
-A layout Skill for AI agents (Claude Code / Codex / Cursor …). You write Markdown; it renders HTML with **fully inlined styles that survive pasting into the WeChat editor** — auto section numbers, keyword underlines, intro cards, code blocks, images, merged author signature — with scripts that deterministically enforce WeChat's platform limits.
+A project-level WeChat content toolkit for AI agents (Claude Code / Codex / Cursor …). The root Skill renders paste-safe HTML; bundled Skills can also discover current topics, write a Chinese article, humanize it, generate images, choose a registered theme at random, validate the result, and create a draft in a selected WeChat account.
 
 ## ✨ Features
 
@@ -32,12 +32,13 @@ A layout Skill for AI agents (Claude Code / Codex / Cursor …). You write Markd
 - **Paste-safe**: all styles inlined, every text node wrapped in `<span leaf="">`, avoiding `<style>/<div>/class/grid/position` that WeChat strips.
 - **Two-gate quality checks**: `component_lint.py` (library source) + `validate_gzh_html.py` (final output) form a reproducible edit → verify → fix loop.
 - **One-click copy**: a preview page with a **Copy** button — click to copy the rich text and paste straight into WeChat, no manual select-all.
+- **Multi-account pipeline**: account-isolated credentials and assets, mandatory humanization, random themes, and automatic draft creation. Scheduling stays in the external agent rather than this Skill.
 
 ## ✅ Good for / ❌ Not for
 
 **✅ Good for**: opinion/analysis · tutorials/how-tos · reviews/tool roundups · knowledge notes/methodology · interviews/features · data recaps · lifestyle/personal essays · case studies — turning Markdown / Word / PDF / plain text long-form into paste-ready WeChat HTML; also generating custom themes from a description or reference image.
 
-**❌ Not for**: generic web/landing pages (use a frontend skill) · slide decks (use a PPT skill) · pure image posters / social cards (use a social-card skill) · non-WeChat layout · **writing the article** (this skill only lays out — bring the Markdown first).
+**❌ Not for**: generic web/landing pages (use a frontend skill) · slide decks (use a PPT skill) · non-WeChat layout · automatic public publishing. The full pipeline stops after creating a draft for human review inside WeChat.
 
 ## 🗂 Common use cases
 
@@ -86,21 +87,20 @@ One long-form article laid out in all 6 themes (full-fidelity screenshots with r
 
 ## 🚀 Quick Start
 
-```bash
-# One-line install (recommended)
-npx skills add https://github.com/isjiamu/gzh-design-skill
+Clone the repository as the agent workspace so all project-level Skills and scripts are available:
 
-# Or manual clone
-git clone https://github.com/isjiamu/gzh-design-skill.git ~/.claude/skills/gzh-design
+```bash
+git clone https://github.com/843645440/wechat-skill.git
+cd wechat-skill
 ```
 
-Or just ask **any agent** (Claude Code / Codex / Cursor …):
+Then tell your agent:
 
-> Please find and install the skill at https://github.com/isjiamu/gzh-design-skill
+> Use `$wechat-content-pipeline` for account A. Find a current technology topic, write and humanize the article, use a random registered theme, and create a WeChat draft.
 
-Then, once installed, tell your agent:
+For layout-only environments, install the root Skill with `npx skills add https://github.com/843645440/wechat-skill`.
 
-> Lay out `article.md` as WeChat HTML using the Moyu Green theme.
+See the Chinese [usage guide](docs/usage.md) for account credentials, cloud-agent scheduling prompts, pipeline stages, and troubleshooting.
 
 ## 💬 Community
 
@@ -143,11 +143,12 @@ Source gate flags `white-space:pre` (blank bloat), full-border dashed frames in 
 ## 📁 Structure
 
 ```
-gzh-design/
+wechat-skill/
 ├── SKILL.md                 # layout workflow (agent entry)
 ├── references/              # 6 theme libs + generator + shared lib + theme-index + eval-cases
 ├── scripts/                 # validate_gzh_html.py + component_lint.py
 ├── assets/                  # sample-article.md + theme-previews/
+├── docs/usage.md            # Chinese setup and cloud-agent usage guide
 └── docs/gallery/            # browser preview of themes
 ```
 
@@ -190,21 +191,13 @@ Give just a primary color or a vibe, and the generator derives the whole harmoni
 
 **Can it output several themes at once?** Yes — say "lay this out in each of these themes" for a batch to choose from.
 
-**How do I update?** Re-run `npx skills add https://github.com/isjiamu/gzh-design-skill`, or `git pull` in the install dir.
+**How do I update?** Run `git pull` in the workspace, or re-run `npx skills add https://github.com/843645440/wechat-skill` for a layout-only install.
 
 **What if the agent's output isn't compliant?** Run `scripts/validate_gzh_html.py`; fix on ERROR until both gates are green. Still stuck? Open an Issue.
 
-## ⭐ Star History
+## ⭐ Star
 
-If this project helps you, a Star means a lot 🙏
-
-<a href="https://www.star-history.com/?repos=isjiamu%2Fgzh-design-skill&type=date&legend=top-left">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=isjiamu/gzh-design-skill&type=date&theme=dark&legend=top-left&sealed_token=OSZCPLO_3NeTUKAtXcnNT6T3HuZwlFsH1HDGh6BcU0G2bdOm-5snTE01rzgYkwgNkF0pvraNI226pwK4jt9zYc4YuJ196yA1fcRRZKmfVQDMWqtE87dHqXn1E4v2q1mCWNFHzXAGJrCMEHx_0wwNmIVOg5nOaNCtRUYS2C_E1IlITdmy_yv7vpyVxqti" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=isjiamu/gzh-design-skill&type=date&legend=top-left&sealed_token=OSZCPLO_3NeTUKAtXcnNT6T3HuZwlFsH1HDGh6BcU0G2bdOm-5snTE01rzgYkwgNkF0pvraNI226pwK4jt9zYc4YuJ196yA1fcRRZKmfVQDMWqtE87dHqXn1E4v2q1mCWNFHzXAGJrCMEHx_0wwNmIVOg5nOaNCtRUYS2C_E1IlITdmy_yv7vpyVxqti" />
-   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=isjiamu/gzh-design-skill&type=date&legend=top-left&sealed_token=OSZCPLO_3NeTUKAtXcnNT6T3HuZwlFsH1HDGh6BcU0G2bdOm-5snTE01rzgYkwgNkF0pvraNI226pwK4jt9zYc4YuJ196yA1fcRRZKmfVQDMWqtE87dHqXn1E4v2q1mCWNFHzXAGJrCMEHx_0wwNmIVOg5nOaNCtRUYS2C_E1IlITdmy_yv7vpyVxqti" />
- </picture>
-</a>
+If this project helps you, please Star it on [GitHub](https://github.com/843645440/wechat-skill).
 
 ## 🤝 Contributing · 📄 License
 
@@ -219,4 +212,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). Co-built by **Jiamu × Moyu Xiaoli** —
 
 Full terms in [LICENSE](LICENSE).
 
-> 🤝 **AI Agent & model vendors welcome to co-create**: want to integrate gzh-design into your product or deeply co-build on it? We'd love that — contact Jiamu for the co-creation agreement.
+> 🤝 **AI Agent & model vendors welcome to co-create**: want to integrate wechat-skill into your product or deeply co-build on it? We'd love that — contact Jiamu for the co-creation agreement.

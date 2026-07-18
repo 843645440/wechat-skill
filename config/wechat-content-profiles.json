@@ -1,0 +1,69 @@
+{
+  "version": 2,
+  "profiles": {
+    "a": {
+      "label": "公众号 A",
+      "audience": "关注科技、人工智能和职业变化的普通职场读者",
+      "writer_instructions": "优先解释热点对工作流程、企业经营和普通人选择的现实影响，语气清晰、克制、信息密度中等。",
+      "topic_discovery": {
+        "window_hours": 24,
+        "fallback_hours": 72,
+        "categories": ["人工智能", "科技产品", "就业变化", "中国高新技术"]
+      },
+      "theme_strategy": "random",
+      "humanize": {
+        "required": true,
+        "preserve_facts": true
+      },
+      "illustrations": {
+        "enabled": true,
+        "density": "balanced",
+        "style": null,
+        "palette": null
+      },
+      "cover": {
+        "enabled": true,
+        "aspect": "2.35:1",
+        "type": null,
+        "palette": null,
+        "rendering": null,
+        "text": "none"
+      },
+      "publishing": {
+        "target": "draft"
+      }
+    },
+    "b": {
+      "label": "公众号 B",
+      "audience": "希望理解科技产业变化、企业竞争和民生影响的普通读者",
+      "writer_instructions": "允许完整展开产业链和受影响人群，但避免宏大叙事、营销号语气和投资暗示。",
+      "topic_discovery": {
+        "window_hours": 24,
+        "fallback_hours": 72,
+        "categories": ["AI 产业", "智能制造", "芯片与算力", "新能源", "企业竞争"]
+      },
+      "theme_strategy": "random",
+      "humanize": {
+        "required": true,
+        "preserve_facts": true
+      },
+      "illustrations": {
+        "enabled": true,
+        "density": "balanced",
+        "style": null,
+        "palette": null
+      },
+      "cover": {
+        "enabled": true,
+        "aspect": "2.35:1",
+        "type": null,
+        "palette": null,
+        "rendering": null,
+        "text": "none"
+      },
+      "publishing": {
+        "target": "draft"
+      }
+    }
+  }
+}
