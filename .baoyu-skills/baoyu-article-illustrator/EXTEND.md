@@ -10,7 +10,7 @@ preferred_style:
 preferred_palette: null
 language: zh
 default_output_dir: illustrations-subdir
-preferred_image_backend: auto
+preferred_image_backend: agnes-image-gen
 generation_batch_size: 4
 custom_styles: []
 ---

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Agnes 图片生成"
+  short_description: "通过 Agnes Image 2.1 Flash 生成或编辑图片"
+  default_prompt: "使用 $agnes-image-gen 根据已保存的提示词生成一张图片。"

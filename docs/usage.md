@@ -11,6 +11,7 @@
 | `humanizer` | 删除机械表达和 AI 写作痕迹；完整流水线中强制执行 |
 | `baoyu-article-illustrator` | 分析文章并生成正文配图 |
 | `baoyu-cover-image` | 生成微信公众号封面图 |
+| `agnes-image-gen` | 使用 Agnes Image 2.1 Flash 实际渲染封面和正文插图 |
 | `wechat-content-pipeline` | 联网选热点并编排以上全部阶段，最终创建草稿 |
 
 ## 2. 安装和加载
@@ -24,7 +25,7 @@ cd wechat-skill
 
 确保云端 Agent 能读取根 `SKILL.md` 和 `.agents/skills/`。不要只复制根 Skill，否则写作、Humanizer、图片和完整工作流不会一起加载。
 
-运行环境需要 Python 3。自动热点发现需要联网能力；自动配图需要可用的图片生成后端；创建草稿需要公众号 API 权限。
+运行环境需要 Python 3。自动热点发现需要联网能力；自动配图需要访问 Agnes API；创建草稿需要公众号 API 权限。
 
 ## 3. 配置公众号账号
 
@@ -41,6 +42,19 @@ export WECHAT_A_APP_ID='公众号 A 的 AppID'
 export WECHAT_A_APP_SECRET='公众号 A 的 AppSecret'
 export WECHAT_B_APP_ID='公众号 B 的 AppID'
 export WECHAT_B_APP_SECRET='公众号 B 的 AppSecret'
+```
+
+项目已固定使用 Agnes Image 2.1 Flash 生成封面和正文插图。将轮换后的 Key 放入云端密钥管理，不要写入仓库：
+
+```bash
+export AGNES_API_KEY='Agnes API Key'
+```
+
+默认端点为 `https://apihub.agnes-ai.com/v1/images/generations`，默认模型为 `agnes-image-2.1-flash`，无需另外设置。可先用无网络 dry-run 检查配置：
+
+```bash
+python3 .agents/skills/agnes-image-gen/scripts/generate.py \
+  --prompt-file prompt.md --output image.png --ratio 16:9 --dry-run
 ```
 
 若账号已有固定封面素材，可额外设置：
@@ -128,6 +142,7 @@ work/b/current/
 
 - **没有可靠热点**：本轮停止，不使用旧闻或传闻凑稿。
 - **图片后端不可用**：继续完成文章、排版和校验；没有封面或默认素材时不创建草稿。
+- **Agnes 生图失败**：检查 `AGNES_API_KEY`、`apihub.agnes-ai.com` 网络访问、账户权限和限流状态；不要把 Key 放进日志排查。
 - **公众号接口报错**：检查接口权限、IP 白名单、AppID/AppSecret 和账号别名。
 - **HTML 校验失败**：运行 `python3 scripts/validate_gzh_html.py article.html`，修到 ERROR 和 WARNING 都为零。
 - **出现作者占位符**：流水线会阻止上传；填写真实作者或删除整个署名组件。

@@ -13,6 +13,6 @@ default_aspect: "2.35:1"
 default_output_dir: same-dir
 quick_mode: true
 language: zh
-preferred_image_backend: auto
+preferred_image_backend: agnes-image-gen
 custom_palettes: []
 ---

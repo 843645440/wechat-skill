@@ -212,20 +212,28 @@ WECHAT_B_APP_SECRET
 
 微信草稿必须有封面，每个账号至少满足以下一种方案：
 
-1. 云端 Agent 提供已授权的原生图片生成工具，供 `baoyu-cover-image` 生成并上传封面。
-2. 为账号配置已有的永久封面素材 ID：
+1. **Agnes 自动生图（推荐）**：项目已把封面和正文插图后端固定为 `agnes-image-gen`，模型为 `agnes-image-2.1-flash`。在云端密钥管理中配置：
+
+   ```text
+   AGNES_API_KEY
+   ```
+
+   Key 仅由生图脚本从环境变量读取，不写入 Skill、提示词或任务产物。接口需要访问 `https://apihub.agnes-ai.com`；默认生成 `2K` 图片，公众号封面的 `2.35:1` 会映射为模型支持的 `21:9`。接口说明见 [Agnes 官方文档](https://agnes-ai.com/zh-Hans/docs/agnes-image-21-flash)。
+
+2. **固定封面降级方案**：不启用自动生图时，为账号配置已有的永久封面素材 ID：
 
 ```text
 WECHAT_A_THUMB_MEDIA_ID
 WECHAT_B_THUMB_MEDIA_ID
 ```
 
-永久素材 ID 属于具体公众号，A/B 不能混用。正文配图生成失败时流水线可以降级继续；没有生成封面且没有对应默认素材 ID 时，草稿门禁会停止上传。仓库中的图片 Skill 是生成规则，不包含图像模型；若云端没有原生图片工具，需自行接入图片后端及其凭证，或使用永久封面素材 ID。
+永久素材 ID 属于具体公众号，A/B 不能混用。正文配图生成失败时流水线可以降级继续；没有 Agnes 生成封面且没有对应默认素材 ID 时，草稿门禁会停止上传。`baoyu-cover-image` 和 `baoyu-article-illustrator` 负责构图与提示词，`agnes-image-gen` 负责实际 API 调用和图片落盘。
 
 ### 【按场景】其他能力
 
 - **自动抓取热点**：定时任务不提供主题时，Agent 必须具有联网搜索能力。平台原生搜索不需要在本仓库配置 Key；自行接入第三方搜索时使用其凭证。
 - **最新事实核验**：涉及实时事件、数据或企业公告时需要联网，即使任务已经提供主题。
+- **Agnes 参数**：可选通过 `AGNES_IMAGE_SIZE` 调整默认尺寸，或通过 `AGNES_IMAGE_MODEL`、`AGNES_IMAGE_ENDPOINT` 迁移模型和端点；正常使用无需设置，默认即为本项目选定的 2.1 Flash 官方接口。
 - **Token 缓存**：默认写入 `~/.cache/wechat-skill`；目录需可写。无持久磁盘时可使用发布命令的 `--no-token-cache`。
 - **内容档案**：可在 `config/wechat-content-profiles.json` 调整 A/B 的受众和热点类别，但必须保留随机主题、强制 Humanizer 和草稿箱终点。
 - **定时任务**：时间、时区和账号别名配置在 Agent 平台，不写进 Skill。建议明确使用 `Asia/Shanghai`，早间任务传 `a`，晚间任务传 `b`。
@@ -236,6 +244,7 @@ WECHAT_B_THUMB_MEDIA_ID
 - 不需要微信公众号登录 Cookie、扫码登录、回调 URL、消息校验 Token 或 EncodingAESKey。
 - 不需要小程序 AppID/AppSecret。
 - `humanizer` 不需要独立 API Key。
+- 不需要为 Agnes 把 Key 写入 JSON 或命令参数；只配置 `AGNES_API_KEY` 环境变量。
 - 公开仓库只读克隆不需要 GitHub Token；只有推送修改或仓库改为私有时才需要仓库凭证。
 - Skill 内不需要 cron、早晚时间或轮询配置。
 

@@ -32,6 +32,8 @@ When this skill needs to render an image, resolve the backend in this order:
    - Otherwise (multiple non-native backends with no runtime-native tool), ask the user once — batch with any other initial questions.
 4. **If none are available**, tell the user and ask how to proceed.
 
+**Agnes backend contract**: when the saved preference resolves to `agnes-image-gen`, load `../agnes-image-gen/SKILL.md` and invoke its bundled `scripts/generate.py` with the saved prompt file, output path, aspect ratio, and any direct reference images. It reads `AGNES_API_KEY` from the environment. Treat missing/invalid credentials as a backend failure; never put the Key in a command argument or fall back to another provider without user authorization.
+
 **⛔ Never substitute SVG, HTML, canvas, or other code-based rendering for raster image generation.** Codex `imagegen`'s own description says it should be used "when the output should be a bitmap asset rather than repo-native code or vector." If you cannot resolve a raster backend via step 3, fall through to step 4 and ask the user — do **not** silently emit SVG, write inline `<svg>` markup, or produce HTML/CSS art as a substitute. This applies even if the article/section seems "diagram-like": the consumer skill calling this rule has already decided that a raster image is what it needs.
 
 **⛔ Never repair rendered text by painting over a generated bitmap.** Do not use ImageMagick, Pillow, Canvas, SVG, HTML/CSS, OCR scripts, or any other programmatic overlay to cover, rewrite, erase, stroke, or replace title/subtitle text inside an already generated cover image. If text is wrong or unclear, regenerate from a corrected prompt, switch to a lower-text or no-title variant, or ask the user which imperfect candidate to keep.
@@ -214,6 +216,7 @@ Save to `prompts/cover.md`. Template: [references/workflow/prompt-template.md](r
    - `style`/`palette` → extract traits, append to prompt
 5. **Generate**: Call the chosen backend with the prompt file, output path, aspect ratio.
    - **`codex-imagegen`**: see [references/codex-imagegen.md](references/codex-imagegen.md) for the invocation contract (preferred `baoyu-image-gen --provider codex-cli` path, runtime wrapper discovery, parameter notes, stdout schema, batch semantics).
+   - **`agnes-image-gen`**: execute its deterministic Python client with `--prompt-file`, `--output`, `--ratio`, and repeated `--ref` arguments. The client maps `2.35:1` to Agnes `21:9`.
    - **Codex `imagegen` (native)** or other runtime-native tools / `baoyu-image-gen` skill: per the rule in `## Image Generation Tools` above.
 6. On failure: auto-retry once
 
@@ -266,6 +269,7 @@ EXTEND.md lives at the path noted in **Step 0**. Three ways to change it:
   - `preferred_image_backend: auto` — default; runtime-native tool wins, falls back to the only installed backend, asks only if multiple non-native are present.
   - `preferred_image_backend: codex-imagegen` — pin to Codex's built-in.
   - `preferred_image_backend: baoyu-image-gen` — pin to the baoyu-image-gen skill.
+  - `preferred_image_backend: agnes-image-gen` — pin to the project Agnes Image 2.1 Flash backend; requires `AGNES_API_KEY`.
   - `preferred_image_backend: ask` — confirm backend every run.
   - `watermark.enabled: true`, `preferred_type`, `preferred_palette`, `preferred_rendering`, `default_aspect`, `quick_mode: true`, `language` — shift the auto-selection defaults and confirmation flow.
 

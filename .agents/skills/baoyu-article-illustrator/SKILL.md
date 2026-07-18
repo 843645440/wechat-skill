@@ -32,6 +32,8 @@ When this skill needs to render an image, resolve the backend in this order:
    - Otherwise (multiple non-native backends with no runtime-native tool), ask the user once — batch with any other initial questions.
 4. **If none are available**, tell the user and ask how to proceed.
 
+**Agnes backend contract**: when the saved preference resolves to `agnes-image-gen`, load `../agnes-image-gen/SKILL.md` and invoke its bundled `scripts/generate.py` once per saved prompt file. Pass the output path, aspect ratio, and per-image direct references. It reads `AGNES_API_KEY` from the environment. Treat missing/invalid credentials as a backend failure; never put the Key in a command argument or fall back to another provider without user authorization.
+
 **⛔ Never substitute SVG, HTML, canvas, or other code-based rendering for raster image generation.** Codex `imagegen`'s own description says it should be used "when the output should be a bitmap asset rather than repo-native code or vector." If you cannot resolve a raster backend via step 3, fall through to step 4 and ask the user — do **not** silently emit SVG, write inline `<svg>` markup, or produce HTML/CSS art as a substitute. This applies even if the article/section seems "diagram-like": the consumer skill calling this rule has already decided that a raster image is what it needs.
 
 **⛔ Never repair rendered text by painting over a generated bitmap.** Do not use ImageMagick, Pillow, Canvas, SVG, HTML/CSS, OCR scripts, or any other programmatic overlay to cover, rewrite, erase, stroke, or replace labels, captions, or any other text inside an already generated illustration. If text is wrong or unclear, regenerate from a corrected prompt, redraw with less or no on-image text, or ask the user which imperfect candidate to keep.
@@ -183,6 +185,7 @@ Full template: [references/workflow.md](references/workflow.md#step-4-generate-o
 4. LABELS **MUST** include article-specific data: actual numbers, terms, metrics, quotes
 5. **DO NOT** pass ad-hoc inline prompts to `--prompt` without saving prompt files first
 6. Select the backend via the `## Image Generation Tools` rule at the top: use whatever is available; if multiple, ask the user once. Do this once per session before any generation.
+   - **`agnes-image-gen` invocation**: run its deterministic Python client with `--prompt-file`, `--output`, `--ratio`, and repeated `--ref` arguments. It has no native batch endpoint, so use the runtime's parallel calls up to `generation_batch_size`.
    - **`codex-imagegen` invocation**: when the rule resolves to `codex-imagegen`, see [references/codex-imagegen.md](references/codex-imagegen.md) for the invocation contract (preferred `baoyu-image-gen --provider codex-cli` path, runtime wrapper discovery, parameter notes, stdout schema, batch semantics).
 7. **Execution strategy**: Generate in batches per the `## Batch Generation Policy`: backend native batch first, runtime parallel tool calls second, sequential only as fallback. Default batch size is 4 unless EXTEND.md or the current request overrides it.
 8. Process references (`direct`/`style`/`palette`) per prompt frontmatter
@@ -261,6 +264,7 @@ EXTEND.md lives at the first matching path listed in Step 1.5. Three ways to cha
   - `preferred_image_backend: auto` — default; runtime-native tool wins, falls back to the only installed backend, asks only if multiple non-native are present.
   - `preferred_image_backend: codex-imagegen` — pin to Codex's built-in.
   - `preferred_image_backend: baoyu-image-gen` — pin to the baoyu-image-gen skill.
+  - `preferred_image_backend: agnes-image-gen` — pin to the project Agnes Image 2.1 Flash backend; requires `AGNES_API_KEY`.
   - `preferred_image_backend: ask` — confirm backend every run.
   - `generation_batch_size: 4` — default number of images to render concurrently when the runtime supports parallel generation calls.
   - `preferred_type: infographic`, `preferred_style: notion`, `preferred_palette: macaron`, `language: zh`.
