@@ -142,7 +142,7 @@ npx skills add https://github.com/843645440/wechat-skill
 1. **确定选题** — 使用外部主题，或联网比较热点并选出一个可核验的角度。
 2. **写作与核验** — 生成 `article.md`，将来源和日期内部记录到 `sources.md`。
 3. **强制去 AI 味** — Humanizer 必须执行，随后复查事实，禁止新增经历、人物和数据。
-4. **生成图片** — 生成正文配图和公众号封面；素材按账号分别上传。
+4. **生成图片** — 用固定 HTML/CSS 模板生成正文视觉卡和封面，再由浏览器确定性截图；素材按账号分别上传。
 5. **随机排版** — 从 `theme-index.md` 的已注册主题中随机选择一套，同一轮重试保持不变。
 6. **严格校验** — 清除 HTML 错误、警告和占位符。
 7. **自动建草稿** — 校验通过后立即写入指定账号草稿箱，到此结束；人工在草稿箱审核，流水线不公开发布。
@@ -204,6 +204,7 @@ WECHAT_B_APP_SECRET
 - 云端执行器的公网出口 IP 已分别加入两个公众号的接口 IP 白名单；动态出口环境应配置固定 NAT、固定代理或中转服务。
 - 运行环境能够通过 HTTPS 访问 `api.weixin.qq.com`。
 - 已安装 Python 3，Agent 能读取根 `SKILL.md` 和 `.agents/skills/`，并能写入 `work/<account>/current/`。
+- 已安装 Chrome 或 Chromium，用于把内部 HTML 视觉模板截图成 PNG；自定义路径时设置 `HTML_VISUAL_BROWSER`。
 - 云端 Agent 本身具有可用的大模型能力；模型授权由 Agent 平台提供，本仓库不读取通用 LLM API Key。
 
 公众号类型和认证状态可能影响可用接口。首次部署时应在两个公众号后台分别确认接口权限，不能只验证其中一个账号。
@@ -212,13 +213,14 @@ WECHAT_B_APP_SECRET
 
 微信草稿必须有封面，每个账号至少满足以下一种方案：
 
-1. **Agnes 自动生图（推荐）**：项目已把封面和正文插图后端固定为 `agnes-image-gen`，模型为 `agnes-image-2.1-flash`。在云端密钥管理中配置：
+1. **HTML 确定性视觉图（默认）**：项目使用 `wechat-html-visuals`，将受约束 JSON 渲染为固定 HTML/CSS，再通过 Chrome/Chromium 生成 PNG。它不调用图片模型，不需要图片 API Key，也不进行 AI 视觉检测。默认输出为：
 
    ```text
-   AGNES_API_KEY
+   封面：1410 × 600
+   正文视觉图：1200 × 800
    ```
 
-   Key 仅由生图脚本从环境变量读取，不写入 Skill、提示词或任务产物。接口需要访问 `https://apihub.agnes-ai.com`；默认生成 `2K` 图片，公众号封面的 `2.35:1` 会映射为模型支持的 `21:9`。接口说明见 [Agnes 官方文档](https://agnes-ai.com/zh-Hans/docs/agnes-image-21-flash)。
+   模板支持封面、观点卡、对比图、流程图和数据卡。文字、编号和布局由浏览器排版，PNG 只检查签名和精确尺寸；每张图只渲染一次，浏览器技术故障最多重试一次。
 
 2. **固定封面降级方案**：不启用自动生图时，为账号配置已有的永久封面素材 ID：
 
@@ -227,13 +229,14 @@ WECHAT_A_THUMB_MEDIA_ID
 WECHAT_B_THUMB_MEDIA_ID
 ```
 
-永久素材 ID 属于具体公众号，A/B 不能混用。正文配图生成失败时流水线可以降级继续；没有 Agnes 生成封面且没有对应默认素材 ID 时，草稿门禁会停止上传。`baoyu-cover-image` 和 `baoyu-article-illustrator` 负责构图与提示词，`agnes-image-gen` 负责实际 API 调用和图片落盘。
+永久素材 ID 属于具体公众号，A/B 不能混用。正文视觉图渲染失败时流水线可以降级继续；没有 HTML 封面且没有对应默认素材 ID 时，草稿门禁会停止上传。Agnes 和 Baoyu 图片 Skill 仍保留供独立、明确调用，但完整定时流水线不会使用，也不会自动回退到 AI 生图。
 
 ### 【按场景】其他能力
 
 - **自动抓取热点**：定时任务不提供主题时，Agent 必须具有联网搜索能力。平台原生搜索不需要在本仓库配置 Key；自行接入第三方搜索时使用其凭证。
 - **最新事实核验**：涉及实时事件、数据或企业公告时需要联网，即使任务已经提供主题。
-- **Agnes 参数**：可选通过 `AGNES_IMAGE_SIZE` 调整默认尺寸，或通过 `AGNES_IMAGE_MODEL`、`AGNES_IMAGE_ENDPOINT` 迁移模型和端点；正常使用无需设置，默认即为本项目选定的 2.1 Flash 官方接口。
+- **浏览器路径**：渲染器会自动查找 Chrome、Chromium 和 Playwright Chromium；找不到时通过 `HTML_VISUAL_BROWSER` 指定可执行文件。
+- **可选 AI 生图**：只有单独调用 `agnes-image-gen`、`baoyu-cover-image` 或 `baoyu-article-illustrator` 时才需要相应后端及凭证；默认流水线不使用。
 - **Token 缓存**：默认写入 `~/.cache/wechat-skill`；目录需可写。无持久磁盘时可使用发布命令的 `--no-token-cache`。
 - **内容档案**：可在 `config/wechat-content-profiles.json` 调整 A/B 的受众和热点类别，但必须保留随机主题、强制 Humanizer 和草稿箱终点。
 - **定时任务**：时间、时区和账号别名配置在 Agent 平台，不写进 Skill。建议明确使用 `Asia/Shanghai`，早间任务传 `a`，晚间任务传 `b`。
@@ -244,7 +247,7 @@ WECHAT_B_THUMB_MEDIA_ID
 - 不需要微信公众号登录 Cookie、扫码登录、回调 URL、消息校验 Token 或 EncodingAESKey。
 - 不需要小程序 AppID/AppSecret。
 - `humanizer` 不需要独立 API Key。
-- 不需要为 Agnes 把 Key 写入 JSON 或命令参数；只配置 `AGNES_API_KEY` 环境变量。
+- 默认 HTML 视觉图不需要 Agnes、OpenAI、Google 或其他图片 API Key。
 - 公开仓库只读克隆不需要 GitHub Token；只有推送修改或仓库改为私有时才需要仓库凭证。
 - Skill 内不需要 cron、早晚时间或轮询配置。
 
@@ -270,6 +273,7 @@ python3 scripts/wechat_publish.py --config wechat-accounts.json send \
 - **约束优于自由** — 预设主题色板 + 固定组件先保住输出下限，不让模型每次现场发挥、风格飘忽。
 - **样式粘贴不掉** — 全内联样式 + 每个文字节点 `<span leaf="">` 包裹，专门规避公众号会过滤的写法，粘进去不塌。
 - **质量靠脚本不靠自觉** — 双关卡（源头 `component_lint` + 产物 `validate_gzh_html`）确定性检查平台红线和标点，不靠模型「记得住」。
+- **配图不赌模型识字** — 结构化内容经过固定 HTML/CSS 模板和浏览器截图，中文、编号与布局可重复，不运行视觉模型修图循环。
 - **换模型不走样** — 排版逻辑全沉淀在组件库和脚本里，不依赖某家模型，Claude / GPT / Gemini / 国产模型都能跑出一致效果。
 - **Agent 友好** — 输入输出全是纯文本 Markdown / HTML，任何 Agent 都能读、写、改、验，天然适配 Claude Code / Codex / Cursor。
 

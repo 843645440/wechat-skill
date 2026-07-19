@@ -17,17 +17,16 @@
       },
       "illustrations": {
         "enabled": true,
+        "backend": "html",
         "density": "balanced",
-        "style": null,
-        "palette": null
+        "theme": null
       },
       "cover": {
         "enabled": true,
+        "backend": "html",
         "aspect": "2.35:1",
-        "type": null,
-        "palette": null,
-        "rendering": null,
-        "text": "none"
+        "theme": null,
+        "text": "title-only"
       },
       "publishing": {
         "target": "draft"
@@ -49,17 +48,16 @@
       },
       "illustrations": {
         "enabled": true,
+        "backend": "html",
         "density": "balanced",
-        "style": null,
-        "palette": null
+        "theme": null
       },
       "cover": {
         "enabled": true,
+        "backend": "html",
         "aspect": "2.35:1",
-        "type": null,
-        "palette": null,
-        "rendering": null,
-        "text": "none"
+        "theme": null,
+        "text": "title-only"
       },
       "publishing": {
         "target": "draft"

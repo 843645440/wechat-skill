@@ -17,7 +17,10 @@
 - `topic_discovery`：自动热点搜索的领域和时间窗口。
 - `theme_strategy`：必须为 `random`；候选项来自根主题索引。
 - `humanize.required`：必须为 `true`。
-- `illustrations`、`cover`：图片密度和风格；空值表示让图片 Skill 自动选择。图片后端缺失只降级图片阶段，排版与校验仍要完成。
+- `illustrations.backend`、`cover.backend`：必须为 `html`，完整流水线只使用确定性 HTML/CSS 截图，不使用生成式图片模型。
+- `illustrations.density`：正文视觉图密度；`balanced` 通常生成 2—3 张。
+- `illustrations.theme`、`cover.theme`：视觉色板；空值表示从 `wechat-html-visuals` 的注册色板中选择，同篇保持一致。
+- 图片后端缺失只降级图片阶段，排版与校验仍要完成；不得自动改用 Agnes 或其他 AI 生图。
 - `publishing.target`：必须为 `draft`。
 
 账号可以有不同读者和热点方向，但排版主题不固定。Skill 本身不读取或执行时间字段，Agent 自带定时任务只需传账号别名和可选主题。

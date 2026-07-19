@@ -17,7 +17,7 @@ SPEC.loader.exec_module(pipeline_job)
 
 
 class PipelineJobTests(unittest.TestCase):
-    def init_job(self, tmp, topic="AI 如何改变初级程序员的工作"):
+    def init_job(self, tmp, topic="AI 如何改变初级程序员的工作", visual_backend="html"):
         config_dir = os.path.join(tmp, "config")
         references_dir = os.path.join(tmp, "references")
         os.makedirs(config_dir, exist_ok=True)
@@ -34,6 +34,8 @@ class PipelineJobTests(unittest.TestCase):
                         "a": {
                             "theme_strategy": "random",
                             "humanize": {"required": True},
+                            "illustrations": {"backend": visual_backend},
+                            "cover": {"backend": visual_backend},
                             "publishing": {"target": "draft"},
                         }
                     },
@@ -90,7 +92,7 @@ class PipelineJobTests(unittest.TestCase):
                 os.path.normpath(os.path.join(tmp, "work", "a", "current")),
             )
 
-    def test_account_profiles_enforce_random_theme_humanize_and_draft(self):
+    def test_account_profiles_enforce_html_visuals_random_theme_humanize_and_draft(self):
         profile_path = os.path.join(ROOT, "config", "wechat-content-profiles.json")
         with open(profile_path, encoding="utf-8") as f:
             profiles = json.load(f)["profiles"]
@@ -98,9 +100,25 @@ class PipelineJobTests(unittest.TestCase):
         for profile in profiles.values():
             self.assertEqual(profile["theme_strategy"], "random")
             self.assertIs(profile["humanize"]["required"], True)
+            self.assertEqual(profile["illustrations"]["backend"], "html")
+            self.assertEqual(profile["cover"]["backend"], "html")
             self.assertEqual(profile["publishing"]["target"], "draft")
             self.assertNotIn("schedule", profile)
             self.assertNotIn("publish", profile["publishing"])
+
+    def test_init_rejects_ai_image_backend_for_full_pipeline(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(pipeline_job.JobError, "HTML 视觉图"):
+                self.init_job(tmp, visual_backend="agnes")
+
+    def test_status_alias_shows_job(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            job_path = self.init_job(tmp)
+            args = pipeline_job.build_parser().parse_args(["status", "--job", job_path])
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                pipeline_job.cmd_show(args)
+            self.assertEqual(json.loads(output.getvalue())["account"], "a")
 
     def test_reinitializing_account_clears_previous_temporary_files(self):
         with tempfile.TemporaryDirectory() as tmp:

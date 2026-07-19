@@ -108,9 +108,11 @@ def cmd_init(args):
     if (
         profile.get("theme_strategy") != "random"
         or profile.get("humanize", {}).get("required") is not True
+        or profile.get("illustrations", {}).get("backend") != "html"
+        or profile.get("cover", {}).get("backend") != "html"
         or profile.get("publishing", {}).get("target") != "draft"
     ):
-        raise JobError("账号内容档案必须启用随机主题、强制去 AI 味并以草稿箱为终点")
+        raise JobError("账号内容档案必须启用 HTML 视觉图、随机主题、强制去 AI 味并以草稿箱为终点")
     job_dir = resolve_work_dir(project_root, args.work_dir, args.account)
     if os.path.isdir(job_dir):
         shutil.rmtree(job_dir)
@@ -316,7 +318,7 @@ def build_parser():
     gate = sub.add_parser("gate", help="检查自动创建草稿的确定性门禁")
     gate.add_argument("--job", required=True)
 
-    show = sub.add_parser("show", help="输出当前账号任务清单")
+    show = sub.add_parser("show", aliases=("status",), help="输出当前账号任务清单")
     show.add_argument("--job", required=True)
     return parser
 
@@ -331,6 +333,7 @@ def main():
             "stage": cmd_stage,
             "gate": cmd_gate,
             "show": cmd_show,
+            "status": cmd_show,
         }[args.command](args)
     except JobError as exc:
         print(f"✗ {exc}", file=sys.stderr)

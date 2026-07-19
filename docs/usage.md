@@ -9,9 +9,10 @@
 | `wechat-skill` | 根 Skill：已有文章排版、HTML 校验、多账号草稿上传 |
 | `wechat-tech-insight-writer` | 科技、AI、产业、企业和民生深度写作 |
 | `humanizer` | 删除机械表达和 AI 写作痕迹；完整流水线中强制执行 |
-| `baoyu-article-illustrator` | 分析文章并生成正文配图 |
-| `baoyu-cover-image` | 生成微信公众号封面图 |
-| `agnes-image-gen` | 使用 Agnes Image 2.1 Flash 实际渲染封面和正文插图 |
+| `wechat-html-visuals` | 默认图片后端：用固定 HTML/CSS 模板生成稳定封面和正文视觉卡 |
+| `baoyu-article-illustrator` | 可选：使用生成式图片模型制作正文配图 |
+| `baoyu-cover-image` | 可选：使用生成式图片模型制作封面 |
+| `agnes-image-gen` | 可选：Agnes Image 2.1 Flash API 后端 |
 | `wechat-content-pipeline` | 联网选热点并编排以上全部阶段，最终创建草稿 |
 
 ## 2. 安装和加载
@@ -25,7 +26,7 @@ cd wechat-skill
 
 确保云端 Agent 能读取根 `SKILL.md` 和 `.agents/skills/`。不要只复制根 Skill，否则写作、Humanizer、图片和完整工作流不会一起加载。
 
-运行环境需要 Python 3。自动热点发现需要联网能力；自动配图需要访问 Agnes API；创建草稿需要公众号 API 权限。
+运行环境需要 Python 3 和 Chrome/Chromium。自动热点发现需要联网能力；默认图片阶段只在本地渲染 HTML，不需要图片 API Key；创建草稿需要公众号 API 权限。
 
 ## 3. 配置公众号账号
 
@@ -44,18 +45,20 @@ export WECHAT_B_APP_ID='公众号 B 的 AppID'
 export WECHAT_B_APP_SECRET='公众号 B 的 AppSecret'
 ```
 
-项目已固定使用 Agnes Image 2.1 Flash 生成封面和正文插图。将轮换后的 Key 放入云端密钥管理，不要写入仓库：
+默认图片后端会自动查找 Chrome、Chromium 或 Playwright Chromium。只有自动发现失败时才需要指定浏览器路径：
 
 ```bash
-export AGNES_API_KEY='Agnes API Key'
+export HTML_VISUAL_BROWSER='/path/to/chrome-or-chromium'
 ```
 
-默认端点为 `https://apihub.agnes-ai.com/v1/images/generations`，默认模型为 `agnes-image-2.1-flash`，无需另外设置。可先用无网络 dry-run 检查配置：
+可以用仓库测试规格做一次真实离线截图，不连接任何图片 API：
 
 ```bash
-python3 .agents/skills/agnes-image-gen/scripts/generate.py \
-  --prompt-file prompt.md --output image.png --ratio 16:9 --dry-run
+python3 .agents/skills/wechat-html-visuals/scripts/render_visual.py \
+  --spec tests/fixtures/html-visual-cover.json --output cover.png
 ```
+
+Agnes 保留为独立可选 Skill，但完整流水线不再调用它。只有明确单独使用 Agnes 时才配置 `AGNES_API_KEY`。
 
 若账号已有固定封面素材，可额外设置：
 
@@ -95,7 +98,7 @@ python3 scripts/wechat_publish.py --config wechat-accounts.json send \
 2. 写作并生成内部来源记录。
 3. 核对时效事实、数据和企业表述。
 4. 强制运行 Humanizer，再次核对事实。
-5. 生成正文配图和封面。
+5. 将结构化内容套入固定 HTML/CSS 模板，浏览器截图生成正文视觉图和封面。
 6. 从已注册主题中随机选择排版主题。
 7. 生成并严格校验公众号 HTML。
 8. 自动创建指定账号草稿，到此结束。
@@ -125,7 +128,7 @@ python3 scripts/wechat_publish.py --config wechat-accounts.json send \
 
 > 使用 `$humanizer` 编辑 `article.md`，保留事实、数据和原观点。
 
-只生成封面或正文配图时，分别调用 `$baoyu-cover-image` 和 `$baoyu-article-illustrator`。
+只生成稳定封面或正文视觉图时调用 `$wechat-html-visuals`。只有明确希望使用生成式图片时，才分别调用 `$baoyu-cover-image`、`$baoyu-article-illustrator` 或 `$agnes-image-gen`。
 
 ## 7. 运行产物
 
@@ -136,13 +139,14 @@ work/a/current/
 work/b/current/
 ```
 
-常见产物包括 `article.md`、`sources.md`、`article.html`、`article_preview.html`、`cover/cover.png` 和 `draft-result.json`。新任务会覆盖同账号上一轮临时产物；微信草稿箱中的文章不受影响。
+常见产物包括 `article.md`、`sources.md`、`article.html`、`article_preview.html`、`illustrations/specs/*.json`、视觉图 HTML/PNG、`cover/cover.spec.json`、`cover/cover.png` 和 `draft-result.json`。新任务会覆盖同账号上一轮临时产物；微信草稿箱中的文章不受影响。
 
 ## 8. 常见阻塞
 
 - **没有可靠热点**：本轮停止，不使用旧闻或传闻凑稿。
-- **图片后端不可用**：继续完成文章、排版和校验；没有封面或默认素材时不创建草稿。
-- **Agnes 生图失败**：检查 `AGNES_API_KEY`、`apihub.agnes-ai.com` 网络访问、账户权限和限流状态；不要把 Key 放进日志排查。
+- **找不到浏览器**：安装 Chrome/Chromium，或设置 `HTML_VISUAL_BROWSER`；流水线不会自动回退到 AI 生图。
+- **视觉 JSON 过长**：按渲染器错误缩短字段后首次生成；不要绕过限制，也不要生成 V2/V3。
+- **PNG 生成失败**：同一浏览器命令最多技术性重试一次；正文图片可降级，没有封面或默认素材时不创建草稿。
 - **公众号接口报错**：检查接口权限、IP 白名单、AppID/AppSecret 和账号别名。
 - **HTML 校验失败**：运行 `python3 scripts/validate_gzh_html.py article.html`，修到 ERROR 和 WARNING 都为零。
 - **出现作者占位符**：流水线会阻止上传；填写真实作者或删除整个署名组件。
@@ -158,4 +162,5 @@ python3 scripts/component_lint.py .
 
 - 根排版组件和工作流按仓库根 `LICENSE` 的 AGPL-3.0 使用。
 - `baoyu-article-illustrator` 与 `baoyu-cover-image` 来源于 [JimLiu/baoyu-skills](https://github.com/JimLiu/baoyu-skills)，许可证保存在 `.agents/skills/LICENSE`。
+- `wechat-html-visuals` 和确定性浏览器渲染脚本为本仓库自有实现，不调用第三方图片生成 API。
 - `humanizer` 来源于 [blader/humanizer](https://github.com/blader/humanizer)，许可证保存在 `.agents/skills/humanizer/LICENSE`。

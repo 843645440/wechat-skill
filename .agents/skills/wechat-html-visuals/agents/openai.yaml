@@ -1,0 +1,4 @@
+interface:
+  display_name: "微信公众号 HTML 视觉图"
+  short_description: "用确定性 HTML/CSS 模板生成封面和正文视觉卡片"
+  default_prompt: "使用 $wechat-html-visuals 根据文章生成稳定的封面和正文配图。"
