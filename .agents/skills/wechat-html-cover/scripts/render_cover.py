@@ -200,6 +200,7 @@ def browser_candidates():
     home = Path.home()
     for pattern in (
         ".cache/ms-playwright/chromium-*/chrome-linux/chrome",
+        ".cache/ms-playwright/chromium-*/chrome-linux64/chrome",
         ".cache/ms-playwright/chromium-*/chrome-linux/headless_shell",
         "Library/Caches/ms-playwright/chromium-*/chrome-mac*/Chromium.app/Contents/MacOS/Chromium",
     ):

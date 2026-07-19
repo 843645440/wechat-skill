@@ -103,6 +103,25 @@ class HtmlCoverTests(unittest.TestCase):
             )
             self.assertEqual(render_html_cover.png_dimensions(path), (1410, 600))
 
+    def test_browser_candidates_include_playwright_linux64_layout(self):
+        patterns = []
+        original_glob = Path.glob
+
+        def capture_glob(path, pattern):
+            patterns.append(pattern)
+            return []
+
+        try:
+            Path.glob = capture_glob
+            list(render_html_cover.browser_candidates())
+        finally:
+            Path.glob = original_glob
+
+        self.assertIn(
+            ".cache/ms-playwright/chromium-*/chrome-linux64/chrome",
+            patterns,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
