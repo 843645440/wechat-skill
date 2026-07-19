@@ -3,6 +3,7 @@
 
 import argparse
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -156,20 +157,63 @@ def parse_args():
     parser.add_argument("--plan", required=True)
     parser.add_argument("--article", required=True)
     parser.add_argument("--theme-index", required=True)
+    parser.add_argument("--degrade-on-error", action="store_true")
+    parser.add_argument("--fallback-theme")
     return parser.parse_args()
+
+
+def atomic_json(path, value):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    temporary.write_text(
+        json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    os.replace(temporary, path)
 
 
 def main():
     args = parse_args()
     try:
-        raw = json.loads(Path(args.plan).read_text(encoding="utf-8"))
         article = Path(args.article).read_text(encoding="utf-8")
         theme_index = Path(args.theme_index).read_text(encoding="utf-8")
-        result = validate_plan(raw, article, set(THEME_RE.findall(theme_index)))
-    except (OSError, json.JSONDecodeError, PlanError) as exc:
+        registered = set(THEME_RE.findall(theme_index))
+    except OSError as exc:
         print(json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False), file=sys.stderr)
         return 1
-    print(json.dumps({"status": "ok", **result}, ensure_ascii=False))
+    try:
+        raw = json.loads(Path(args.plan).read_text(encoding="utf-8"))
+        result = validate_plan(raw, article, registered)
+    except (OSError, json.JSONDecodeError, PlanError) as exc:
+        if args.degrade_on_error:
+            if not args.fallback_theme or args.fallback_theme not in registered:
+                print(
+                    json.dumps(
+                        {"status": "error", "error": "降级需要已注册的 --fallback-theme"},
+                        ensure_ascii=False,
+                    ),
+                    file=sys.stderr,
+                )
+                return 1
+            empty = {"version": 1, "theme": args.fallback_theme, "modules": []}
+            try:
+                atomic_json(Path(args.plan), empty)
+            except OSError as write_exc:
+                print(json.dumps({"status": "error", "error": str(write_exc)}, ensure_ascii=False), file=sys.stderr)
+                return 1
+            print(
+                json.dumps(
+                    {
+                        "status": "ok", "theme": args.fallback_theme,
+                        "module_count": 0, "kinds": [], "degraded": True,
+                        "degrade_reason": str(exc),
+                    },
+                    ensure_ascii=False,
+                )
+            )
+            return 0
+        print(json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False), file=sys.stderr)
+        return 1
+    print(json.dumps({"status": "ok", **result, "degraded": False}, ensure_ascii=False))
     return 0
 
 

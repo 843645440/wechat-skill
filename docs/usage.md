@@ -1,6 +1,6 @@
 # wechat-skill 使用指南
 
-`wechat-skill` 是面向云端 AI Agent 的微信公众号内容工具包。它能单独完成写作、去 AI 味或排版，也能通过编排 Skill 自动完成“选题到草稿箱”的完整流程。
+`wechat-skill` 是面向云端 AI Agent 的微信公众号内容工具包。它能单独完成写作或排版，也能通过编排 Skill 自动完成“选题到草稿箱”的完整流程。
 
 ## 1. Skill 组成
 
@@ -8,8 +8,7 @@
 |---|---|
 | `wechat-skill` | 根 Skill：已有文章排版、HTML 校验、多账号草稿上传 |
 | `wechat-tech-insight-writer` | 科技、AI、产业、企业和民生深度写作 |
-| `humanizer` | 删除机械表达和 AI 写作痕迹；完整流水线中强制执行 |
-| `wechat-inline-visuals` | 从正文提取信息，插入与当前排版主题一致的公众号原生 HTML 模块 |
+| `wechat-inline-visuals` | 从正文提取信息，由固定渲染器一次生成同主题正文与原生 HTML 模块 |
 | `wechat-html-cover` | 用编辑报刊风或动态字构风 HTML/CSS 模板生成确定性封面 PNG |
 | `wechat-content-pipeline` | 联网选热点并编排全部阶段，最终创建草稿 |
 | `baoyu-*`、`agnes-image-gen` | 可选独立图片能力；完整流水线不会调用 |
@@ -23,7 +22,7 @@ git clone https://github.com/843645440/wechat-skill.git
 cd wechat-skill
 ```
 
-确保云端 Agent 能读取根 `SKILL.md` 和 `.agents/skills/`。不要只复制根 Skill，否则写作、Humanizer、原生信息模块、封面和完整工作流不会一起加载。
+确保云端 Agent 能读取根 `SKILL.md` 和 `.agents/skills/`。不要只复制根 Skill，否则写作、原生信息模块、封面和完整工作流不会一起加载。
 
 运行环境需要 Python 3。Chrome/Chromium 只用于生成封面；正文信息模块是公众号原生 HTML，不需要浏览器截图或图片 API Key。自动热点发现需要联网能力，创建草稿需要公众号 API 权限。
 
@@ -81,7 +80,7 @@ python3 scripts/wechat_publish.py --config wechat-accounts.json send \
 
 不提供选题时，对 Agent 说：
 
-> 使用 `$wechat-content-pipeline` 为 A 账号运行完整流程。联网发现最新可靠的科技热点，完成写作、事实核验、去 AI 味、随机主题排版、同主题原生信息模块和封面，并自动发送到 A 账号草稿箱。
+> 使用 `$wechat-content-pipeline` 为 A 账号运行完整流程。联网发现最新可靠的科技热点，自动选择最佳方案，完成写作、事实核验、随机主题排版、同主题原生信息模块和封面，并自动发送到 A 账号草稿箱，不等待人工确认。
 
 提供明确选题时：
 
@@ -89,14 +88,15 @@ python3 scripts/wechat_publish.py --config wechat-accounts.json send \
 
 完整流程固定为：
 
-1. 使用给定选题，或联网比较最新热点。
+1. 使用给定选题，或由 Agent 联网比较最新热点并直接选择一个最佳结果。
 2. 写作、来源记录和事实核验。
-3. 强制运行 Humanizer，再次核对事实。
-4. 随机选择注册主题并完成基础排版。
-5. 从正文提取 0—3 个观点、比较、流程或已核验数据，直接插入当前主题 HTML。
-6. 用固定 HTML/CSS 生成唯一的封面 PNG。
-7. 严格校验公众号 HTML。
-8. 自动创建指定账号草稿，到此结束。
+3. 随机选择注册主题，从正文提取 0—3 个观点、比较、流程或已核验数据。
+4. 固定渲染器一次完成正文排版和同主题信息模块；模块失败立即降级为纯正文，不重试。
+5. 自动生成合法封面规格，用固定 HTML/CSS 在 45 秒硬超时内生成唯一封面 PNG。
+6. 严格校验公众号 HTML。
+7. 自动创建指定账号草稿，到此结束。
+
+云端 Agent 必须使用固定入口：`pipeline_job.py init/topic/show` 和 `pipeline_runtime.py begin/prepare/finish`。不得为某篇文章临时写排版脚本、封面 JSON 或视觉检测循环。`finish` 默认创建草稿；只有开发验证时才使用 `--dry-run`。
 
 正文阶段不创建 PNG、SVG 或截图，不调用生图 API，不做 AI 视觉检测，也不上传正文视觉素材。流水线不会公开发布；人工审核发生在微信公众号草稿箱。
 
@@ -119,9 +119,9 @@ python3 scripts/wechat_publish.py --config wechat-accounts.json send \
 
 > 使用 `$wechat-skill`，把 `article.md` 用石墨极简主题排成公众号 HTML。
 
-只生成原生信息模块：
+只生成原生信息模块并一次排好正文：
 
-> 使用 `$wechat-inline-visuals`，从已排版的文章提取信息并按当前主题插入原生 HTML 模块。
+> 使用 `$wechat-inline-visuals`，从文章提取信息，并用当前主题的固定渲染器生成正文和原生 HTML 模块。
 
 只生成稳定封面：
 
@@ -145,9 +145,9 @@ work/b/current/
 ## 8. 常见阻塞
 
 - **没有可靠热点**：本轮停止，不使用旧闻或传闻凑稿。
-- **原生模块计划校验失败**：修正锚点或删除无证据模块；不要补造事实。
+- **原生模块计划校验失败**：自动降级为空计划并保留纯正文，不重试、不补造事实。
 - **找不到浏览器**：安装 Chrome/Chromium，或设置 `WECHAT_COVER_BROWSER`；只影响封面。
-- **封面生成失败**：同一命令最多技术性重试一次；有永久封面则降级使用，没有封面则不创建草稿。
+- **封面生成失败或超过 45 秒**：终止浏览器；同一命令最多技术性重试一次，有永久封面则降级使用，没有封面则不创建草稿。
 - **公众号接口报错**：检查接口权限、IP 白名单、AppID/AppSecret 和账号别名。
 - **HTML 校验失败**：运行 `python3 scripts/validate_gzh_html.py article.html`，修到 ERROR 和 WARNING 都为零。
 - **出现作者占位符**：流水线会阻止上传；填写真实作者或删除署名组件。
@@ -163,4 +163,3 @@ python3 scripts/component_lint.py .
 
 - 根排版组件、`wechat-inline-visuals`、`wechat-html-cover` 和编排工作流按仓库根 `LICENSE` 的 AGPL-3.0 使用。
 - `baoyu-article-illustrator` 与 `baoyu-cover-image` 来源于 [JimLiu/baoyu-skills](https://github.com/JimLiu/baoyu-skills)，许可证保存在 `.agents/skills/LICENSE`。
-- `humanizer` 来源于 [blader/humanizer](https://github.com/blader/humanizer)，许可证保存在 `.agents/skills/humanizer/LICENSE`。

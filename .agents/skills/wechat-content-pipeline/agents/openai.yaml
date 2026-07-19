@@ -1,4 +1,4 @@
 interface:
   display_name: "微信公众号内容生产流水线"
-  short_description: "自动抓热点、写作去 AI 味、随机排版并发送公众号草稿"
-  default_prompt: "使用 $wechat-content-pipeline 为 A 账号自动发现最新科技热点，完成写作、去 AI 味、随机主题排版、同主题原生信息模块和 HTML 封面，并发送到草稿箱。"
+  short_description: "固定脚本完成热点写作、排版与公众号草稿"
+  default_prompt: "使用 $wechat-content-pipeline 为 A 账号运行完整流程，严格调用 pipeline_runtime.py，不创建临时渲染脚本、不做视觉检测，并把最终结果写入草稿箱。"

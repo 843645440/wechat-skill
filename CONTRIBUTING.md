@@ -5,7 +5,7 @@
 ## 项目结构速览
 
 - `SKILL.md` — 排版工作流主文档（Agent 入口）
-- `.agents/skills/` — 写作、图片、去 AI 味和完整内容流水线 Skill
+- `.agents/skills/` — 写作、图片、封面和完整内容流水线 Skill
 - `.baoyu-skills/` — Baoyu 图片 Skill 的项目级默认配置
 - `config/` — 可提交的账号内容档案，不得放凭证
 - `references/` — 6 套主题组件库 + 通用增量库 + 主题索引 + 主题生成器 + 触发用例

@@ -1,7 +1,11 @@
 import importlib.util
+import contextlib
+import io
 import json
 import os
+import tempfile
 import unittest
+from pathlib import Path
 
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -114,6 +118,32 @@ class InlineVisualPlanTests(unittest.TestCase):
 
     def test_cli_fixture_is_json_serializable(self):
         json.dumps(insight_plan(), ensure_ascii=False)
+
+    def test_cli_can_degrade_invalid_plan_to_empty_once(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            article = Path(tmp) / "article.md"
+            plan = Path(tmp) / "inline-visuals.json"
+            index = Path(tmp) / "theme-index.md"
+            article.write_text(ARTICLE, encoding="utf-8")
+            plan.write_text("{invalid", encoding="utf-8")
+            index.write_text(
+                "## 已注册主题\n`references/theme-moyu-green.md`\n", encoding="utf-8"
+            )
+            original = os.sys.argv
+            output = io.StringIO()
+            try:
+                os.sys.argv = [
+                    "validate_plan.py", "--plan", str(plan), "--article", str(article),
+                    "--theme-index", str(index), "--degrade-on-error",
+                    "--fallback-theme", "moyu-green",
+                ]
+                with contextlib.redirect_stdout(output):
+                    self.assertEqual(0, validate_inline_plan.main())
+            finally:
+                os.sys.argv = original
+            result = json.loads(output.getvalue())
+            self.assertIs(result["degraded"], True)
+            self.assertEqual([], json.loads(plan.read_text(encoding="utf-8"))["modules"])
 
 
 if __name__ == "__main__":

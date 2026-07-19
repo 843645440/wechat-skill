@@ -1,4 +1,0 @@
-interface:
-  display_name: "文章去 AI 味"
-  short_description: "清理机械表达和 AI 写作痕迹，同时保留原意与事实"
-  default_prompt: "使用 $humanizer 编辑这篇文章，去除 AI 写作痕迹并保留原意和事实。"

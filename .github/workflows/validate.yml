@@ -1,0 +1,31 @@
+name: Validate WeChat Skills
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  offline-validation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install skill validator dependency
+        run: python -m pip install --disable-pip-version-check PyYAML
+      - name: Run offline tests
+        run: python -m unittest discover -s tests -v
+      - name: Lint theme components
+        run: python scripts/component_lint.py .
+      - name: Validate bundled skills
+        run: >-
+          python scripts/validate_skill.py
+          .agents/skills/wechat-content-pipeline
+          .agents/skills/wechat-inline-visuals
+          .agents/skills/wechat-html-cover
+          .agents/skills/wechat-tech-insight-writer

@@ -15,7 +15,6 @@ STAGES = (
     "discover",
     "write",
     "fact-check",
-    "humanize",
     "format",
     "inline-visuals",
     "cover",
@@ -39,6 +38,25 @@ def now_iso():
     return dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z")
 
 
+def parse_iso(value):
+    if not value:
+        return None
+    return dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+def stage_record(status="pending", timestamp=None, message="", details=None):
+    completed = timestamp if status in ("completed", "failed", "skipped") else None
+    return {
+        "status": status,
+        "started_at": timestamp if status != "pending" else None,
+        "completed_at": completed,
+        "duration_ms": 0 if completed else None,
+        "updated_at": timestamp,
+        "message": message,
+        "details": details or {},
+    }
+
+
 def atomic_write(path, data):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     tmp = f"{path}.{os.getpid()}.tmp"
@@ -54,7 +72,7 @@ def load_job(path):
             job = json.load(f)
     except (OSError, json.JSONDecodeError) as exc:
         raise JobError(f"无法读取任务清单 {path}: {exc}") from exc
-    if job.get("schema_version") != 3 or not isinstance(job.get("stages"), dict):
+    if job.get("schema_version") != 4 or not isinstance(job.get("stages"), dict):
         raise JobError("任务清单格式不受支持")
     return job
 
@@ -92,7 +110,7 @@ def load_profiles(project_root, value):
     except (OSError, json.JSONDecodeError) as exc:
         raise JobError(f"无法读取账号内容档案 {path}: {exc}") from exc
     profiles = config.get("profiles")
-    if config.get("version") != 3 or not isinstance(profiles, dict):
+    if config.get("version") != 4 or not isinstance(profiles, dict):
         raise JobError("账号内容档案格式不受支持")
     return os.path.abspath(path), profiles
 
@@ -105,13 +123,10 @@ def cmd_init(args):
     if args.account not in profiles:
         raise JobError(f"账号 {args.account} 未在内容档案中配置")
     profile = profiles[args.account]
-    humanize = profile.get("humanize", {})
     inline_visuals = profile.get("inline_visuals", {})
     cover = profile.get("cover", {})
     if (
         profile.get("theme_strategy") != "random"
-        or humanize.get("required") is not True
-        or humanize.get("preserve_facts") is not True
         or inline_visuals.get("enabled") is not True
         or inline_visuals.get("mode") != "native-html"
         or type(inline_visuals.get("max_blocks")) is not int
@@ -124,8 +139,8 @@ def cmd_init(args):
         or profile.get("publishing", {}).get("target") != "draft"
     ):
         raise JobError(
-            "账号内容档案必须启用原生 HTML 信息模块、HTML 封面、随机主题、"
-            "强制去 AI 味并以草稿箱为终点"
+            "账号内容档案必须启用原生 HTML 信息模块、HTML 封面、随机主题，"
+            "并以草稿箱为终点"
         )
     job_dir = resolve_work_dir(project_root, args.work_dir, args.account)
     if os.path.isdir(job_dir):
@@ -138,7 +153,7 @@ def cmd_init(args):
     has_topic = bool(args.topic and args.topic.strip())
     discover_status = "completed" if has_topic else "pending"
     job = {
-        "schema_version": 3,
+        "schema_version": 4,
         "created_at": created,
         "updated_at": created,
         "project_root": project_root,
@@ -158,12 +173,12 @@ def cmd_init(args):
             "draft_result": "draft-result.json",
         },
         "stages": {
-            name: {
-                "status": discover_status if name == "discover" else "pending",
-                "updated_at": created if name == "discover" and has_topic else None,
-                "message": "使用触发请求提供的主题" if name == "discover" and has_topic else "",
-                "details": {"source": "provided"} if name == "discover" and has_topic else {},
-            }
+            name: stage_record(
+                discover_status if name == "discover" else "pending",
+                created if name == "discover" and has_topic else None,
+                "使用触发请求提供的主题" if name == "discover" and has_topic else "",
+                {"source": "provided"} if name == "discover" and has_topic else {},
+            )
             for name in STAGES
         },
     }
@@ -203,12 +218,16 @@ def cmd_topic(args):
     job = load_job(args.job)
     job["topic"] = value
     job["topic_source"] = args.source
-    job["stages"]["discover"] = {
-        "status": "completed",
-        "updated_at": now_iso(),
-        "message": "已确定本轮选题",
-        "details": {"source": args.source},
-    }
+    finished = now_iso()
+    current = job["stages"]["discover"]
+    started = current.get("started_at") or finished
+    duration = max(0, round((parse_iso(finished) - parse_iso(started)).total_seconds() * 1000))
+    job["stages"]["discover"] = stage_record(
+        "completed", started, "已确定本轮选题", {"source": args.source}
+    )
+    job["stages"]["discover"].update(
+        {"completed_at": finished, "duration_ms": duration, "updated_at": finished}
+    )
     job["state"] = summarize_state(job)
     save_job(args.job, job)
     print(value)
@@ -253,7 +272,38 @@ def cmd_choose_theme(args):
 def cmd_stage(args):
     job = load_job(args.job)
     item = job["stages"][args.name]
-    item.update({"status": args.status, "updated_at": now_iso(), "message": args.message or ""})
+    timestamp = now_iso()
+    if args.status == "pending":
+        item.update(
+            {
+                "status": "pending", "started_at": None, "completed_at": None,
+                "duration_ms": None, "updated_at": timestamp,
+            }
+        )
+    elif args.status == "running":
+        if item.get("status") != "running" or not item.get("started_at"):
+            item["started_at"] = timestamp
+        item.update(
+            {
+                "status": "running", "completed_at": None,
+                "duration_ms": None, "updated_at": timestamp,
+            }
+        )
+    else:
+        started = item.get("started_at") or timestamp
+        item.update(
+            {
+                "status": args.status, "started_at": started,
+                "completed_at": timestamp,
+                "duration_ms": max(
+                    0,
+                    round((parse_iso(timestamp) - parse_iso(started)).total_seconds() * 1000),
+                ),
+                "updated_at": timestamp,
+            }
+        )
+    if args.message is not None:
+        item["message"] = args.message
     item.setdefault("details", {}).update(
         parse_pairs(args.detail, "--detail")
     )
@@ -278,19 +328,46 @@ def validate_ready_html(job_path, job):
         raise JobError(f"排版产物仍包含占位内容：{match.group(0)}")
 
 
+def validate_inline_stage(job_path, job):
+    stage = job["stages"]["inline-visuals"]
+    if stage["status"] == "completed":
+        return
+    details = stage.get("details", {})
+    if not (
+        stage["status"] == "skipped"
+        and details.get("degraded") == "true"
+        and details.get("module_count") == "0"
+    ):
+        raise JobError("阶段 inline-visuals 尚未完成或未按规则降级")
+    plan_value = job["artifacts"].get("inline_visuals", "inline-visuals.json")
+    plan_path, _ = artifact_path(job_path, plan_value)
+    try:
+        with open(plan_path, encoding="utf-8") as f:
+            plan = json.load(f)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise JobError(f"无法读取降级后的信息模块计划：{exc}") from exc
+    selected_theme = job["stages"]["format"].get("details", {}).get("theme")
+    if (
+        not isinstance(plan, dict)
+        or plan.get("version") != 1
+        or plan.get("theme") != selected_theme
+        or plan.get("modules") != []
+    ):
+        raise JobError("降级后的信息模块计划必须是当前主题的空计划")
+
+
 def cmd_gate(args):
     job = load_job(args.job)
     for stage_name in (
         "discover",
         "write",
         "fact-check",
-        "humanize",
         "format",
-        "inline-visuals",
         "validate",
     ):
         if job["stages"][stage_name]["status"] != "completed":
             raise JobError(f"阶段 {stage_name} 尚未完成")
+    validate_inline_stage(args.job, job)
     validate_ready_html(args.job, job)
     cover_stage = job["stages"]["cover"]
     has_generated_cover = cover_stage["status"] == "completed"

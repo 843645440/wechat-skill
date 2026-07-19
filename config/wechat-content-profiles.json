@@ -1,5 +1,5 @@
 {
-  "version": 3,
+  "version": 4,
   "profiles": {
     "a": {
       "label": "公众号 A",
@@ -11,10 +11,6 @@
         "categories": ["人工智能", "科技产品", "就业变化", "中国高新技术"]
       },
       "theme_strategy": "random",
-      "humanize": {
-        "required": true,
-        "preserve_facts": true
-      },
       "inline_visuals": {
         "enabled": true,
         "mode": "native-html",
@@ -41,10 +37,6 @@
         "categories": ["AI 产业", "智能制造", "芯片与算力", "新能源", "企业竞争"]
       },
       "theme_strategy": "random",
-      "humanize": {
-        "required": true,
-        "preserve_facts": true
-      },
       "inline_visuals": {
         "enabled": true,
         "mode": "native-html",

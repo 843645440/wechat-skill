@@ -45,6 +45,6 @@ python3 scripts/wechat_publish.py --config wechat-accounts.json send \
 - 目标账号别名，例如 `a` 或 `b`。
 - 可选主题；省略时由流水线联网发现最新可靠热点。
 
-例如，Agent 的早间任务传入“为 A 账号运行完整流水线”，晚间任务传入“为 B 账号运行完整流水线”。Skill 会自行重建 `work/<account>/current/`，强制去 AI 味、随机排版并自动创建草稿。
+例如，Agent 的早间任务传入“为 A 账号运行完整流水线”，晚间任务传入“为 B 账号运行完整流水线”。Skill 会自行重建 `work/<account>/current/`，自动选择内容方案、随机排版并创建草稿。
 
 凭证必须由云端密钥管理或运行环境变量提供，不能出现在定时任务文本、仓库配置、日志或任务产物中。首次启用前，分别对 A、B 运行一次 `--dry-run` 和真实草稿联调。

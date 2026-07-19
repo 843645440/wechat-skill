@@ -19,6 +19,18 @@ SPEC = importlib.util.spec_from_file_location("render_html_cover", SCRIPT)
 render_html_cover = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(render_html_cover)
 
+BUILDER_SCRIPT = os.path.join(
+    ROOT,
+    ".agents",
+    "skills",
+    "wechat-html-cover",
+    "scripts",
+    "build_cover_spec.py",
+)
+BUILDER_SPEC = importlib.util.spec_from_file_location("build_html_cover_spec", BUILDER_SCRIPT)
+build_html_cover_spec = importlib.util.module_from_spec(BUILDER_SPEC)
+BUILDER_SPEC.loader.exec_module(build_html_cover_spec)
+
 
 class HtmlCoverTests(unittest.TestCase):
     def spec(self):
@@ -121,6 +133,40 @@ class HtmlCoverTests(unittest.TestCase):
             ".cache/ms-playwright/chromium-*/chrome-linux64/chrome",
             patterns,
         )
+
+    def test_builder_makes_valid_specs_for_stress_test_titles(self):
+        titles = [
+            "英特尔把Gemini引入芯片研发，工程师先面对责任重分配",
+            "NotebookLM更名，Google让研究工具直接运行代码",
+            "Google给AI广告加制作标签，广告主的低成本创意开始留痕",
+            "FREE Walk外骨骼进医院，治疗师从扶走转向调参",
+            "Claude教师版免费开放，Anthropic把AI接进备课流程",
+            "WAIC 2026发布300多款新品，职场人先面对任务重分配",
+        ]
+        for title in titles:
+            for template in render_html_cover.TEMPLATES:
+                with self.subTest(title=title, template=template):
+                    result = build_html_cover_spec.build_spec(
+                        title,
+                        "olive-journal",
+                        template,
+                        "科技与产业观察",
+                        "看见技术变化背后的真实影响",
+                    )
+                    self.assertEqual(title, "".join(result["title_lines"]))
+                    self.assertTrue(all(len(item) <= 18 for item in result["title_lines"]))
+                    if template == "kinetic-type":
+                        self.assertEqual([], result["highlights"])
+
+    def test_builder_rejects_title_over_32_characters(self):
+        with self.assertRaisesRegex(build_html_cover_spec.BuildError, "超过 32 字"):
+            build_html_cover_spec.split_title("这是一个明显超过封面长度限制而且没有任何必要继续延长下去的公众号文章标题")
+
+    def test_auto_template_is_stable_for_same_title(self):
+        title = "WAIC 2026发布300多款新品，职场人先面对任务重分配"
+        first = build_html_cover_spec.choose_template(title)
+        self.assertEqual(first, build_html_cover_spec.choose_template(title))
+        self.assertIn(first, render_html_cover.TEMPLATES)
 
 
 if __name__ == "__main__":

@@ -8,7 +8,7 @@
 2. 对应账号内容档案。
 3. 专项 Skill 的安全默认值。
 
-账号档案不能覆盖事实核查、安全边界、强制去 AI 味、随机主题和只写入草稿箱这些流水线规则。
+账号档案不能覆盖事实核查、安全边界、随机主题和只写入草稿箱这些流水线规则。
 
 ## 关键字段
 
@@ -16,7 +16,6 @@
 - `writer_instructions`：长期内容侧重点，不是单篇选题。
 - `topic_discovery`：自动热点搜索的领域和时间窗口。
 - `theme_strategy`：必须为 `random`，候选项来自根主题索引。
-- `humanize.required`：必须为 `true`。
 - `inline_visuals.enabled`：必须为 `true`。
 - `inline_visuals.mode`：必须为 `native-html`，正文只插入公众号原生 HTML，不生成正文图片。
 - `inline_visuals.max_blocks`：默认最多 3 个；内容不适合时允许为 0。
