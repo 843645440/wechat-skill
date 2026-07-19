@@ -38,8 +38,6 @@ ARTICLE = """# AI 进入客服之后，工作为什么没有变轻
 THEMES = {
     "moyu-green",
     "red-white",
-    "graphite-minimal",
-    "zen-whitespace",
     "moyu-ticket",
     "olive-journal",
 }

@@ -108,8 +108,6 @@ class ArticleRendererTests(unittest.TestCase):
         expected = {
             "moyu-green": ("TECH INSIGHT", "linear-gradient", "PART 01"),
             "red-white": ("本文看点", "background:#DC2626", "WORKFLOW"),
-            "graphite-minimal": ("QUOTE", "font-size:42px", "border-bottom:1px solid #E4E4E7"),
-            "zen-whitespace": ("本文脉络", "Georgia,'Times New Roman',serif", "01 · WORKFLOW"),
             "moyu-ticket": ("VALID FOR ONE READ", "END OF TICKET", "NO. 001"),
             "olive-journal": ("EDITORIAL NOTE", "END NOTE", "PART"),
         }

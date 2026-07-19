@@ -117,7 +117,7 @@ python3 scripts/wechat_publish.py --config wechat-accounts.json send \
 
 只排版已有文章并自动提取信息模块：
 
-> 使用 `$wechat-skill`，把 `article.md` 用石墨极简主题排成公众号 HTML。
+> 使用 `$wechat-skill`，把 `article.md` 用橄榄手记主题排成公众号 HTML。
 
 只生成原生信息模块并一次排好正文：
 

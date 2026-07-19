@@ -67,7 +67,6 @@ class PipelineJobTests(unittest.TestCase):
                 "# 主题索引\n\n"
                 "## 已注册主题\n\n"
                 "| 摸鱼绿 | `references/theme-moyu-green.md` |\n"
-                "| 石墨 | `references/theme-graphite-minimal.md` |\n\n"
                 "## 新主题登记流程\n\n"
                 "生成器见 `references/theme-generator.md`。\n"
             )
@@ -219,7 +218,7 @@ class PipelineJobTests(unittest.TestCase):
             with contextlib.redirect_stdout(second):
                 pipeline_job.cmd_choose_theme(args)
             selected = first.getvalue().strip()
-            self.assertIn(selected, {"moyu-green", "graphite-minimal"})
+            self.assertIn(selected, {"moyu-green"})
             self.assertEqual(selected, second.getvalue().strip())
 
     def test_draft_gate_requires_cover(self):
