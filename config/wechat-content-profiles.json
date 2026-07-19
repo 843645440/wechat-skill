@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "profiles": {
     "a": {
       "label": "公众号 A",
@@ -15,17 +15,16 @@
         "required": true,
         "preserve_facts": true
       },
-      "illustrations": {
+      "inline_visuals": {
         "enabled": true,
-        "backend": "html",
-        "density": "balanced",
-        "theme": null
+        "mode": "native-html",
+        "max_blocks": 3
       },
       "cover": {
         "enabled": true,
         "backend": "html",
         "aspect": "2.35:1",
-        "theme": null,
+        "theme": "article",
         "text": "title-only"
       },
       "publishing": {
@@ -46,17 +45,16 @@
         "required": true,
         "preserve_facts": true
       },
-      "illustrations": {
+      "inline_visuals": {
         "enabled": true,
-        "backend": "html",
-        "density": "balanced",
-        "theme": null
+        "mode": "native-html",
+        "max_blocks": 3
       },
       "cover": {
         "enabled": true,
         "backend": "html",
         "aspect": "2.35:1",
-        "theme": null,
+        "theme": "article",
         "text": "title-only"
       },
       "publishing": {

@@ -17,7 +17,14 @@ SPEC.loader.exec_module(pipeline_job)
 
 
 class PipelineJobTests(unittest.TestCase):
-    def init_job(self, tmp, topic="AI 如何改变初级程序员的工作", visual_backend="html"):
+    def init_job(
+        self,
+        tmp,
+        topic="AI 如何改变初级程序员的工作",
+        inline_mode="native-html",
+        max_blocks=3,
+        cover_backend="html",
+    ):
         config_dir = os.path.join(tmp, "config")
         references_dir = os.path.join(tmp, "references")
         os.makedirs(config_dir, exist_ok=True)
@@ -29,13 +36,26 @@ class PipelineJobTests(unittest.TestCase):
         ) as f:
             json.dump(
                 {
-                    "version": 2,
+                    "version": 3,
                     "profiles": {
                         "a": {
                             "theme_strategy": "random",
-                            "humanize": {"required": True},
-                            "illustrations": {"backend": visual_backend},
-                            "cover": {"backend": visual_backend},
+                            "humanize": {
+                                "required": True,
+                                "preserve_facts": True,
+                            },
+                            "inline_visuals": {
+                                "enabled": True,
+                                "mode": inline_mode,
+                                "max_blocks": max_blocks,
+                            },
+                            "cover": {
+                                "enabled": True,
+                                "backend": cover_backend,
+                                "aspect": "2.35:1",
+                                "theme": "article",
+                                "text": "title-only",
+                            },
                             "publishing": {"target": "draft"},
                         }
                     },
@@ -75,7 +95,14 @@ class PipelineJobTests(unittest.TestCase):
             pipeline_job.cmd_stage(args)
 
     def complete_required_stages(self, job_path):
-        for name in ("write", "fact-check", "humanize", "format", "validate"):
+        for name in (
+            "write",
+            "fact-check",
+            "humanize",
+            "format",
+            "inline-visuals",
+            "validate",
+        ):
             self.update_stage(job_path, name, "completed")
 
     def test_init_uses_account_current_workspace_and_given_topic(self):
@@ -83,7 +110,7 @@ class PipelineJobTests(unittest.TestCase):
             job_path = self.init_job(tmp)
             with open(job_path, encoding="utf-8") as f:
                 job = json.load(f)
-            self.assertEqual(job["schema_version"], 2)
+            self.assertEqual(job["schema_version"], 3)
             self.assertEqual(job["account"], "a")
             self.assertEqual(job["topic_source"], "provided")
             self.assertEqual(job["stages"]["discover"]["status"], "completed")
@@ -91,8 +118,10 @@ class PipelineJobTests(unittest.TestCase):
                 os.path.normpath(os.path.dirname(job_path)),
                 os.path.normpath(os.path.join(tmp, "work", "a", "current")),
             )
+            self.assertFalse(os.path.exists(os.path.join(os.path.dirname(job_path), "illustrations")))
+            self.assertTrue(os.path.isdir(os.path.join(os.path.dirname(job_path), "cover")))
 
-    def test_account_profiles_enforce_html_visuals_random_theme_humanize_and_draft(self):
+    def test_account_profiles_enforce_native_html_modules_and_html_cover(self):
         profile_path = os.path.join(ROOT, "config", "wechat-content-profiles.json")
         with open(profile_path, encoding="utf-8") as f:
             profiles = json.load(f)["profiles"]
@@ -100,16 +129,30 @@ class PipelineJobTests(unittest.TestCase):
         for profile in profiles.values():
             self.assertEqual(profile["theme_strategy"], "random")
             self.assertIs(profile["humanize"]["required"], True)
-            self.assertEqual(profile["illustrations"]["backend"], "html")
+            self.assertIs(profile["humanize"]["preserve_facts"], True)
+            self.assertIs(profile["inline_visuals"]["enabled"], True)
+            self.assertEqual(profile["inline_visuals"]["mode"], "native-html")
+            self.assertLessEqual(profile["inline_visuals"]["max_blocks"], 3)
+            self.assertIs(profile["cover"]["enabled"], True)
             self.assertEqual(profile["cover"]["backend"], "html")
             self.assertEqual(profile["publishing"]["target"], "draft")
             self.assertNotIn("schedule", profile)
             self.assertNotIn("publish", profile["publishing"])
 
-    def test_init_rejects_ai_image_backend_for_full_pipeline(self):
+    def test_init_rejects_non_native_body_visual_mode(self):
         with tempfile.TemporaryDirectory() as tmp:
-            with self.assertRaisesRegex(pipeline_job.JobError, "HTML 视觉图"):
-                self.init_job(tmp, visual_backend="agnes")
+            with self.assertRaisesRegex(pipeline_job.JobError, "原生 HTML 信息模块"):
+                self.init_job(tmp, inline_mode="png")
+
+    def test_init_rejects_non_html_cover_backend(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(pipeline_job.JobError, "HTML 封面"):
+                self.init_job(tmp, cover_backend="agnes")
+
+    def test_init_rejects_more_than_three_native_modules(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(pipeline_job.JobError, "原生 HTML 信息模块"):
+                self.init_job(tmp, max_blocks=4)
 
     def test_status_alias_shows_job(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -172,7 +215,7 @@ class PipelineJobTests(unittest.TestCase):
             job_dir = os.path.dirname(job_path)
             with open(os.path.join(job_dir, "article.html"), "w", encoding="utf-8") as f:
                 f.write('<section><p><span leaf="">正文。</span></p></section>')
-            for name in ("write", "fact-check", "format", "validate"):
+            for name in ("write", "fact-check", "format", "inline-visuals", "validate"):
                 self.update_stage(job_path, name, "completed")
             self.update_stage(job_path, "cover", "completed")
             gate = pipeline_job.build_parser().parse_args(["gate", "--job", job_path])

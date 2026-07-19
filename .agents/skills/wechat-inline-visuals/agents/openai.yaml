@@ -1,0 +1,4 @@
+interface:
+  display_name: "微信公众号原生信息模块"
+  short_description: "从正文提取信息并生成同主题公众号原生 HTML 模块"
+  default_prompt: "使用 $wechat-inline-visuals 从文章提取适合可视化的信息，并按当前排版主题生成公众号原生 HTML 模块。"

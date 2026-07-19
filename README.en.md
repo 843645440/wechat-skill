@@ -4,7 +4,7 @@
 
 # wechat-skill · WeChat Content Skill Toolkit
 
-**Reusable Skills for topic discovery, writing, humanization, images, layout, and multi-account drafts**
+**Reusable Skills for topic discovery, writing, humanization, native HTML information design, layout, and multi-account drafts**
 
 6 curated themes + theme generator · code blocks / images / GIFs · auto section numbers & keyword marks · two-gate quality checks
 
@@ -20,7 +20,7 @@ English ｜ [中文](README.md)
 
 ---
 
-A project-level WeChat content toolkit for AI agents (Claude Code / Codex / Cursor …). The root Skill renders paste-safe HTML; bundled Skills can also discover current topics, write a Chinese article, humanize it, generate images, choose a registered theme at random, validate the result, and create a draft in a selected WeChat account.
+A project-level WeChat content toolkit for AI agents (Claude Code / Codex / Cursor …). The root Skill renders paste-safe HTML and extracts selected insights, comparisons, processes, or verified metrics into theme-native HTML modules. Bundled Skills can also discover current topics, write and humanize a Chinese article, generate a deterministic cover from either an editorial-ledger or kinetic-type template, validate the result, and create a draft in a selected WeChat account.
 
 ## ✨ Features
 
@@ -28,11 +28,12 @@ A project-level WeChat content toolkit for AI agents (Claude Code / Codex / Curs
 - **Theme generator**: none fit? Describe a style in one line or drop a reference image, and generate a fresh component library saved for reuse (see `references/theme-generator.md`).
 - **Full content support**: code blocks (dark/light, monospace), images, GIFs (with an animated badge), inline code, quotes, lists, product badges.
 - **Smart layout**: auto section numbering (last chapter ∞ / ///), 1–3 keyword underlines per paragraph, intro card & TOC distilled from the body, de-duplicated signature.
+- **Native information design**: after base layout, extract 0–3 useful modules and reuse the current theme components; no body-image generation or screenshot loop.
 - **Full-width CJK punctuation** in prose; kept as-is inside code blocks.
 - **Paste-safe**: all styles inlined, every text node wrapped in `<span leaf="">`, avoiding `<style>/<div>/class/grid/position` that WeChat strips.
 - **Two-gate quality checks**: `component_lint.py` (library source) + `validate_gzh_html.py` (final output) form a reproducible edit → verify → fix loop.
 - **One-click copy**: a preview page with a **Copy** button — click to copy the rich text and paste straight into WeChat, no manual select-all.
-- **Multi-account pipeline**: account-isolated credentials and assets, mandatory humanization, random themes, and automatic draft creation. Scheduling stays in the external agent rather than this Skill.
+- **Multi-account pipeline**: account-isolated credentials and cover assets, mandatory humanization, random themes, theme-native information modules, and automatic draft creation. Scheduling stays in the external agent rather than this Skill.
 
 ## ✅ Good for / ❌ Not for
 
@@ -55,7 +56,7 @@ A project-level WeChat content toolkit for AI agents (Claude Code / Codex / Curs
 
 ## 🎨 6 Curated Themes
 
-One long-form article laid out in all 6 themes (full-fidelity screenshots with real images):
+One long-form article laid out in all 6 themes (full-fidelity screenshots):
 
 <table>
 <tr>
@@ -96,7 +97,7 @@ cd wechat-skill
 
 Then tell your agent:
 
-> Use `$wechat-content-pipeline` for account A. Find a current technology topic, write and humanize the article, use a random registered theme, and create a WeChat draft.
+> Use `$wechat-content-pipeline` for account A. Find a current technology topic, write and humanize the article, use a random registered theme, add theme-native information modules and an HTML-rendered cover, then create a WeChat draft.
 
 For layout-only environments, install the root Skill with `npx skills add https://github.com/843645440/wechat-skill`.
 
@@ -116,8 +117,9 @@ Scan to join the **official WeChat Work group** (dynamic QR, auto-invite) — ch
 2. **Load libraries** — the chosen theme lib + the shared incremental lib (code/image/label).
 3. **Parse Markdown** — headings, chapters, bold, highlight, quotes, images, code, lists.
 4. **Assemble HTML** — from real components; apply numbering, underlines, full-width punctuation, signature.
-5. **Validate** — run `validate_gzh_html.py`, ship only at 0 ERROR.
-6. **Output** — a clean fragment + a preview page with a **Copy** button; open it, click "Copy to WeChat", then paste into the editor (no manual select-all).
+5. **Add native modules** — extract 0–3 supported structures and insert components from the current theme directly into the article HTML.
+6. **Validate** — run `validate_gzh_html.py`, ship only at 0 ERROR.
+7. **Output** — a clean fragment + a preview page with a **Copy** button; open it, click "Copy to WeChat", then paste into the editor (no manual select-all).
 
 ## 🧩 Platform limits (enforced)
 
@@ -137,6 +139,7 @@ Source gate flags `white-space:pre` (blank bloat), full-border dashed frames in 
 - **Constraint beats freedom** — preset palettes + fixed components lock in a quality floor instead of letting the model improvise each time.
 - **Paste-safe by design** — fully inlined styles + every text node in `<span leaf="">`, avoiding exactly what the WeChat editor strips.
 - **Quality by script, not discipline** — two gates (`component_lint` at source + `validate_gzh_html` on output) deterministically check platform rules and punctuation.
+- **No body-image detour** — structured content stays as native WeChat HTML, so Chinese text and numbering do not depend on image generation, OCR, or vision retries.
 - **Model-agnostic** — layout logic lives in libraries and scripts, not any one model's tricks; Claude / GPT / Gemini / Chinese models all produce the same result.
 - **Agent-friendly** — input and output are plain-text Markdown / HTML any agent can read, write, edit and verify — native to Claude Code / Codex / Cursor.
 

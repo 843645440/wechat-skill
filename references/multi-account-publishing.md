@@ -1,6 +1,6 @@
 # 多账号草稿与外部 Agent 触发
 
-发布层按账号隔离凭证、`access_token`、封面素材和正文图片。账号必须已开通对应接口权限，并将执行环境的公网 IP 加入公众号白名单。
+发布层按账号隔离凭证、`access_token` 和封面素材。原文自带远程图片时，发布脚本仍会按目标账号上传；自动内容流水线不会主动生成正文图片。账号必须已开通对应接口权限，并将执行环境的公网 IP 加入公众号白名单。
 
 ## 1. 配置账号
 
@@ -25,7 +25,7 @@ python3 scripts/wechat_publish.py --config wechat-accounts.json send \
   --cover work/a/current/cover/cover.png --action draft --dry-run
 ```
 
-去掉 `--dry-run` 后，脚本会校验 HTML，将正文图片和封面上传到 A 账号，再创建草稿。图片素材属于各自账号，同一 HTML 发给 A/B 时也必须分别上传。
+去掉 `--dry-run` 后，脚本会校验 HTML，上传封面和原文自带的远程图片，再创建草稿。素材属于各自账号；同一篇带原图的 HTML 发给 A/B 时也必须分别上传。
 
 `wechat-content-pipeline` 的固定终点是草稿箱：
 

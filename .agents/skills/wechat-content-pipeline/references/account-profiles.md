@@ -1,6 +1,6 @@
 # 账号内容档案
 
-读取项目根目录 `config/wechat-content-profiles.json`。该文件只保存受众、内容偏好和图片偏好，不保存发布时间、AppID、AppSecret、access token 或素材 ID。
+读取项目根目录 `config/wechat-content-profiles.json`。该文件只保存受众、内容偏好、原生模块和封面偏好，不保存发布时间、AppID、AppSecret、access token 或素材 ID。
 
 ## 覆盖顺序
 
@@ -15,12 +15,14 @@
 - `audience`：账号主要读者。
 - `writer_instructions`：长期内容侧重点，不是单篇选题。
 - `topic_discovery`：自动热点搜索的领域和时间窗口。
-- `theme_strategy`：必须为 `random`；候选项来自根主题索引。
+- `theme_strategy`：必须为 `random`，候选项来自根主题索引。
 - `humanize.required`：必须为 `true`。
-- `illustrations.backend`、`cover.backend`：必须为 `html`，完整流水线只使用确定性 HTML/CSS 截图，不使用生成式图片模型。
-- `illustrations.density`：正文视觉图密度；`balanced` 通常生成 2—3 张。
-- `illustrations.theme`、`cover.theme`：视觉色板；空值表示从 `wechat-html-visuals` 的注册色板中选择，同篇保持一致。
-- 图片后端缺失只降级图片阶段，排版与校验仍要完成；不得自动改用 Agnes 或其他 AI 生图。
+- `inline_visuals.enabled`：必须为 `true`。
+- `inline_visuals.mode`：必须为 `native-html`，正文只插入公众号原生 HTML，不生成正文图片。
+- `inline_visuals.max_blocks`：默认最多 3 个；内容不适合时允许为 0。
+- `cover.backend`：必须为 `html`，只用确定性 HTML/CSS 截图生成封面。
+- `cover.theme`：`article` 表示跟随本轮文章主题。
+- 封面模板现有 `editorial-ledger` 与 `kinetic-type` 两套，暂不在账号档案中绑定；以后可单独增加账号规则。
 - `publishing.target`：必须为 `draft`。
 
-账号可以有不同读者和热点方向，但排版主题不固定。Skill 本身不读取或执行时间字段，Agent 自带定时任务只需传账号别名和可选主题。
+浏览器只用于封面，不用于正文模块。封面失败不得自动改用 Agnes 或其他 AI 生图。账号可以有不同读者和热点方向，但排版主题不固定。Skill 不读取或执行时间字段；Agent 自带定时任务只需传账号别名和可选主题。

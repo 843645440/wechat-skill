@@ -16,9 +16,9 @@ STAGES = (
     "write",
     "fact-check",
     "humanize",
-    "illustrate",
-    "cover",
     "format",
+    "inline-visuals",
+    "cover",
     "validate",
     "draft",
 )
@@ -54,7 +54,7 @@ def load_job(path):
             job = json.load(f)
     except (OSError, json.JSONDecodeError) as exc:
         raise JobError(f"无法读取任务清单 {path}: {exc}") from exc
-    if job.get("schema_version") != 2 or not isinstance(job.get("stages"), dict):
+    if job.get("schema_version") != 3 or not isinstance(job.get("stages"), dict):
         raise JobError("任务清单格式不受支持")
     return job
 
@@ -92,7 +92,7 @@ def load_profiles(project_root, value):
     except (OSError, json.JSONDecodeError) as exc:
         raise JobError(f"无法读取账号内容档案 {path}: {exc}") from exc
     profiles = config.get("profiles")
-    if config.get("version") != 2 or not isinstance(profiles, dict):
+    if config.get("version") != 3 or not isinstance(profiles, dict):
         raise JobError("账号内容档案格式不受支持")
     return os.path.abspath(path), profiles
 
@@ -105,27 +105,40 @@ def cmd_init(args):
     if args.account not in profiles:
         raise JobError(f"账号 {args.account} 未在内容档案中配置")
     profile = profiles[args.account]
+    humanize = profile.get("humanize", {})
+    inline_visuals = profile.get("inline_visuals", {})
+    cover = profile.get("cover", {})
     if (
         profile.get("theme_strategy") != "random"
-        or profile.get("humanize", {}).get("required") is not True
-        or profile.get("illustrations", {}).get("backend") != "html"
-        or profile.get("cover", {}).get("backend") != "html"
+        or humanize.get("required") is not True
+        or humanize.get("preserve_facts") is not True
+        or inline_visuals.get("enabled") is not True
+        or inline_visuals.get("mode") != "native-html"
+        or type(inline_visuals.get("max_blocks")) is not int
+        or not 0 <= inline_visuals["max_blocks"] <= 3
+        or cover.get("enabled") is not True
+        or cover.get("backend") != "html"
+        or cover.get("aspect") != "2.35:1"
+        or cover.get("theme") != "article"
+        or cover.get("text") != "title-only"
         or profile.get("publishing", {}).get("target") != "draft"
     ):
-        raise JobError("账号内容档案必须启用 HTML 视觉图、随机主题、强制去 AI 味并以草稿箱为终点")
+        raise JobError(
+            "账号内容档案必须启用原生 HTML 信息模块、HTML 封面、随机主题、"
+            "强制去 AI 味并以草稿箱为终点"
+        )
     job_dir = resolve_work_dir(project_root, args.work_dir, args.account)
     if os.path.isdir(job_dir):
         shutil.rmtree(job_dir)
     elif os.path.exists(job_dir):
         raise JobError(f"工作区路径不是目录：{job_dir}")
-    os.makedirs(os.path.join(job_dir, "illustrations"))
     os.makedirs(os.path.join(job_dir, "cover"))
 
     created = now_iso()
     has_topic = bool(args.topic and args.topic.strip())
     discover_status = "completed" if has_topic else "pending"
     job = {
-        "schema_version": 2,
+        "schema_version": 3,
         "created_at": created,
         "updated_at": created,
         "project_root": project_root,
@@ -138,7 +151,7 @@ def cmd_init(args):
         "artifacts": {
             "article": "article.md",
             "sources": "sources.md",
-            "illustrations": "illustrations",
+            "inline_visuals": "inline-visuals.json",
             "cover": "cover/cover.png",
             "html": "article.html",
             "preview": "article_preview.html",
@@ -267,7 +280,15 @@ def validate_ready_html(job_path, job):
 
 def cmd_gate(args):
     job = load_job(args.job)
-    for stage_name in ("discover", "write", "fact-check", "humanize", "format", "validate"):
+    for stage_name in (
+        "discover",
+        "write",
+        "fact-check",
+        "humanize",
+        "format",
+        "inline-visuals",
+        "validate",
+    ):
         if job["stages"][stage_name]["status"] != "completed":
             raise JobError(f"阶段 {stage_name} 尚未完成")
     validate_ready_html(args.job, job)

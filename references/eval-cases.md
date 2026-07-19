@@ -18,7 +18,7 @@
 - "把内容做成 PPT" → PPT skill
 - "帮我排版这个 Word 文档" → 排版对象不是公众号
 - "写一篇公众号文章" → `wechat-tech-insight-writer`
-- "从这个选题开始，写作、配图、排版后发到 A 账号草稿箱" → `wechat-content-pipeline`
+- "从这个选题开始，写作、原生信息模块、排版后发到 A 账号草稿箱" → `wechat-content-pipeline`
 - "每天早上给 A、晚上给 B 自动生成并放进各自草稿箱" → 外部 Agent 定时任务触发 `wechat-content-pipeline`
 - "为 B 账号自动找今天的科技热点并生成草稿" → `wechat-content-pipeline` 联网选题；不要求用户提供内容文档
 

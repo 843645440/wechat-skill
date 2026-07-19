@@ -1,6 +1,6 @@
 # wechat-skill 使用指南
 
-`wechat-skill` 是一个面向云端 AI Agent 的微信公众号内容工具包。它既能单独完成写作、去 AI 味、配图或排版，也能通过编排 Skill 自动完成“选题到草稿箱”的完整流程。
+`wechat-skill` 是面向云端 AI Agent 的微信公众号内容工具包。它能单独完成写作、去 AI 味或排版，也能通过编排 Skill 自动完成“选题到草稿箱”的完整流程。
 
 ## 1. Skill 组成
 
@@ -9,11 +9,10 @@
 | `wechat-skill` | 根 Skill：已有文章排版、HTML 校验、多账号草稿上传 |
 | `wechat-tech-insight-writer` | 科技、AI、产业、企业和民生深度写作 |
 | `humanizer` | 删除机械表达和 AI 写作痕迹；完整流水线中强制执行 |
-| `wechat-html-visuals` | 默认图片后端：用固定 HTML/CSS 模板生成稳定封面和正文视觉卡 |
-| `baoyu-article-illustrator` | 可选：使用生成式图片模型制作正文配图 |
-| `baoyu-cover-image` | 可选：使用生成式图片模型制作封面 |
-| `agnes-image-gen` | 可选：Agnes Image 2.1 Flash API 后端 |
-| `wechat-content-pipeline` | 联网选热点并编排以上全部阶段，最终创建草稿 |
+| `wechat-inline-visuals` | 从正文提取信息，插入与当前排版主题一致的公众号原生 HTML 模块 |
+| `wechat-html-cover` | 用编辑报刊风或动态字构风 HTML/CSS 模板生成确定性封面 PNG |
+| `wechat-content-pipeline` | 联网选热点并编排全部阶段，最终创建草稿 |
+| `baoyu-*`、`agnes-image-gen` | 可选独立图片能力；完整流水线不会调用 |
 
 ## 2. 安装和加载
 
@@ -24,9 +23,9 @@ git clone https://github.com/843645440/wechat-skill.git
 cd wechat-skill
 ```
 
-确保云端 Agent 能读取根 `SKILL.md` 和 `.agents/skills/`。不要只复制根 Skill，否则写作、Humanizer、图片和完整工作流不会一起加载。
+确保云端 Agent 能读取根 `SKILL.md` 和 `.agents/skills/`。不要只复制根 Skill，否则写作、Humanizer、原生信息模块、封面和完整工作流不会一起加载。
 
-运行环境需要 Python 3 和 Chrome/Chromium。自动热点发现需要联网能力；默认图片阶段只在本地渲染 HTML，不需要图片 API Key；创建草稿需要公众号 API 权限。
+运行环境需要 Python 3。Chrome/Chromium 只用于生成封面；正文信息模块是公众号原生 HTML，不需要浏览器截图或图片 API Key。自动热点发现需要联网能力，创建草稿需要公众号 API 权限。
 
 ## 3. 配置公众号账号
 
@@ -45,22 +44,22 @@ export WECHAT_B_APP_ID='公众号 B 的 AppID'
 export WECHAT_B_APP_SECRET='公众号 B 的 AppSecret'
 ```
 
-默认图片后端会自动查找 Chrome、Chromium 或 Playwright Chromium。只有自动发现失败时才需要指定浏览器路径：
+封面渲染器会自动查找 Chrome、Chromium 或 Playwright Chromium。只有自动发现失败时才设置：
 
 ```bash
-export HTML_VISUAL_BROWSER='/path/to/chrome-or-chromium'
+export WECHAT_COVER_BROWSER='/path/to/chrome-or-chromium'
 ```
 
-可以用仓库测试规格做一次真实离线截图，不连接任何图片 API：
+可以用仓库测试规格做一次离线封面渲染，不连接图片 API：
 
 ```bash
-python3 .agents/skills/wechat-html-visuals/scripts/render_visual.py \
-  --spec tests/fixtures/html-visual-cover.json --output cover.png
+python3 .agents/skills/wechat-html-cover/scripts/render_cover.py \
+  --spec tests/fixtures/html-cover.json \
+  --html-output /tmp/wechat-cover.html \
+  --output /tmp/wechat-cover.png
 ```
 
-Agnes 保留为独立可选 Skill，但完整流水线不再调用它。只有明确单独使用 Agnes 时才配置 `AGNES_API_KEY`。
-
-若账号已有固定封面素材，可额外设置：
+若账号已有固定封面素材，可设置：
 
 ```bash
 export WECHAT_A_THUMB_MEDIA_ID='A 账号永久封面素材 ID'
@@ -80,39 +79,35 @@ python3 scripts/wechat_publish.py --config wechat-accounts.json send \
 
 ## 4. 完整自动工作流
 
-### 不提供选题，自动抓热点
+不提供选题时，对 Agent 说：
 
-对 Agent 说：
+> 使用 `$wechat-content-pipeline` 为 A 账号运行完整流程。联网发现最新可靠的科技热点，完成写作、事实核验、去 AI 味、随机主题排版、同主题原生信息模块和封面，并自动发送到 A 账号草稿箱。
 
-> 使用 `$wechat-content-pipeline` 为 A 账号运行完整流程。不要预设选题，联网发现最新可靠的科技热点，完成写作、事实核验、去 AI 味、配图、随机主题排版，并自动发送到 A 账号草稿箱。
-
-### 提供明确选题
+提供明确选题时：
 
 > 使用 `$wechat-content-pipeline` 为 B 账号写一篇“AI 如何改变基层客服工作”的文章，完成全部流程并发送到 B 账号草稿箱。
-
-用户不需要准备 `article.md`。写作阶段会自动生成它；该文件只是 Skill 之间的内部交接文件。
 
 完整流程固定为：
 
 1. 使用给定选题，或联网比较最新热点。
-2. 写作并生成内部来源记录。
-3. 核对时效事实、数据和企业表述。
-4. 强制运行 Humanizer，再次核对事实。
-5. 将结构化内容套入固定 HTML/CSS 模板，浏览器截图生成正文视觉图和封面。
-6. 从已注册主题中随机选择排版主题。
-7. 生成并严格校验公众号 HTML。
+2. 写作、来源记录和事实核验。
+3. 强制运行 Humanizer，再次核对事实。
+4. 随机选择注册主题并完成基础排版。
+5. 从正文提取 0—3 个观点、比较、流程或已核验数据，直接插入当前主题 HTML。
+6. 用固定 HTML/CSS 生成唯一的封面 PNG。
+7. 严格校验公众号 HTML。
 8. 自动创建指定账号草稿，到此结束。
 
-流水线不会自动公开发布。人工审核发生在微信公众号草稿箱。
+正文阶段不创建 PNG、SVG 或截图，不调用生图 API，不做 AI 视觉检测，也不上传正文视觉素材。流水线不会公开发布；人工审核发生在微信公众号草稿箱。
 
 ## 5. 在 Agent 定时任务中使用
 
-定时由 Agent 自带的自动化能力负责，Skill 内没有 cron 或固定时间。可以建立两个外部任务：
+定时由 Agent 自带自动化能力负责，Skill 内没有 cron 或固定时间。可以建立两个外部任务：
 
-- 早间任务提示词：`使用 $wechat-content-pipeline 为 A 账号运行完整流程；不指定选题，自动发现热点并创建草稿。`
-- 晚间任务提示词：`使用 $wechat-content-pipeline 为 B 账号运行完整流程；不指定选题，自动发现热点并创建草稿。`
+- 早间：`使用 $wechat-content-pipeline 为 A 账号运行完整流程；不指定选题，自动发现热点并创建草稿。`
+- 晚间：`使用 $wechat-content-pipeline 为 B 账号运行完整流程；不指定选题，自动发现热点并创建草稿。`
 
-如定时任务直接提供选题，流水线会跳过热点选择。排版主题仍会随机选择，不按 A/B 账号写死。
+定时任务直接提供选题时，流水线跳过热点选择。排版主题仍随机选择，不按账号写死。
 
 ## 6. 单独使用某项能力
 
@@ -120,15 +115,21 @@ python3 scripts/wechat_publish.py --config wechat-accounts.json send \
 
 > 使用 `$wechat-tech-insight-writer` 写一篇关于人形机器人进入汽车工厂的公众号文章。
 
-只排版已有文章：
+只排版已有文章并自动提取信息模块：
 
 > 使用 `$wechat-skill`，把 `article.md` 用石墨极简主题排成公众号 HTML。
 
-只去 AI 味：
+只生成原生信息模块：
 
-> 使用 `$humanizer` 编辑 `article.md`，保留事实、数据和原观点。
+> 使用 `$wechat-inline-visuals`，从已排版的文章提取信息并按当前主题插入原生 HTML 模块。
 
-只生成稳定封面或正文视觉图时调用 `$wechat-html-visuals`。只有明确希望使用生成式图片时，才分别调用 `$baoyu-cover-image`、`$baoyu-article-illustrator` 或 `$agnes-image-gen`。
+只生成稳定封面：
+
+> 使用 `$wechat-html-cover`，根据最终标题和当前主题生成公众号封面。
+
+封面模板可选 `editorial-ledger` 与 `kinetic-type`。两套模板均跟随正文主题色，目前不按 A/B 账号写死；需要固定账号规则时再修改账号档案。
+
+只有明确希望使用生成式图片时，才单独调用 `$baoyu-cover-image`、`$baoyu-article-illustrator` 或 `$agnes-image-gen`；它们不属于默认流水线。
 
 ## 7. 运行产物
 
@@ -139,17 +140,17 @@ work/a/current/
 work/b/current/
 ```
 
-常见产物包括 `article.md`、`sources.md`、`article.html`、`article_preview.html`、`illustrations/specs/*.json`、视觉图 HTML/PNG、`cover/cover.spec.json`、`cover/cover.png` 和 `draft-result.json`。新任务会覆盖同账号上一轮临时产物；微信草稿箱中的文章不受影响。
+产物包括 `article.md`、`sources.md`、`inline-visuals.json`、`article.html`、`article_preview.html`、`cover/cover.spec.json`、`cover/cover.html`、`cover/cover.png` 和 `draft-result.json`。新任务覆盖同账号上一轮临时产物；微信草稿箱不受影响。
 
 ## 8. 常见阻塞
 
 - **没有可靠热点**：本轮停止，不使用旧闻或传闻凑稿。
-- **找不到浏览器**：安装 Chrome/Chromium，或设置 `HTML_VISUAL_BROWSER`；流水线不会自动回退到 AI 生图。
-- **视觉 JSON 过长**：按渲染器错误缩短字段后首次生成；不要绕过限制，也不要生成 V2/V3。
-- **PNG 生成失败**：同一浏览器命令最多技术性重试一次；正文图片可降级，没有封面或默认素材时不创建草稿。
+- **原生模块计划校验失败**：修正锚点或删除无证据模块；不要补造事实。
+- **找不到浏览器**：安装 Chrome/Chromium，或设置 `WECHAT_COVER_BROWSER`；只影响封面。
+- **封面生成失败**：同一命令最多技术性重试一次；有永久封面则降级使用，没有封面则不创建草稿。
 - **公众号接口报错**：检查接口权限、IP 白名单、AppID/AppSecret 和账号别名。
 - **HTML 校验失败**：运行 `python3 scripts/validate_gzh_html.py article.html`，修到 ERROR 和 WARNING 都为零。
-- **出现作者占位符**：流水线会阻止上传；填写真实作者或删除整个署名组件。
+- **出现作者占位符**：流水线会阻止上传；填写真实作者或删除署名组件。
 
 开发或修改 Skill 后运行：
 
@@ -160,7 +161,6 @@ python3 scripts/component_lint.py .
 
 ## 9. 来源与许可
 
-- 根排版组件和工作流按仓库根 `LICENSE` 的 AGPL-3.0 使用。
+- 根排版组件、`wechat-inline-visuals`、`wechat-html-cover` 和编排工作流按仓库根 `LICENSE` 的 AGPL-3.0 使用。
 - `baoyu-article-illustrator` 与 `baoyu-cover-image` 来源于 [JimLiu/baoyu-skills](https://github.com/JimLiu/baoyu-skills)，许可证保存在 `.agents/skills/LICENSE`。
-- `wechat-html-visuals` 和确定性浏览器渲染脚本为本仓库自有实现，不调用第三方图片生成 API。
 - `humanizer` 来源于 [blader/humanizer](https://github.com/blader/humanizer)，许可证保存在 `.agents/skills/humanizer/LICENSE`。
