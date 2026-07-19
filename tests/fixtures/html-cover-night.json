@@ -1,9 +1,9 @@
 {
-  "template": "kinetic-type",
+  "template": "night-signal",
   "theme": "olive-journal",
   "eyebrow": "AI 与产业观察",
   "title": "模型变便宜之后，真正昂贵的是什么",
   "title_lines": ["模型变便宜之后，", "真正昂贵的是什么"],
-  "highlights": ["变便宜", "真正昂贵"],
+  "highlights": [],
   "subtitle": "企业竞争正在从参数转向工作流程"
 }

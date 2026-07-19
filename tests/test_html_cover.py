@@ -35,24 +35,26 @@ BUILDER_SPEC.loader.exec_module(build_html_cover_spec)
 class HtmlCoverTests(unittest.TestCase):
     def spec(self):
         return {
-            "template": "editorial-ledger",
+            "template": "redaction-poster",
             "theme": "olive-journal",
             "eyebrow": "AI 与产业观察",
             "title": "模型变便宜之后，真正昂贵的是什么",
             "title_lines": ["模型变便宜之后，", "真正昂贵的是什么"],
-            "highlights": ["变便宜", "真正昂贵"],
+            "highlights": ["模型"],
             "subtitle": "企业竞争正在从参数转向工作流程",
         }
 
     def test_validate_spec_accepts_registered_theme(self):
         result = render_html_cover.validate_spec(self.spec())
         self.assertEqual(result["theme"], "olive-journal")
-        self.assertEqual(result["template"], "editorial-ledger")
+        self.assertEqual(result["template"], "redaction-poster")
 
-    def test_validate_spec_accepts_both_templates(self):
+    def test_validate_spec_accepts_all_templates(self):
         for template in render_html_cover.TEMPLATES:
             spec = self.spec()
             spec["template"] = template
+            if template != "redaction-poster":
+                spec["highlights"] = []
             self.assertEqual(render_html_cover.validate_spec(spec)["template"], template)
 
     def test_validate_spec_rejects_unknown_fields_and_theme(self):
@@ -79,8 +81,8 @@ class HtmlCoverTests(unittest.TestCase):
         with self.assertRaisesRegex(render_html_cover.CoverError, "高亮词不在标题中"):
             render_html_cover.validate_spec(invalid)
         invalid = self.spec()
-        invalid["highlights"] = ["真正昂贵", "变便宜"]
-        with self.assertRaisesRegex(render_html_cover.CoverError, "第一个高亮词"):
+        invalid["highlights"] = ["真正昂贵"]
+        with self.assertRaisesRegex(render_html_cover.CoverError, "高亮词必须位于标题第一行"):
             render_html_cover.validate_spec(invalid)
 
     def test_render_html_escapes_text_and_has_no_remote_assets(self):
@@ -89,21 +91,47 @@ class HtmlCoverTests(unittest.TestCase):
         validated = render_html_cover.validate_spec(spec)
         output = render_html_cover.render_html(validated, "body{margin:0}")
         self.assertIn("流程 &lt; 口号 &amp; 演示", output)
-        self.assertIn("template-editorial-ledger", output)
-        self.assertIn("ledger-accent-word", output)
+        self.assertIn("template-redaction-poster", output)
+        self.assertIn("redaction-title-highlight", output)
         self.assertNotIn("https://", output)
         self.assertNotIn("<script", output)
 
-    def test_kinetic_template_renders_separate_structure(self):
-        spec = self.spec()
-        spec["template"] = "kinetic-type"
-        output = render_html_cover.render_html(
-            render_html_cover.validate_spec(spec),
-            "body{margin:0}",
-        )
-        self.assertIn("template-kinetic-type", output)
-        self.assertIn("kinetic-title-line-two", output)
-        self.assertNotIn("ledger-title", output)
+    def test_all_template_title_pairs_meet_contrast_floor(self):
+        for template in render_html_cover.TEMPLATES:
+            with self.subTest(template=template):
+                render_html_cover.validate_template_contrast(template)
+
+    def test_title_css_uses_one_uninterrupted_surface_per_template(self):
+        css = Path(
+            ROOT,
+            ".agents",
+            "skills",
+            "wechat-html-cover",
+            "assets",
+            "cover.css",
+        ).read_text(encoding="utf-8")
+        self.assertIn("font-size: var(--title-size)", css)
+        self.assertNotIn("text-stroke", css)
+        for selector in (".signal-title", ".night-title", ".redaction-title"):
+            self.assertRegex(css, rf"(?s){selector}\s*\{{[^}}]*width:")
+
+    def test_templates_render_separate_structures(self):
+        expected = {
+            "signal-editorial": "signal-blue-rail",
+            "night-signal": "night-orange-long",
+            "redaction-poster": "redaction-panel",
+        }
+        for template, marker in expected.items():
+            spec = self.spec()
+            spec["template"] = template
+            if template != "redaction-poster":
+                spec["highlights"] = []
+            output = render_html_cover.render_html(
+                render_html_cover.validate_spec(spec),
+                "body{margin:0}",
+            )
+            self.assertIn(f"template-{template}", output)
+            self.assertIn(marker, output)
 
     def test_png_dimensions_reads_ihdr(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -155,8 +183,29 @@ class HtmlCoverTests(unittest.TestCase):
                     )
                     self.assertEqual(title, "".join(result["title_lines"]))
                     self.assertTrue(all(len(item) <= 18 for item in result["title_lines"]))
-                    if template == "kinetic-type":
+                    self.assertIn(len(result["title_lines"]), (2, 3))
+                    if template != "redaction-poster":
                         self.assertEqual([], result["highlights"])
+
+    def test_long_title_uses_three_lines_and_safe_estimated_width(self):
+        title = "这是一个用于验证三十二字中文标题能否完整显示且绝不被装饰遮挡的测试标题"
+        title = title[:32]
+        lines = build_html_cover_spec.split_title(title)
+        self.assertEqual(3, len(lines))
+        for template in render_html_cover.TEMPLATES:
+            spec = build_html_cover_spec.build_spec(
+                title,
+                "olive-journal",
+                template,
+                "科技与产业观察",
+                "看见技术变化背后的真实影响",
+            )
+            size = render_html_cover.title_font_size(spec)
+            widest = max(render_html_cover.text_units(line) for line in spec["title_lines"])
+            self.assertLessEqual(
+                widest * size * 1.08,
+                render_html_cover.TITLE_SAFE_WIDTH[template] + 0.01,
+            )
 
     def test_builder_rejects_title_over_32_characters(self):
         with self.assertRaisesRegex(build_html_cover_spec.BuildError, "超过 32 字"):

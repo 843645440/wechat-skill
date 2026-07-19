@@ -20,7 +20,7 @@ English ｜ [中文](README.md)
 
 ---
 
-A project-level WeChat content toolkit for AI agents (Claude Code / Codex / Cursor …). The root Skill renders paste-safe HTML and extracts selected insights, comparisons, processes, or verified metrics into theme-native HTML modules. Bundled Skills can also discover current topics, write a Chinese article, generate a deterministic cover from either an editorial-ledger or kinetic-type template, validate the result, and create a draft in a selected WeChat account.
+A project-level WeChat content toolkit for AI agents (Claude Code / Codex / Cursor …). The root Skill renders paste-safe HTML and extracts selected insights, comparisons, processes, or verified metrics into theme-native HTML modules. Bundled Skills can also discover current topics, write a Chinese article, generate a deterministic cover from one of three standalone HTML/CSS poster templates, validate the result, and create a draft in a selected WeChat account.
 
 ## ✨ Features
 

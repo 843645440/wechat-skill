@@ -127,7 +127,7 @@ python3 scripts/wechat_publish.py --config wechat-accounts.json send \
 
 > 使用 `$wechat-html-cover`，根据最终标题和当前主题生成公众号封面。
 
-封面模板可选 `editorial-ledger` 与 `kinetic-type`。两套模板均跟随正文主题色，目前不按 A/B 账号写死；需要固定账号规则时再修改账号档案。
+封面模板可选 `signal-editorial`、`night-signal` 与 `redaction-poster`。三套模板拥有独立固定配色，不跟随正文主题，目前不按 A/B 账号写死；需要固定账号规则时再修改账号档案。
 
 只有明确希望使用生成式图片时，才单独调用 `$baoyu-cover-image`、`$baoyu-article-illustrator` 或 `$agnes-image-gen`；它们不属于默认流水线。
 

@@ -1,4 +1,4 @@
 interface:
   display_name: "微信公众号 HTML 封面"
   short_description: "使用确定性 HTML 模板稳定生成微信公众号封面 PNG"
-  default_prompt: "使用 $wechat-html-cover 根据文章标题和当前主题生成稳定的公众号封面。"
+  default_prompt: "使用 $wechat-html-cover 根据文章标题生成独立于正文主题的稳定公众号封面。"

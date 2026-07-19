@@ -77,7 +77,10 @@ class PipelineRuntimeTests(unittest.TestCase):
             self.assertIn(result["theme"], pipeline_runtime.pipeline_job.THEME_RE.findall(
                 Path(ROOT, "references", "theme-index.md").read_text(encoding="utf-8")
             ))
-            self.assertIn(result["template"], ("editorial-ledger", "kinetic-type"))
+            self.assertIn(
+                result["template"],
+                ("signal-editorial", "night-signal", "redaction-poster"),
+            )
             self.assertTrue(Path(result["cover_spec"]).is_file())
 
     def test_runtime_only_exposes_draft_not_public_publish(self):

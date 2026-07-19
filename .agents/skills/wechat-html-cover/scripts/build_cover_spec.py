@@ -3,6 +3,7 @@
 
 import argparse
 import hashlib
+import itertools
 import json
 import os
 import re
@@ -38,24 +39,30 @@ def split_title(title):
         raise BuildError("标题不能为空")
     if len(title) > 32:
         raise BuildError("标题超过 32 字，请先改短正文一级标题，再生成封面规格")
+    line_count = 3 if render_cover.text_units(title) > 25 else 2
     candidates = []
-    middle = len(title) / 2
-    for index in range(1, len(title)):
-        left, right = title[:index], title[index:]
-        if len(left) > 18 or len(right) > 18 or right[0] in BAD_LINE_START:
+    for breaks in itertools.combinations(range(1, len(title)), line_count - 1):
+        points = (0, *breaks, len(title))
+        lines = [title[points[index]:points[index + 1]] for index in range(line_count)]
+        if any(len(line) > 18 or render_cover.text_units(line) > 16 for line in lines):
             continue
-        score = abs(index - middle) * 4
-        if left[-1] in BREAK_AFTER:
-            score -= 10
-        if left[-1].isascii() and left[-1].isalnum() and right[0].isascii() and right[0].isalnum():
-            score += 30
-        if min(len(left), len(right)) < 5:
-            score += 12
-        candidates.append((score, abs(len(left) - len(right)), index))
+        if any(line[0] in BAD_LINE_START for line in lines[1:]):
+            continue
+        units = [render_cover.text_units(line) for line in lines]
+        average = sum(units) / line_count
+        score = sum((value - average) ** 2 for value in units) * 4
+        for index in breaks:
+            left, right = title[index - 1], title[index]
+            if left in BREAK_AFTER:
+                score -= 10
+            if left.isascii() and left.isalnum() and right.isascii() and right.isalnum():
+                score += 30
+        if min(units) < 4:
+            score += 18
+        candidates.append((score, max(units) - min(units), lines))
     if not candidates:
-        raise BuildError("标题无法安全拆成两行，每行需不超过 18 字")
-    index = min(candidates)[2]
-    return [title[:index], title[index:]]
+        raise BuildError("标题无法安全拆行；每行需不超过 18 字且不能拆开英文单词")
+    return min(candidates, key=lambda item: (item[0], item[1]))[2]
 
 
 def choose_highlight(line):
@@ -99,7 +106,7 @@ def article_fields(source):
 def build_spec(title, theme, template, eyebrow, subtitle):
     lines = split_title(title)
     highlights = []
-    if template == "editorial-ledger":
+    if template == "redaction-poster":
         highlight = choose_highlight(lines[0])
         if highlight:
             highlights.append(highlight)

@@ -5,6 +5,7 @@ import argparse
 import html
 import json
 import os
+import re
 import signal
 import shutil
 import struct
@@ -17,7 +18,7 @@ from pathlib import Path
 
 WIDTH = 1410
 HEIGHT = 600
-TEMPLATES = ("editorial-ledger", "kinetic-type")
+TEMPLATES = ("signal-editorial", "night-signal", "redaction-poster")
 PALETTES = {
     "moyu-green": {"background": "#F0FDF4", "paper": "#FFFFFF", "ink": "#111827", "muted": "#4B5563", "accent": "#059669", "accent-dark": "#065F46", "soft": "#A7F3D0", "line": "rgba(5,150,105,0.28)", "radius": "22px"},
     "red-white": {"background": "#FFF7F7", "paper": "#FFFFFF", "ink": "#1C1917", "muted": "#57534E", "accent": "#DC2626", "accent-dark": "#991B1B", "soft": "#FECACA", "line": "rgba(220,38,38,0.25)", "radius": "18px"},
@@ -26,10 +27,72 @@ PALETTES = {
     "moyu-ticket": {"background": "#FFFEF8", "paper": "#FFFFFF", "ink": "#1A1A1A", "muted": "#555555", "accent": "#059669", "accent-dark": "#1A1A1A", "soft": "#A7F3D0", "line": "rgba(26,26,26,0.28)", "radius": "2px"},
     "olive-journal": {"background": "#EEEFE9", "paper": "#FDFDF8", "ink": "#23251D", "muted": "#65675E", "accent": "#ED7B2F", "accent-dark": "#1E1F23", "soft": "#D4C9B8", "line": "rgba(77,79,70,0.32)", "radius": "6px"},
 }
+TEMPLATE_PALETTES = {
+    "signal-editorial": {
+        "background": "#F5F1E8",
+        "ink": "#111111",
+        "primary": "#1457D9",
+        "secondary": "#F3D900",
+        "subtitle": "#242424",
+    },
+    "night-signal": {
+        "background": "#06142F",
+        "ink": "#F8F6EF",
+        "primary": "#FF5A1F",
+        "secondary": "#31C7F5",
+        "subtitle": "#7DDBF8",
+    },
+    "redaction-poster": {
+        "background": "#F5F1E9",
+        "ink": "#F8F5ED",
+        "primary": "#F03B33",
+        "secondary": "#0C0C0C",
+        "subtitle": "#181818",
+    },
+}
+TITLE_SAFE_WIDTH = {
+    "signal-editorial": 1150,
+    "night-signal": 1130,
+    "redaction-poster": 1090,
+}
 
 
 class CoverError(RuntimeError):
     pass
+
+
+def relative_luminance(value):
+    if not re.fullmatch(r"#[0-9A-Fa-f]{6}", value):
+        raise CoverError(f"对比度检查只接受六位十六进制颜色：{value}")
+    channels = [int(value[index:index + 2], 16) / 255 for index in (1, 3, 5)]
+    linear = [
+        channel / 12.92
+        if channel <= 0.04045
+        else ((channel + 0.055) / 1.055) ** 2.4
+        for channel in channels
+    ]
+    return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+
+
+def contrast_ratio(first, second):
+    lighter, darker = sorted(
+        (relative_luminance(first), relative_luminance(second)), reverse=True
+    )
+    return (lighter + 0.05) / (darker + 0.05)
+
+
+def validate_template_contrast(template):
+    palette = TEMPLATE_PALETTES[template]
+    checks = {
+        "标题": (palette["ink"], palette["background"]),
+    }
+    if template == "redaction-poster":
+        checks["标题"] = (palette["ink"], palette["secondary"])
+        checks["主题词"] = (palette["primary"], palette["secondary"])
+    for label, colors in checks.items():
+        ratio = contrast_ratio(*colors)
+        if ratio < 4.5:
+            raise CoverError(f"{template} 的{label}对比度不足：{ratio:.2f}:1")
 
 
 def clean_text(value, field, maximum):
@@ -72,20 +135,20 @@ def validate_spec(raw):
     if template not in TEMPLATES:
         raise CoverError(f"template 必须是：{', '.join(TEMPLATES)}")
     title = clean_text(raw["title"], "title", 32)
-    title_lines = clean_list(raw["title_lines"], "title_lines", 2, 2, 18)
+    title_lines = clean_list(raw["title_lines"], "title_lines", 2, 3, 18)
     if "".join(title_lines) != title:
         raise CoverError("title_lines 拼接后必须与 title 完全一致")
-    highlights = clean_list(raw["highlights"], "highlights", 0, 2, 8)
+    highlights = clean_list(raw["highlights"], "highlights", 0, 1, 8)
     if len(set(highlights)) != len(highlights):
         raise CoverError("highlights 不得重复")
     for item in highlights:
         if item not in title:
             raise CoverError(f"高亮词不在标题中：{item}")
-    if template == "editorial-ledger" and highlights:
+    if template == "redaction-poster" and highlights:
         if highlights[0] not in title_lines[0]:
-            raise CoverError("editorial-ledger 的第一个高亮词必须位于标题第一行")
-        if len(highlights) > 1 and not title_lines[1].startswith(highlights[1]):
-            raise CoverError("editorial-ledger 的第二个高亮词必须位于标题第二行开头")
+            raise CoverError("redaction-poster 的高亮词必须位于标题第一行")
+    if template != "redaction-poster" and highlights:
+        raise CoverError(f"{template} 不使用标题高亮词")
     return {
         "template": template,
         "theme": theme,
@@ -104,66 +167,102 @@ def split_highlight(value, phrase):
     return tuple(html.escape(item, quote=True) for item in (before, phrase, after))
 
 
-def render_editorial_ledger(spec):
-    accent = spec["highlights"][0] if spec["highlights"] else ""
-    inverse = spec["highlights"][1] if len(spec["highlights"]) > 1 else ""
-    first_before, first_accent, first_after = split_highlight(spec["title_lines"][0], accent)
-    second_before, second_inverse, second_after = split_highlight(spec["title_lines"][1], inverse)
+def text_units(value):
+    units = 0.0
+    for char in value:
+        if char.isspace():
+            units += 0.32
+        elif char.isascii() and char.isalnum():
+            units += 0.62 if char.islower() else 0.72
+        elif char in "，。！？：；、,.!?;:·—-()（）":
+            units += 0.56
+        else:
+            units += 1.0
+    return units
+
+
+def title_font_size(spec):
+    lines = spec["title_lines"]
+    maximum_units = max(text_units(line) for line in lines)
+    cap = 116 if len(lines) == 2 else 88
+    calculated = int(TITLE_SAFE_WIDTH[spec["template"]] / (maximum_units * 1.08))
+    return max(54, min(cap, calculated))
+
+
+def title_style(spec):
+    return f"--title-size:{title_font_size(spec)}px;--title-lines:{len(spec['title_lines'])}"
+
+
+def render_title_lines(spec, class_prefix, highlight=False):
+    phrase = spec["highlights"][0] if highlight and spec["highlights"] else ""
+    parts = []
+    for index, line in enumerate(spec["title_lines"]):
+        before, marked, after = split_highlight(line, phrase if index == 0 else "")
+        content = (
+            f'<span class="{class_prefix}-plain">{before}</span>'
+            f'<span class="{class_prefix}-highlight">{marked}</span>'
+            f'<span class="{class_prefix}-plain">{after}</span>'
+        )
+        parts.append(
+            f'<span class="{class_prefix}-line {class_prefix}-line-{index + 1}">{content}</span>'
+        )
+    return "".join(parts)
+
+
+def render_signal_editorial(spec):
     return (
-        '<main class="canvas ledger-canvas">'
-        '<section class="ledger-paper-fold" aria-hidden="true"></section>'
-        '<section class="ledger-dark-top" aria-hidden="true"></section>'
-        '<section class="ledger-dark-left" aria-hidden="true"></section>'
-        '<section class="ledger-soft-panel" aria-hidden="true"></section>'
-        '<section class="ledger-accent-panel" aria-hidden="true"></section>'
-        '<section class="ledger-dots" aria-hidden="true"></section>'
-        '<section class="ledger-rule-grid" aria-hidden="true"></section>'
-        f'<p class="cover-eyebrow ledger-eyebrow">{html.escape(spec["eyebrow"], quote=True)}</p>'
-        '<h1 class="ledger-title">'
-        '<span class="ledger-title-line ledger-title-line-one">'
-        f'<span class="ledger-prefix">{first_before}</span>'
-        f'<span class="ledger-accent-word">{first_accent}</span>'
-        f'<span class="ledger-line-rest">{first_after}</span>'
-        '</span>'
-        '<span class="ledger-title-line ledger-title-line-two">'
-        f'<span class="ledger-second-before">{second_before}</span>'
-        f'<span class="ledger-inverse-word">{second_inverse}</span>'
-        f'<span class="ledger-second-rest">{second_after}</span>'
-        '</span></h1>'
-        '<section class="ledger-subtitle-strip">'
-        '<span class="ledger-subtitle-lead" aria-hidden="true"></span>'
-        f'<p class="cover-subtitle ledger-subtitle">{html.escape(spec["subtitle"], quote=True)}</p>'
-        '</section></main>'
+        '<main class="canvas signal-canvas">'
+        '<section class="signal-blue-rail" aria-hidden="true"></section>'
+        '<section class="signal-yellow-rule" aria-hidden="true"></section>'
+        '<section class="signal-yellow-mark" aria-hidden="true"></section>'
+        f'<p class="cover-eyebrow signal-eyebrow">{html.escape(spec["eyebrow"], quote=True)}</p>'
+        f'<h1 class="cover-title signal-title" style="{title_style(spec)}">'
+        f'{render_title_lines(spec, "signal-title")}</h1>'
+        f'<p class="cover-subtitle signal-subtitle">{html.escape(spec["subtitle"], quote=True)}</p>'
+        '</main>'
     )
 
 
-def render_kinetic_type(spec):
+def render_night_signal(spec):
     return (
-        '<main class="canvas kinetic-canvas">'
-        '<section class="kinetic-dot-field" aria-hidden="true"></section>'
-        '<section class="kinetic-orange-slab" aria-hidden="true"></section>'
-        '<section class="kinetic-dark-edge" aria-hidden="true"></section>'
-        '<section class="kinetic-rings" aria-hidden="true"></section>'
-        '<section class="kinetic-route route-one" aria-hidden="true"></section>'
-        '<section class="kinetic-route route-two" aria-hidden="true"></section>'
-        f'<p class="cover-eyebrow kinetic-eyebrow">{html.escape(spec["eyebrow"], quote=True)}</p>'
-        '<h1 class="kinetic-title">'
-        f'<span class="kinetic-title-line kinetic-title-line-one">{html.escape(spec["title_lines"][0], quote=True)}</span>'
-        f'<span class="kinetic-title-line kinetic-title-line-two">{html.escape(spec["title_lines"][1], quote=True)}</span>'
-        '</h1>'
-        '<section class="kinetic-subtitle-strip">'
-        f'<p class="cover-subtitle kinetic-subtitle">{html.escape(spec["subtitle"], quote=True)}</p>'
-        '</section></main>'
+        '<main class="canvas night-canvas">'
+        '<section class="night-orange-short" aria-hidden="true"></section>'
+        '<section class="night-orange-long" aria-hidden="true"></section>'
+        '<section class="night-cyan-rule night-cyan-rule-one" aria-hidden="true"></section>'
+        '<section class="night-cyan-rule night-cyan-rule-two" aria-hidden="true"></section>'
+        f'<p class="cover-eyebrow night-eyebrow">{html.escape(spec["eyebrow"], quote=True)}</p>'
+        f'<h1 class="cover-title night-title" style="{title_style(spec)}">'
+        f'{render_title_lines(spec, "night-title")}</h1>'
+        f'<p class="cover-subtitle night-subtitle">{html.escape(spec["subtitle"], quote=True)}</p>'
+        '</main>'
+    )
+
+
+def render_redaction_poster(spec):
+    return (
+        '<main class="canvas redaction-canvas">'
+        '<section class="redaction-top-rule" aria-hidden="true"></section>'
+        f'<p class="cover-eyebrow redaction-eyebrow">{html.escape(spec["eyebrow"], quote=True)}</p>'
+        '<section class="redaction-panel">'
+        f'<h1 class="cover-title redaction-title" style="{title_style(spec)}">'
+        f'{render_title_lines(spec, "redaction-title", highlight=True)}</h1>'
+        '<section class="redaction-accent-rule" aria-hidden="true"></section>'
+        '</section>'
+        '<section class="redaction-bottom-rule" aria-hidden="true"></section>'
+        f'<p class="cover-subtitle redaction-subtitle">{html.escape(spec["subtitle"], quote=True)}</p>'
+        '</main>'
     )
 
 
 def render_html(spec, css):
+    validate_template_contrast(spec["template"])
     variables = ";".join(f"--{key}:{value}" for key, value in PALETTES[spec["theme"]].items())
-    body = (
-        render_editorial_ledger(spec)
-        if spec["template"] == "editorial-ledger"
-        else render_kinetic_type(spec)
-    )
+    renderers = {
+        "signal-editorial": render_signal_editorial,
+        "night-signal": render_night_signal,
+        "redaction-poster": render_redaction_poster,
+    }
+    body = renderers[spec["template"]](spec)
     return (
         '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width,initial-scale=1">'

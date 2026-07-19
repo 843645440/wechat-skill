@@ -21,7 +21,7 @@
 - `inline_visuals.max_blocks`：默认最多 3 个；内容不适合时允许为 0。
 - `cover.backend`：必须为 `html`，只用确定性 HTML/CSS 截图生成封面。
 - `cover.theme`：`article` 表示跟随本轮文章主题。
-- 封面模板现有 `editorial-ledger` 与 `kinetic-type` 两套，暂不在账号档案中绑定；以后可单独增加账号规则。
+- 封面模板现有 `signal-editorial`、`night-signal` 与 `redaction-poster` 三套，暂不在账号档案中绑定；以后可单独增加账号规则。
 - `publishing.target`：必须为 `draft`。
 
 浏览器只用于封面，不用于正文模块。封面失败不得自动改用 Agnes 或其他 AI 生图。账号可以有不同读者和热点方向，但排版主题不固定。Skill 不读取或执行时间字段；Agent 自带定时任务只需传账号别名和可选主题。
