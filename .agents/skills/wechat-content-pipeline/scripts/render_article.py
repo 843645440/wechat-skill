@@ -58,7 +58,8 @@ THEMES = {
 
 HEADING_RE = re.compile(r"^(#{1,3})\s+(.+?)\s*$")
 INLINE_RE = re.compile(
-    r"(`[^`\n]+`|\*\*.+?\*\*|==.+?==|\+\+.+?\+\+|<u>.+?</u>)"
+    r"(`[^`\n]+`|\*\*\S(?:.*?\S)?\*\*|__\S(?:.*?\S)?__|"
+    r"==\S(?:.*?\S)?==|\+\+\S(?:.*?\S)?\+\+|<u>.+?</u>)"
 )
 TABLE_SEPARATOR_RE = re.compile(
     r"^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$"
@@ -75,9 +76,13 @@ def normalized(value):
 
 
 def plain_text(value):
-    value = re.sub(r"</?u>", "", str(value), flags=re.I)
-    value = re.sub(r"(\*\*|__|`|==|\+\+)", "", value)
-    return normalized(value)
+    value = str(value)
+    return normalized(INLINE_RE.sub(lambda match: re.sub(
+        r"^(?:\*\*|__|==|\+\+|`|<u>)|(?:\*\*|__|==|\+\+|`|</u>)$",
+        "",
+        match.group(0),
+        flags=re.I,
+    ), value))
 
 
 def leaf(value, style=""):

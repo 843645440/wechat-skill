@@ -13,6 +13,10 @@ THEME_RE = re.compile(r"references/theme-([a-z0-9][a-z0-9-]*)\.md")
 HEADING_RE = re.compile(r"^##\s+(.+?)\s*$", re.MULTILINE)
 ID_RE = re.compile(r"^inline-[0-9]{2}$")
 KINDS = {"insight", "comparison", "process", "metrics"}
+INLINE_RE = re.compile(
+    r"(`[^`\n]+`|\*\*\S(?:.*?\S)?\*\*|__\S(?:.*?\S)?__|"
+    r"==\S(?:.*?\S)?==|\+\+\S(?:.*?\S)?\+\+|<u>.+?</u>)"
+)
 
 
 class PlanError(RuntimeError):
@@ -24,10 +28,14 @@ def normalized(value):
 
 
 def plain_text(value):
-    """移除渲染器支持的行内 Markdown 标记，保留原始文字与标点。"""
-    value = re.sub(r"</?u>", "", str(value), flags=re.I)
-    value = re.sub(r"(\*\*|__|`|==|\+\+)", "", value)
-    return normalized(value)
+    """仅移除成对的行内 Markdown 标记，保留字面运算符和标点。"""
+    value = str(value)
+    return normalized(INLINE_RE.sub(lambda match: re.sub(
+        r"^(?:\*\*|__|==|\+\+|`|<u>)|(?:\*\*|__|==|\+\+|`|</u>)$",
+        "",
+        match.group(0),
+        flags=re.I,
+    ), value))
 
 
 def text(value, field, maximum):

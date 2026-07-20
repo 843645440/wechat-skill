@@ -175,6 +175,10 @@ class ArticleRendererTests(unittest.TestCase):
             self.assertEqual([], degraded["modules"])
             self.assertNotIn("正文信息卡", output.read_text(encoding="utf-8"))
 
+    def test_plain_text_preserves_literal_operators_and_cpp(self):
+        value = "C++ 是语言，a == b，邮箱 a++b@example.com"
+        self.assertEqual(value, renderer.plain_text(value))
+
     def test_parse_rejects_missing_title(self):
         with self.assertRaisesRegex(renderer.RenderError, "一级标题"):
             renderer.parse_article("只有正文。")

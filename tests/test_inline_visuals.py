@@ -84,6 +84,10 @@ class InlineVisualPlanTests(unittest.TestCase):
         result = validate_inline_plan.validate_plan(insight_plan(), article, THEMES)
         self.assertEqual(result["module_count"], 1)
 
+    def test_plain_text_preserves_literal_operators_and_cpp(self):
+        value = "C++ 是语言，a == b，邮箱 a++b@example.com"
+        self.assertEqual(value, validate_inline_plan.plain_text(value))
+
     def test_empty_plan_is_valid(self):
         result = validate_inline_plan.validate_plan(
             {"version": 1, "theme": "moyu-green", "modules": []},
