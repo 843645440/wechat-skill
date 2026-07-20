@@ -23,6 +23,13 @@ def normalized(value):
     return " ".join(value.split())
 
 
+def plain_text(value):
+    """移除渲染器支持的行内 Markdown 标记，保留原始文字与标点。"""
+    value = re.sub(r"</?u>", "", str(value), flags=re.I)
+    value = re.sub(r"(\*\*|__|`|==|\+\+)", "", value)
+    return normalized(value)
+
+
 def text(value, field, maximum):
     if not isinstance(value, str) or not normalized(value):
         raise PlanError(f"{field} 必须是非空字符串")
@@ -71,8 +78,8 @@ def validate_plan(raw, article, registered_themes):
     if not isinstance(modules, list) or len(modules) > 3:
         raise PlanError("modules 必须包含 0—3 项")
 
-    article_normalized = normalized(article)
-    headings = {normalized(item) for item in HEADING_RE.findall(article)}
+    article_plain = plain_text(article)
+    headings = {plain_text(item) for item in HEADING_RE.findall(article)}
     seen_ids = set()
     seen_kinds = set()
     seen_placements = set()
@@ -109,7 +116,7 @@ def validate_plan(raw, article, registered_themes):
         after_text = text(placement["after_text"], f"{field}.placement.after_text", 120)
         if after_heading not in headings:
             raise PlanError(f"插入章节不存在：{after_heading}")
-        if after_text not in article_normalized:
+        if after_text not in article_plain:
             raise PlanError(f"插入锚点不是文章原文：{after_text}")
         placement_key = (after_heading, after_text)
         if placement_key in seen_placements:
@@ -121,7 +128,7 @@ def validate_plan(raw, article, registered_themes):
             raise PlanError(f"{field}.evidence 必须包含 1—4 项")
         for evidence_index, item in enumerate(evidence, 1):
             excerpt = text(item, f"{field}.evidence[{evidence_index}]", 160)
-            if excerpt not in article_normalized:
+            if excerpt not in article_plain:
                 raise PlanError(f"证据不是文章原文：{excerpt}")
 
         if kind == "insight":
@@ -144,7 +151,7 @@ def validate_plan(raw, article, registered_themes):
             metrics = object_items(module["metrics"], f"{field}.metrics", 2, 4, {"value", "label", "note"})
             for metric_index, item in enumerate(metrics, 1):
                 value = text(item["value"], f"{field}.metrics[{metric_index}].value", 12)
-                if value not in article_normalized:
+                if value not in article_plain:
                     raise PlanError(f"指标值不是文章原文：{value}")
                 text(item["label"], f"{field}.metrics[{metric_index}].label", 12)
                 text(item["note"], f"{field}.metrics[{metric_index}].note", 28)

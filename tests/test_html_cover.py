@@ -133,6 +133,18 @@ class HtmlCoverTests(unittest.TestCase):
             self.assertIn(f"template-{template}", output)
             self.assertIn(marker, output)
 
+    def test_dom_probe_rejects_browser_error_page(self):
+        with self.assertRaisesRegex(render_html_cover.CoverError, "错误页"):
+            render_html_cover.validate_dumped_dom(
+                "<html><body>ERR_ACCESS_DENIED</body></html>"
+            )
+
+    def test_dom_probe_accepts_expected_cover_structure_and_title(self):
+        render_html_cover.validate_dumped_dom(
+            '<html><main class="canvas template-night-signal">'
+            '<h1 class="cover-title">真实标题</h1></main></html>'
+        )
+
     def test_png_dimensions_reads_ihdr(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "cover.png"
@@ -161,6 +173,116 @@ class HtmlCoverTests(unittest.TestCase):
             ".cache/ms-playwright/chromium-*/chrome-linux64/chrome",
             patterns,
         )
+
+    def test_find_browser_preserves_launcher_symlink(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            launcher = directory / "chromium"
+            target = directory / "snap"
+            target.write_text("#!/bin/sh\n", encoding="utf-8")
+            target.chmod(0o755)
+            launcher.symlink_to(target)
+            self.assertEqual(launcher, render_html_cover.find_browser(launcher))
+
+    def test_screenshot_stages_browser_output_outside_hidden_worktree(self):
+        captured = {}
+        target = Path.home() / ".hermes" / "work" / "cover.png"
+        source = Path(tempfile.mkstemp(suffix=".html")[1])
+        source.write_text("<html></html>", encoding="utf-8")
+
+        class Process:
+            pid = 123
+
+            def poll(self):
+                return 0
+
+        original_popen = render_html_cover.subprocess.Popen
+        original_dimensions = render_html_cover.png_dimensions
+        original_replace = render_html_cover.os.replace
+        original_probe = render_html_cover.probe_dom
+
+        def fake_popen(command, **kwargs):
+            screenshot_arg = next(item for item in command if item.startswith("--screenshot="))
+            captured["browser_output"] = Path(screenshot_arg.split("=", 1)[1])
+            captured["browser_output"].write_bytes(b"png")
+            return Process()
+
+        def fake_dimensions(path):
+            return (render_html_cover.WIDTH, render_html_cover.HEIGHT)
+
+        def fake_replace(source, destination):
+            captured["replace"] = (Path(source), Path(destination))
+
+        try:
+            render_html_cover.subprocess.Popen = fake_popen
+            render_html_cover.png_dimensions = fake_dimensions
+            render_html_cover.os.replace = fake_replace
+            render_html_cover.probe_dom = lambda *args: None
+            render_html_cover.screenshot(
+                Path("/usr/bin/chromium"),
+                source,
+                target,
+                1,
+            )
+        finally:
+            source.unlink(missing_ok=True)
+            render_html_cover.subprocess.Popen = original_popen
+            render_html_cover.png_dimensions = original_dimensions
+            render_html_cover.os.replace = original_replace
+            render_html_cover.probe_dom = original_probe
+
+        self.assertIn(Path.home() / "wechat-cover-tmp", captured["browser_output"].parents)
+        self.assertNotIn(Path.home() / ".hermes", captured["browser_output"].parents)
+        self.assertEqual((captured["browser_output"], target), captured["replace"])
+
+    def test_screenshot_checks_output_once_more_after_browser_exit(self):
+        captured = {}
+        target = Path.home() / ".hermes" / "work" / "cover.png"
+        source = Path(tempfile.mkstemp(suffix=".html")[1])
+        source.write_text("<html></html>", encoding="utf-8")
+
+        class Process:
+            pid = 123
+
+            def poll(self):
+                if "browser_output" in captured:
+                    captured["browser_output"].write_bytes(b"png")
+                return 0
+
+        original_popen = render_html_cover.subprocess.Popen
+        original_dimensions = render_html_cover.png_dimensions
+        original_replace = render_html_cover.os.replace
+        original_probe = render_html_cover.probe_dom
+
+        def fake_popen(command, **kwargs):
+            screenshot_arg = next(item for item in command if item.startswith("--screenshot="))
+            captured["browser_output"] = Path(screenshot_arg.split("=", 1)[1])
+            return Process()
+
+        try:
+            render_html_cover.subprocess.Popen = fake_popen
+            render_html_cover.png_dimensions = lambda path: (
+                render_html_cover.WIDTH,
+                render_html_cover.HEIGHT,
+            )
+            render_html_cover.os.replace = lambda source, destination: captured.update(
+                replace=(Path(source), Path(destination))
+            )
+            render_html_cover.probe_dom = lambda *args: None
+            render_html_cover.screenshot(
+                Path("/usr/bin/chromium"),
+                source,
+                target,
+                1,
+            )
+        finally:
+            source.unlink(missing_ok=True)
+            render_html_cover.subprocess.Popen = original_popen
+            render_html_cover.png_dimensions = original_dimensions
+            render_html_cover.os.replace = original_replace
+            render_html_cover.probe_dom = original_probe
+
+        self.assertEqual((captured["browser_output"], target), captured["replace"])
 
     def test_builder_makes_valid_specs_for_stress_test_titles(self):
         titles = [

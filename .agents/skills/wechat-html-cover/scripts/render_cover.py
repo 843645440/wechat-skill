@@ -309,8 +309,9 @@ def browser_candidates():
 def find_browser(override=None):
     candidates = [Path(override).expanduser()] if override else list(browser_candidates())
     for candidate in candidates:
+        candidate = candidate.expanduser().absolute()
         if candidate.is_file() and os.access(candidate, os.X_OK):
-            return candidate.resolve()
+            return candidate
     raise CoverError("找不到 Chrome/Chromium；请安装浏览器或设置 WECHAT_COVER_BROWSER")
 
 
@@ -324,17 +325,57 @@ def png_dimensions(path):
     return struct.unpack(">II", header[16:24])
 
 
+def validate_dumped_dom(value):
+    normalized = value.lower()
+    error_markers = (
+        "err_access_denied", "err_file_not_found", "err_name_not_resolved",
+        "err_connection_refused", "your file couldn't be accessed",
+        "this site can’t be reached", "this site can't be reached",
+    )
+    if any(marker in normalized for marker in error_markers):
+        raise CoverError("浏览器内容探针检测到错误页")
+    if 'class="canvas ' not in value or 'class="cover-title' not in value:
+        raise CoverError("浏览器内容探针未找到封面画布或标题")
+
+
+def probe_dom(browser, html_uri, profile, timeout):
+    command = [
+        str(browser), "--headless=new", "--disable-gpu", "--disable-background-networking",
+        "--disable-default-apps", "--disable-dev-shm-usage", "--disable-extensions",
+        "--disable-sync", "--no-first-run", "--no-default-browser-check",
+        f"--user-data-dir={profile}", "--dump-dom", html_uri,
+    ]
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        command.insert(1, "--no-sandbox")
+    try:
+        result = subprocess.run(
+            command, text=True, capture_output=True, timeout=min(timeout, 15)
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise CoverError(f"浏览器内容探针失败：{exc}") from exc
+    if result.returncode:
+        raise CoverError("浏览器内容探针执行失败")
+    validate_dumped_dom(result.stdout)
+
+
 def screenshot(browser, html_path, output, timeout):
     output.parent.mkdir(parents=True, exist_ok=True)
-    temporary = output.with_name(f".{output.name}.{os.getpid()}.tmp.png")
-    with tempfile.TemporaryDirectory(prefix="wechat-html-cover-") as profile:
+    staging_root = Path.home() / "wechat-cover-tmp"
+    staging_root.mkdir(mode=0o700, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(prefix="render-", dir=staging_root))
+    staged_html = staging / "cover.html"
+    temporary = staging / "cover.png"
+    profile = staging / "profile"
+    try:
+        shutil.copy2(html_path, staged_html)
+        probe_dom(browser, staged_html.as_uri(), profile, timeout)
         command = [
             str(browser), "--headless=new", "--disable-gpu", "--disable-background-networking",
             "--disable-default-apps", "--disable-dev-shm-usage", "--disable-extensions",
             "--disable-sync", "--hide-scrollbars", "--no-first-run", "--no-default-browser-check",
             "--force-device-scale-factor=1", "--run-all-compositor-stages-before-draw",
             "--virtual-time-budget=1000", f"--user-data-dir={profile}",
-            f"--window-size={WIDTH},{HEIGHT}", f"--screenshot={temporary}", html_path.as_uri(),
+            f"--window-size={WIDTH},{HEIGHT}", f"--screenshot={temporary}", staged_html.as_uri(),
         ]
         if hasattr(os, "geteuid") and os.geteuid() == 0:
             command.insert(1, "--no-sandbox")
@@ -364,9 +405,13 @@ def screenshot(browser, html_path, output, timeout):
                     os.killpg(process.pid, signal.SIGKILL)
                 except OSError:
                     process.kill()
+        if actual != (WIDTH, HEIGHT) and temporary.exists():
+            actual = png_dimensions(temporary)
         if actual != (WIDTH, HEIGHT):
             raise CoverError(f"PNG 尺寸错误或未生成：期望 {WIDTH}x{HEIGHT}，实际 {actual}")
-    os.replace(temporary, output)
+        os.replace(temporary, output)
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
 
 
 def parse_args():

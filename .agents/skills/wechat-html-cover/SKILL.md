@@ -38,6 +38,14 @@ python3 <SKILL_ROOT>/scripts/render_cover.py \
 
 需要 Python 3 和 Chrome/Chromium，不需要图片 API Key。脚本会自动查找常见浏览器；无法找到时设置 `WECHAT_COVER_BROWSER`。
 
+### Snap/Chromium 陷阱
+
+- **不得对浏览器路径调用 `resolve()`**。`/snap/bin/chromium` 解析后变成 `/usr/bin/snap`，后者不接受 `--headless` 参数。脚本保留原始可执行入口。
+- **Snap 无法可靠读写隐藏目录**（如 `~/.hermes/...`）。不要围绕沙箱问题叠加 HTTP 服务、浏览器替换或多轮临时方案；先采用最小路径：在 `$HOME` 下创建普通非隐藏暂存目录，把输入 HTML、浏览器 profile 和输出 PNG 全部放进去，成功后再把 PNG 原子移动回工作区。具体复现与验证见 [references/snap-staging-and-cover-verification.md](references/snap-staging-and-cover-verification.md)。
+- **先做最小真实验证，再修改主脚本**：用同一个浏览器入口、同一份 HTML，在非隐藏目录执行一次截图；只有确认真实 PNG 可读后才固化实现，避免把路径、浏览器和网络问题混在一起排查。
+- **PNG 尺寸正确不等于内容正确**。任何封面上传前都必须检查实际像素内容，确认不是 `ERR_ACCESS_DENIED`、`ERR_FILE_NOT_FOUND`、空白页或其他浏览器错误页，并确认标题完整、无乱码、无裁切溢出。只检查文件存在、字节数、PNG 签名或 1410×600 尺寸，不得报告成功。
+- **失败封面不得上传**。内容未核验时停止在本地；已有有效兜底素材时使用账号默认封面，否则由草稿门禁阻止上传。
+
 ## 硬性边界
 
 - 只使用 `moyu-green`、`red-white`、`graphite-minimal`、`zen-whitespace`、`moyu-ticket`、`olive-journal` 六个已注册主题。

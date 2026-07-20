@@ -28,13 +28,13 @@
       }
     },
     "b": {
-      "label": "公众号 B",
-      "audience": "希望理解科技产业变化、企业竞争和民生影响的普通读者",
-      "writer_instructions": "允许完整展开产业链和受影响人群，但避免宏大叙事、营销号语气和投资暗示。",
+      "label": "思想的野路子丶",
+      "audience": "关注就业、教育、医疗、养老、交通、住房、公共服务和中国长期建设成果的普通读者",
+      "writer_instructions": "从真实成果和普通人的实际变化出发，写清谁的生活变好了、为什么变好、还有什么问题。允许温暖和振奋，但不得煽情、消费苦难、制造群体对立或依靠贬低他国获得情绪效果。",
       "topic_discovery": {
-        "window_hours": 24,
-        "fallback_hours": 72,
-        "categories": ["AI 产业", "智能制造", "芯片与算力", "新能源", "企业竞争"]
+        "window_hours": 72,
+        "fallback_hours": 168,
+        "categories": ["就业", "教育", "医疗", "养老", "交通", "住房", "公共服务", "中国制造", "高新技术", "基础设施", "重大工程"]
       },
       "theme_strategy": "random",
       "inline_visuals": {

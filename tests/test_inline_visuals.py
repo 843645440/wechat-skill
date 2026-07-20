@@ -76,6 +76,14 @@ class InlineVisualPlanTests(unittest.TestCase):
         self.assertEqual(result["module_count"], 1)
         self.assertEqual(result["kinds"], ["insight"])
 
+    def test_accepts_anchor_and_evidence_with_markdown_emphasis_removed(self):
+        article = ARTICLE.replace(
+            "企业节省的是流程时间，但员工承担了新的复核责任。",
+            "**企业节省的是流程时间，但员工承担了新的复核责任**。",
+        )
+        result = validate_inline_plan.validate_plan(insight_plan(), article, THEMES)
+        self.assertEqual(result["module_count"], 1)
+
     def test_empty_plan_is_valid(self):
         result = validate_inline_plan.validate_plan(
             {"version": 1, "theme": "moyu-green", "modules": []},

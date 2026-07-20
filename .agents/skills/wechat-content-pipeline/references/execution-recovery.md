@@ -38,7 +38,20 @@ Agent 不手写分行或高亮。若标题超过 32 字，只修改一次 `artic
 
 渲染器应同时搜索 `chrome-linux/chrome` 和 `chrome-linux64/chrome`。也可用 `--browser <absolute-path>` 或 `WECHAT_COVER_BROWSER` 显式指定。先运行浏览器 `--version`，再用同一 HTML 做一次最小 headless 截图，确认浏览器本身可用。
 
+**Snap 启动器路径陷阱**：`/snap/bin/chromium` 是 Snap 包装脚本，`Path.resolve()` 会将其解析为 `/usr/bin/snap`，而 `snap` 命令不接受 `--headless` 参数。修复方式：使用 `Path.absolute()` 而非 `Path.resolve()` 保留原始启动器路径。
+
+若使用 Snap 安装的 Chromium，浏览器可能能读取 `file://` HTML，却不能把 `--screenshot` 直接写入点目录下的任务路径（如 `~/.hermes/...`）。最小截图显示“已写入”但目标文件不存在时，不要继续重试渲染器：先把截图输出到 `/home/<user>/cover-staging.png` 这类 Snap 可写路径，校验 PNG 签名与 1410×600 尺寸，再复制到任务的 `cover/cover.png`。复制后再次机械校验目标文件。
+
+**浏览器退出竞态**：Chromium 可能在退出后才完成 PNG 写入。轮询逻辑在检测到进程退出后应立即再次检查 PNG 文件，而不是等待超时。如果 PNG 在进程退出后立即出现且尺寸正确，应视为成功。
+
 不要把浏览器发现问题改写成“浏览器不可用”的长期结论。修复候选路径或显式设置路径，并保留 PNG 签名与精确尺寸校验。
+
+## 默认封面与阶段状态校验
+
+- 只有发布配置中真实存在非空 `thumb_media_id`，才可记录 `default_thumb_media_id=true`。账号别名存在、凭证可用或门禁暂时放行，都不能证明默认封面已配置。
+- 封面渲染失败时，应先读取发布配置验证默认封面；无法验证就记录 `false`，让门禁阻止草稿创建，不能凭假设推进。
+- `pipeline_job.py stage` 可能合并而不是清空旧 `details`。阶段从 `skipped` 恢复为 `completed` 后，要检查 `show` 输出，避免残留的 `default_thumb_media_id=true` 与新生成的 `cover.png` 同时存在。最终状态只保留与实际发布路径一致的信息。
+- 在调用微信 API 前，做与发布脚本一致的封面预检：要么 `--cover` 指向已校验 PNG，要么账号配置确有默认 `thumb_media_id`。门禁通过不能替代这一步。
 
 ## 重试边界
 
