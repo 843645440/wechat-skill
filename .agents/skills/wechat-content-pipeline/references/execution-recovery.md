@@ -30,13 +30,18 @@ Agent 不手写分行或高亮。若标题超过 32 字，只修改一次 `artic
 
 ## Chromium/Playwright 兼容
 
-确定性 HTML 封面找不到系统 Chrome 时，优先检查 Playwright 缓存。新版 Chrome for Testing 常见路径为：
+确定性 HTML 封面找不到系统 Chrome 时，优先检查 Playwright 缓存。优先使用 headless_shell，再回退完整 Chrome for Testing：
 
 ```text
+~/.cache/ms-playwright/chromium_headless_shell-*/chrome-headless-shell-linux64/chrome-headless-shell
 ~/.cache/ms-playwright/chromium-*/chrome-linux64/chrome
 ```
 
-渲染器应同时搜索 `chrome-linux/chrome` 和 `chrome-linux64/chrome`。也可用 `--browser <absolute-path>` 或 `WECHAT_COVER_BROWSER` 显式指定。先运行浏览器 `--version`，再用同一 HTML 做一次最小 headless 截图，确认浏览器本身可用。
+渲染器应同时搜索 `chrome-linux/chrome`、`chrome-linux64/chrome` 以及 `chromium_headless_shell` 路径。也可用 `--browser <absolute-path>` 或 `WECHAT_COVER_BROWSER` 显式指定。先运行浏览器 `--version`，再用同一 HTML 做一次最小 headless 截图，确认浏览器本身可用。
+
+**AppArmor / 无沙箱环境**：Ubuntu 23.10+ 若启用 `apparmor_restrict_unprivileged_userns`，非 root 下完整 Chrome 会直接以 `No usable sandbox` 中止，探针报“浏览器内容探针执行失败”。渲染器在检测到该限制（或 `WECHAT_COVER_NO_SANDBOX=1`、root）时必须自动附加 `--no-sandbox --disable-setuid-sandbox`。不要把这类环境问题当成封面模板错误。
+
+**优先 headless_shell**：在部分服务器上完整 Chrome for Testing 的 `--dump-dom` 可能挂起不退出，而 Playwright 的 `chrome-headless-shell` 能稳定完成内容探针与截图。候选浏览器顺序应把 headless_shell 放在完整 Chrome 之前。
 
 **Snap 启动器路径陷阱**：`/snap/bin/chromium` 是 Snap 包装脚本，`Path.resolve()` 会将其解析为 `/usr/bin/snap`，而 `snap` 命令不接受 `--headless` 参数。修复方式：使用 `Path.absolute()` 而非 `Path.resolve()` 保留原始启动器路径。
 

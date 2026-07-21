@@ -61,10 +61,15 @@ class PipelineRuntimeTests(unittest.TestCase):
             self.assertIsNotNone(job["stages"]["write"]["started_at"])
 
             job_dir = job_path.parent
+            body = (
+                "代码执行进入研究工具后，教师减少重复整理，也要核对结果。"
+                "学生获得更快反馈，学校需要管理权限、日志与责任边界。"
+            ) * 18
             (job_dir / "article.md").write_text(
                 "# Google让研究工具运行代码，教师先承担核验责任\n\n"
-                "代码执行进入研究工具后，教师减少重复整理，也要核对结果。\n\n"
-                "## 工具进入真实流程\n\n学生获得更快反馈，学校需要管理权限。\n",
+                f"{body}\n\n"
+                "## 工具进入真实流程\n\n"
+                f"{body}\n",
                 encoding="utf-8",
             )
             (job_dir / "sources.md").write_text(
@@ -74,6 +79,17 @@ class PipelineRuntimeTests(unittest.TestCase):
                 type("Args", (), {"job": str(job_path)})()
             )
             self.assertEqual("write-inline-plan", result["next"])
+            self.assertGreaterEqual(result["body_chars"], pipeline_runtime.MIN_BODY_CHARS)
+            self.assertLessEqual(result["body_chars"], pipeline_runtime.MAX_BODY_CHARS)
+            self.assertEqual(
+                {"version": 1, "theme": result["theme"], "modules": []},
+                result["plan_schema"],
+            )
+            self.assertTrue(Path(result["plan"]).is_file())
+            self.assertEqual(
+                {"version": 1, "theme": result["theme"], "modules": []},
+                json.loads(Path(result["plan"]).read_text(encoding="utf-8")),
+            )
             self.assertIn(result["theme"], pipeline_runtime.pipeline_job.THEME_RE.findall(
                 Path(ROOT, "references", "theme-index.md").read_text(encoding="utf-8")
             ))
@@ -82,6 +98,44 @@ class PipelineRuntimeTests(unittest.TestCase):
                 ("signal-editorial", "night-signal", "redaction-poster"),
             )
             self.assertTrue(Path(result["cover_spec"]).is_file())
+
+    def test_prepare_rejects_short_article(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            job_path = self.make_job(tmp)
+            pipeline_runtime.cmd_begin(type("Args", (), {"job": str(job_path)})())
+            job_dir = job_path.parent
+            (job_dir / "article.md").write_text(
+                "# 标题足够具体且不超过三十二字限制\n\n正文太短。\n",
+                encoding="utf-8",
+            )
+            (job_dir / "sources.md").write_text("来源\n", encoding="utf-8")
+            with self.assertRaisesRegex(pipeline_runtime.RuntimeFailure, "正文字数"):
+                pipeline_runtime.cmd_prepare(type("Args", (), {"job": str(job_path)})())
+
+    def test_prepare_rejects_overlong_article(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            job_path = self.make_job(tmp)
+            pipeline_runtime.cmd_begin(type("Args", (), {"job": str(job_path)})())
+            job_dir = job_path.parent
+            body = "这是用于触发字数上限的填充正文。" * 300
+            (job_dir / "article.md").write_text(
+                f"# 标题足够具体且不超过三十二字限制\n\n{body}\n",
+                encoding="utf-8",
+            )
+            (job_dir / "sources.md").write_text("来源\n", encoding="utf-8")
+            with self.assertRaisesRegex(pipeline_runtime.RuntimeFailure, "正文字数"):
+                pipeline_runtime.cmd_prepare(type("Args", (), {"job": str(job_path)})())
+
+    def test_count_body_chars_ignores_title_and_markdown_noise(self):
+        article = (
+            "# 标题不计入\n\n"
+            "## 小节\n\n"
+            "这是**正文**内容，共若干汉字。\n"
+        )
+        self.assertEqual(
+            pipeline_runtime.count_body_chars(article),
+            len("小节这是正文内容，共若干汉字。"),
+        )
 
     def test_runtime_only_exposes_draft_not_public_publish(self):
         parser = pipeline_runtime.build_parser()

@@ -36,7 +36,7 @@ python3 <SKILL_ROOT>/scripts/render_cover.py \
 
 ## 运行条件
 
-需要 Python 3 和 Chrome/Chromium，不需要图片 API Key。脚本会自动查找常见浏览器；无法找到时设置 `WECHAT_COVER_BROWSER`。
+需要 Python 3 和 Chrome/Chromium，不需要图片 API Key。脚本会自动查找常见浏览器；无法找到时设置 `WECHAT_COVER_BROWSER`。AppArmor / headless_shell 探针失败见 [references/apparmor-headless-shell.md](references/apparmor-headless-shell.md)。
 
 ### Snap/Chromium 陷阱
 

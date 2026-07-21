@@ -34,7 +34,7 @@
 - **双关卡质量校验**：`component_lint.py`（组件库源头）+ `validate_gzh_html.py`（最终产物），构成可复现的「改→验→修」闭环。
 - **一键复制**：生成带「复制」按钮的预览页，点一下把富文本复制到剪贴板，直接粘进公众号，免手动全选。
 - **多账号发布**：每个公众号使用独立环境变量和素材空间，外部 Agent 定时任务只需传入账号别名。
-- **内容生产流水线**：`wechat-content-pipeline` 可联网发现热点，生成“具体对象 + 明确动作 + 现实落点”的标题，随机选择主题，一次完成正文与信息模块排版，并在 45 秒硬超时内生成确定性封面，校验后写入指定账号草稿箱。
+- **内容生产流水线**：`wechat-content-pipeline` 可联网发现热点，生成“具体对象 + 明确动作 + 现实落点”的标题；写后经 vendored `humanizer-zh` 一轮去 AI 味（默认 strong）；随机选择主题，一次完成正文与信息模块排版，并在 45 秒硬超时内生成确定性封面，校验后写入指定账号草稿箱。正文字数硬门禁 1500—4000。
 
 ## 👀 效果预览
 
@@ -277,7 +277,7 @@ python3 scripts/wechat_publish.py --config wechat-accounts.json send \
 
 ```
 wechat-skill/
-├── .agents/skills/             # 写作、原生信息模块、封面与编排 Skill
+├── .agents/skills/             # 写作、humanizer-zh 去 AI 味、原生信息模块、封面与编排 Skill
 ├── .baoyu-skills/              # 图片 Skill 的项目级非交互偏好
 ├── config/                     # A/B 账号的非敏感内容档案
 ├── SKILL.md                    # 排版工作流主文档（Agent 入口）

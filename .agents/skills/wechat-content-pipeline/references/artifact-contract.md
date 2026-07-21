@@ -28,11 +28,12 @@ work/<account>/current/
 1. `discover`：使用给定主题，或联网发现热点。
 2. `write`：完成 `article.md`。
 3. `fact-check`：完成 `sources.md` 和事实核验。
-4. `format`：随机选择主题，由固定渲染器一次生成完整 `article.html`。
-5. `inline-visuals`：从正文提取结构化信息，并在同一次渲染中插入同主题原生 HTML 模块；没有合适信息时以 0 个模块正常完成，计划或锚点异常时降级为空计划。
-6. `cover`：通过确定性 HTML 渲染器生成封面，或确认账号默认封面可用。
-7. `validate`：严格校验、预览和占位符检查通过。
-8. `draft`：指定账号草稿创建成功。
+4. `humanize`：用 `humanizer-zh` 对 `article.md` 做一轮去 AI 味（写后、prepare 前；**默认 intensity=strong**）；不改事实与来源文件。
+5. `format`：随机选择主题，由固定渲染器一次生成完整 `article.html`。
+6. `inline-visuals`：从正文提取结构化信息，并在同一次渲染中插入同主题原生 HTML 模块；没有合适信息时以 0 个模块正常完成，计划或锚点异常时降级为空计划。
+7. `cover`：通过确定性 HTML 渲染器生成封面，或确认账号默认封面可用。
+8. `validate`：严格校验、预览和占位符检查通过。
+9. `draft`：指定账号草稿创建成功。
 
 状态只使用 `pending`、`running`、`completed`、`failed`、`skipped`。每个阶段开始前必须先标记 `running`，结束时记录 `started_at`、`completed_at` 和真实 `duration_ms`；不再用相邻阶段的更新时间推算耗时。原生信息模块正常为空时标记 `completed`；计划或插入异常降级为空时标记 `skipped`，并记录 `degraded=true`、`module_count=0` 和原因。草稿门禁只接受结构正确、主题一致的空计划。封面不可用时标记 `skipped`，继续完成 HTML 校验，最后由门禁判断是否有默认封面。
 
@@ -40,7 +41,7 @@ work/<account>/current/
 
 ## 正文和来源
 
-`article.md` 第一行是唯一一级标题，不包含写作计划、来源清单或待办说明。排版 Skill 和原生信息模块 Skill 都不得改变事实与核心判断。
+`article.md` 第一行是唯一一级标题，不包含写作计划、来源清单或待办说明。`humanize` 只去掉 AI 腔与套话，不得新增事实；排版与原生信息模块 Skill 都不得改变事实与核心判断。
 
 `inline-visuals.json` 只保存正文中可定位、可核验的信息模块计划，不是另一份正文。每个模块必须保留原文锚点和证据。
 

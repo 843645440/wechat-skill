@@ -26,10 +26,14 @@ import pipeline_job
 
 
 TITLE_RE = re.compile(r"^#\s+(.+?)\s*$", re.MULTILINE)
+FENCE_RE = re.compile(r"```.*?```", re.DOTALL)
+MARKDOWN_NOISE_RE = re.compile(r"[#>*_`~\[\]()!|\\\-]+")
 TRANSIENT_RE = re.compile(
     r"TLS|EOF|connection reset|timed? out|timeout|HTTP\s+5\d\d|微信 API 请求失败",
     re.IGNORECASE,
 )
+MIN_BODY_CHARS = 1500
+MAX_BODY_CHARS = 4000
 
 
 class RuntimeFailure(RuntimeError):
@@ -98,6 +102,23 @@ def choose_theme(job_path):
     return output.getvalue().strip()
 
 
+def count_body_chars(article):
+    """Count readable body characters after stripping title and light Markdown noise."""
+    lines = []
+    skipped_title = False
+    for line in article.splitlines():
+        if not skipped_title and TITLE_RE.match(line):
+            skipped_title = True
+            continue
+        if line.lstrip().startswith("##"):
+            line = re.sub(r"^#{2,6}\s*", "", line)
+        lines.append(line)
+    text = "\n".join(lines)
+    text = FENCE_RE.sub("", text)
+    text = MARKDOWN_NOISE_RE.sub("", text)
+    return len(re.sub(r"\s+", "", text))
+
+
 def require_content(artifacts):
     for name in ("article", "sources"):
         path = artifacts[name]
@@ -111,6 +132,11 @@ def require_content(artifacts):
     matches = TITLE_RE.findall(article)
     if len(matches) != 1:
         raise RuntimeFailure("article.md 必须包含且只包含一个一级标题")
+    body_chars = count_body_chars(article)
+    if body_chars < MIN_BODY_CHARS or body_chars > MAX_BODY_CHARS:
+        raise RuntimeFailure(
+            f"article.md 正文字数 {body_chars} 不在 {MIN_BODY_CHARS}—{MAX_BODY_CHARS} 字范围内"
+        )
     return " ".join(matches[0].split())
 
 
@@ -184,6 +210,11 @@ def cmd_prepare(args):
     mark(args.job, "format", "running", "开始确定性排版", {"theme": theme})
     mark(args.job, "inline-visuals", "running", "等待唯一一次信息模块计划")
     roots = command_roots(job)
+    seed_plan = {"version": 1, "theme": theme, "modules": []}
+    artifacts["inline_visuals"].write_text(
+        json.dumps(seed_plan, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
     cover_spec = run_json([
         sys.executable,
         str(roots["cover"] / "scripts" / "build_cover_spec.py"),
@@ -195,7 +226,10 @@ def cmd_prepare(args):
     return {
         "status": "ok", "next": "write-inline-plan", "title": title,
         "theme": theme, "template": load_json(artifacts["cover_spec"], "封面规格")["template"],
-        "plan": str(artifacts["inline_visuals"]), "cover_spec": cover_spec["output"],
+        "plan": str(artifacts["inline_visuals"]),
+        "plan_schema": seed_plan,
+        "cover_spec": cover_spec["output"],
+        "body_chars": count_body_chars(artifacts["article"].read_text(encoding="utf-8")),
     }
 
 

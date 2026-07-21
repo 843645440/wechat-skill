@@ -170,9 +170,34 @@ class HtmlCoverTests(unittest.TestCase):
             Path.glob = original_glob
 
         self.assertIn(
+            ".cache/ms-playwright/chromium_headless_shell-*/chrome-headless-shell-linux64/chrome-headless-shell",
+            patterns,
+        )
+        self.assertIn(
             ".cache/ms-playwright/chromium-*/chrome-linux64/chrome",
             patterns,
         )
+        self.assertLess(
+            patterns.index(
+                ".cache/ms-playwright/chromium_headless_shell-*/chrome-headless-shell-linux64/chrome-headless-shell"
+            ),
+            patterns.index(".cache/ms-playwright/chromium-*/chrome-linux64/chrome"),
+        )
+
+    def test_needs_no_sandbox_honors_env_and_apparmor(self):
+        original = os.environ.get("WECHAT_COVER_NO_SANDBOX")
+        try:
+            os.environ["WECHAT_COVER_NO_SANDBOX"] = "1"
+            self.assertTrue(render_html_cover.needs_no_sandbox())
+            self.assertIn("--no-sandbox", render_html_cover.browser_runtime_flags())
+            os.environ["WECHAT_COVER_NO_SANDBOX"] = "0"
+            self.assertFalse(render_html_cover.needs_no_sandbox())
+            self.assertEqual([], render_html_cover.browser_runtime_flags())
+        finally:
+            if original is None:
+                os.environ.pop("WECHAT_COVER_NO_SANDBOX", None)
+            else:
+                os.environ["WECHAT_COVER_NO_SANDBOX"] = original
 
     def test_find_browser_preserves_launcher_symlink(self):
         with tempfile.TemporaryDirectory() as tmp:

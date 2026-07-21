@@ -26,6 +26,15 @@ PUBLISH_PLACEHOLDER = re.compile(
     r"\{\{[^{}]+\}\}|【(?:插入|待补|待填写)[^】]*】"
 )
 
+# 推送草稿/发布默认直连微信 API，忽略 HTTP(S)_PROXY / ALL_PROXY。
+# 本机常开代理时，白名单应对准直连出口 IP，而不是代理出口。
+_DIRECT_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+
+def _urlopen_direct(request, timeout=30):
+    """Open URL without proxy (WeChat IP whitelist uses direct egress)."""
+    return _DIRECT_OPENER.open(request, timeout=timeout)
+
 
 class PublishError(RuntimeError):
     pass
@@ -142,7 +151,8 @@ class WeChatClient:
         request = urllib.request.Request(self.api_base + path, data=data,
                                          headers=req_headers, method=method)
         try:
-            with urllib.request.urlopen(request, timeout=30) as response:
+            # 强制直连 api.weixin.qq.com，不走本机 HTTP(S)_PROXY
+            with _urlopen_direct(request, timeout=30) as response:
                 raw = response.read()
         except (urllib.error.URLError, TimeoutError) as exc:
             raise PublishError(f"微信 API 请求失败：{exc}") from exc

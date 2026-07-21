@@ -15,6 +15,7 @@ STAGES = (
     "discover",
     "write",
     "fact-check",
+    "humanize",
     "format",
     "inline-visuals",
     "cover",
@@ -74,6 +75,9 @@ def load_job(path):
         raise JobError(f"无法读取任务清单 {path}: {exc}") from exc
     if job.get("schema_version") != 4 or not isinstance(job.get("stages"), dict):
         raise JobError("任务清单格式不受支持")
+    # Tolerate jobs created before newer stages existed.
+    for name in STAGES:
+        job["stages"].setdefault(name, stage_record("pending"))
     return job
 
 
@@ -362,6 +366,7 @@ def cmd_gate(args):
         "discover",
         "write",
         "fact-check",
+        "humanize",
         "format",
         "validate",
     ):

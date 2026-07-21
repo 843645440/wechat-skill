@@ -75,6 +75,238 @@ def string_items(value, field, minimum=2, maximum=4):
     return [text(item, f"{field}[{index}]", 28) for index, item in enumerate(value, 1)]
 
 
+def clamp_text(value, maximum):
+    value = normalized(str(value))
+    if not value:
+        return value
+    return value if len(value) <= maximum else value[:maximum]
+
+
+def first_present(mapping, *keys):
+    for key in keys:
+        if key in mapping and mapping[key] not in (None, ""):
+            return mapping[key]
+    return None
+
+
+def coerce_label_text_list(items, label_max, text_max, label_aliases):
+    if not isinstance(items, list):
+        return items
+    output = []
+    for item in items:
+        if isinstance(item, str):
+            text_value = clamp_text(item, text_max)
+            label_value = clamp_text(item, label_max)
+            if text_value and label_value:
+                output.append({"label": label_value, "text": text_value})
+            continue
+        if not isinstance(item, dict):
+            continue
+        label = first_present(item, "label", *label_aliases)
+        body = first_present(item, "text", "desc", "description", "content", "detail")
+        if label is None and body is None:
+            continue
+        if label is None:
+            label = clamp_text(body, label_max)
+        if body is None:
+            body = clamp_text(label, text_max)
+        output.append({
+            "label": clamp_text(label, label_max),
+            "text": clamp_text(body, text_max),
+        })
+    return output
+
+
+def coerce_module(module, index):
+    """Normalize one module: aliases, ids, length clamps; rewrite to canonical keys."""
+    if not isinstance(module, dict):
+        return module
+    out = dict(module)
+
+    kind = out.get("kind") or out.get("type") or out.get("module_type")
+    if isinstance(kind, str):
+        kind = kind.strip().lower().replace("_", "-")
+        aliases = {
+            "insights": "insight",
+            "point": "insight",
+            "points": "insight",
+            "compare": "comparison",
+            "contrast": "comparison",
+            "flow": "process",
+            "steps": "process",
+            "pipeline": "process",
+            "metric": "metrics",
+            "stats": "metrics",
+            "numbers": "metrics",
+        }
+        kind = aliases.get(kind, kind)
+    out["kind"] = kind
+
+    module_id = out.get("id")
+    if not isinstance(module_id, str) or not ID_RE.fullmatch(module_id.strip()):
+        out["id"] = f"inline-{index:02d}"
+    else:
+        out["id"] = module_id.strip()
+
+    title = first_present(out, "title", "name", "heading", "module_title")
+    if title is not None:
+        out["title"] = clamp_text(title, 24)
+
+    placement = out.get("placement") or out.get("position") or out.get("anchor")
+    if isinstance(placement, dict):
+        place = {}
+        heading = first_present(
+            placement, "after_heading", "afterHeading", "heading", "section", "chapter"
+        )
+        after = first_present(
+            placement, "after_text", "afterText", "text", "anchor", "anchor_text", "quote"
+        )
+        if heading is not None:
+            place["after_heading"] = clamp_text(heading, 40)
+        if after is not None:
+            place["after_text"] = clamp_text(after, 120)
+        out["placement"] = place
+
+    evidence = out.get("evidence") or out.get("proofs") or out.get("quotes")
+    if isinstance(evidence, str):
+        evidence = [evidence]
+    if isinstance(evidence, list):
+        cleaned = []
+        for item in evidence[:4]:
+            if isinstance(item, str) and normalized(item):
+                cleaned.append(clamp_text(item, 160))
+        out["evidence"] = cleaned
+
+    if kind == "insight":
+        items = out.get("items") or out.get("points") or out.get("bullets")
+        out["items"] = coerce_label_text_list(
+            items, 10, 42, ("name", "title", "heading", "role", "who")
+        )
+    elif kind == "process":
+        steps = out.get("steps") or out.get("flow") or out.get("process")
+        out["steps"] = coerce_label_text_list(
+            steps, 10, 28, ("name", "title", "heading", "step", "stage")
+        )
+    elif kind == "comparison":
+        for side_key, aliases in (
+            ("left", ("left", "before", "a", "from")),
+            ("right", ("right", "after", "b", "to")),
+        ):
+            side = out.get(side_key)
+            if side is None:
+                for alt in aliases[1:]:
+                    if alt in out:
+                        side = out.get(alt)
+                        break
+            if not isinstance(side, dict):
+                continue
+            heading = first_present(side, "heading", "title", "name", "label")
+            items = side.get("items") or side.get("points") or side.get("bullets")
+            if isinstance(items, list):
+                items = [
+                    clamp_text(x, 28) if isinstance(x, str) else x
+                    for x in items
+                ]
+            rebuilt = {}
+            if heading is not None:
+                rebuilt["heading"] = clamp_text(heading, 12)
+            if items is not None:
+                rebuilt["items"] = items
+            out[side_key] = rebuilt
+    elif kind == "metrics":
+        metrics = out.get("metrics") or out.get("stats") or out.get("numbers")
+        if isinstance(metrics, list):
+            cleaned = []
+            for item in metrics:
+                if not isinstance(item, dict):
+                    continue
+                value = first_present(item, "value", "number", "num", "metric")
+                label = first_present(item, "label", "name", "title", "heading")
+                note = first_present(item, "note", "desc", "description", "text", "detail")
+                row = {}
+                if value is not None:
+                    row["value"] = clamp_text(value, 12)
+                if label is not None:
+                    row["label"] = clamp_text(label, 12)
+                if note is not None:
+                    row["note"] = clamp_text(note, 28)
+                cleaned.append(row)
+            out["metrics"] = cleaned
+
+    common = {"id", "kind", "title", "placement", "evidence"}
+    kind_fields = {
+        "insight": ("items",),
+        "comparison": ("left", "right"),
+        "process": ("steps",),
+        "metrics": ("metrics",),
+    }
+    if kind not in kind_fields:
+        return out
+    canonical = {key: out[key] for key in common if key in out}
+    for key in kind_fields[kind]:
+        if key in out:
+            canonical[key] = out[key]
+    return canonical
+
+
+def coerce_plan(raw, fallback_theme=None):
+    """Normalize shell + common agent field aliases; keep modules whenever possible."""
+    if not isinstance(raw, dict):
+        return raw
+    out = dict(raw)
+    version = out.get("version", 1)
+    if version in (None, "", "1", 1, 1.0):
+        out["version"] = 1
+    if not out.get("theme") and fallback_theme:
+        out["theme"] = fallback_theme
+    modules = out.get("modules")
+    if modules is None:
+        modules = out.get("blocks") or out.get("visuals") or []
+    if not isinstance(modules, list):
+        modules = []
+    coerced_modules = []
+    for index, module in enumerate(modules[:3], 1):
+        coerced_modules.append(coerce_module(module, index))
+    return {
+        "version": out.get("version", 1),
+        "theme": out.get("theme"),
+        "modules": coerced_modules,
+    }
+
+
+def salvage_plan(raw, article, registered_themes, fallback_theme=None):
+    """Keep individually valid modules when the full plan fails.
+
+    Returns (plan_dict, dropped_reasons).
+    """
+    theme = None
+    if isinstance(raw, dict):
+        theme = raw.get("theme")
+    if not theme or theme not in registered_themes:
+        theme = fallback_theme
+    if not theme or theme not in registered_themes:
+        raise PlanError("salvage 需要已注册 theme")
+
+    modules = raw.get("modules") if isinstance(raw, dict) else []
+    if not isinstance(modules, list):
+        modules = []
+
+    kept = []
+    dropped = []
+    for index, module in enumerate(modules, 1):
+        one = coerce_module(module, len(kept) + 1)
+        if isinstance(one, dict):
+            one["id"] = f"inline-{len(kept) + 1:02d}"
+        trial = {"version": 1, "theme": theme, "modules": kept + [one]}
+        try:
+            validate_plan(trial, article, registered_themes)
+            kept = trial["modules"]
+        except PlanError as exc:
+            dropped.append(f"modules[{index}]: {exc}")
+
+    return {"version": 1, "theme": theme, "modules": kept}, dropped
+
+
 def validate_plan(raw, article, registered_themes):
     strict_keys(raw, {"version", "theme", "modules"}, "plan")
     if raw["version"] != 1:
@@ -195,10 +427,10 @@ def main():
     except OSError as exc:
         print(json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False), file=sys.stderr)
         return 1
+
     try:
-        raw = json.loads(Path(args.plan).read_text(encoding="utf-8"))
-        result = validate_plan(raw, article, registered)
-    except (OSError, json.JSONDecodeError, PlanError) as exc:
+        loaded = json.loads(Path(args.plan).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
         if args.degrade_on_error:
             if not args.fallback_theme or args.fallback_theme not in registered:
                 print(
@@ -218,8 +450,11 @@ def main():
             print(
                 json.dumps(
                     {
-                        "status": "ok", "theme": args.fallback_theme,
-                        "module_count": 0, "kinds": [], "degraded": True,
+                        "status": "ok",
+                        "theme": args.fallback_theme,
+                        "module_count": 0,
+                        "kinds": [],
+                        "degraded": True,
                         "degrade_reason": str(exc),
                     },
                     ensure_ascii=False,
@@ -228,8 +463,88 @@ def main():
             return 0
         print(json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False), file=sys.stderr)
         return 1
-    print(json.dumps({"status": "ok", **result, "degraded": False}, ensure_ascii=False))
-    return 0
+
+    raw = coerce_plan(loaded, args.fallback_theme)
+    try:
+        result = validate_plan(raw, article, registered)
+        try:
+            atomic_json(Path(args.plan), {
+                "version": raw["version"],
+                "theme": raw["theme"],
+                "modules": raw["modules"],
+            })
+        except OSError:
+            pass
+        print(json.dumps({"status": "ok", **result, "degraded": False}, ensure_ascii=False))
+        return 0
+    except PlanError as full_exc:
+        if not args.degrade_on_error:
+            print(json.dumps({"status": "error", "error": str(full_exc)}, ensure_ascii=False), file=sys.stderr)
+            return 1
+        if not args.fallback_theme or args.fallback_theme not in registered:
+            print(
+                json.dumps(
+                    {"status": "error", "error": "降级需要已注册的 --fallback-theme"},
+                    ensure_ascii=False,
+                ),
+                file=sys.stderr,
+            )
+            return 1
+
+        # Prefer keeping any salvageable modules over wiping the whole plan.
+        try:
+            salvaged, dropped = salvage_plan(
+                raw, article, registered, fallback_theme=args.fallback_theme
+            )
+        except PlanError:
+            salvaged, dropped = (
+                {"version": 1, "theme": args.fallback_theme, "modules": []},
+                [str(full_exc)],
+            )
+
+        try:
+            atomic_json(Path(args.plan), salvaged)
+        except OSError as write_exc:
+            print(json.dumps({"status": "error", "error": str(write_exc)}, ensure_ascii=False), file=sys.stderr)
+            return 1
+
+        module_count = len(salvaged["modules"])
+        kinds = [item["kind"] for item in salvaged["modules"]]
+        if module_count:
+            reason = (
+                f"full_plan_failed: {full_exc}; kept {module_count}; dropped: "
+                + ("; ".join(dropped) if dropped else "none")
+            )
+            print(
+                json.dumps(
+                    {
+                        "status": "ok",
+                        "theme": salvaged["theme"],
+                        "module_count": module_count,
+                        "kinds": kinds,
+                        "degraded": True,
+                        "partial": True,
+                        "degrade_reason": reason,
+                    },
+                    ensure_ascii=False,
+                )
+            )
+            return 0
+
+        print(
+            json.dumps(
+                {
+                    "status": "ok",
+                    "theme": args.fallback_theme,
+                    "module_count": 0,
+                    "kinds": [],
+                    "degraded": True,
+                    "degrade_reason": str(full_exc),
+                },
+                ensure_ascii=False,
+            )
+        )
+        return 0
 
 
 if __name__ == "__main__":

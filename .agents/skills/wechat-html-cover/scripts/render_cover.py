@@ -282,10 +282,53 @@ def atomic_write(path, value):
         raise CoverError(f"无法写入 HTML：{exc}") from exc
 
 
+def _read_sysctl(path):
+    try:
+        return Path(path).read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+
+
+def needs_no_sandbox():
+    """Local trusted HTML covers should run without a browser sandbox when the
+    kernel/AppArmor policy makes Chromium's sandbox unusable for non-root users.
+    """
+    explicit = os.environ.get("WECHAT_COVER_NO_SANDBOX", "").strip().lower()
+    if explicit in {"1", "true", "yes", "on"}:
+        return True
+    if explicit in {"0", "false", "no", "off"}:
+        return False
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        return True
+    if _read_sysctl("/proc/sys/kernel/apparmor_restrict_unprivileged_userns") == "1":
+        return True
+    if _read_sysctl("/proc/sys/kernel/unprivileged_userns_clone") == "0":
+        return True
+    return False
+
+
+def browser_runtime_flags():
+    flags = []
+    if needs_no_sandbox():
+        flags.extend(("--no-sandbox", "--disable-setuid-sandbox"))
+    return flags
+
+
 def browser_candidates():
     explicit = os.environ.get("WECHAT_COVER_BROWSER", "").strip()
     if explicit:
         yield Path(explicit).expanduser()
+    home = Path.home()
+    # Prefer Playwright headless_shell: dump-dom and screenshot exit reliably on
+    # restricted servers where full Chrome for Testing may hang or abort.
+    for pattern in (
+        ".cache/ms-playwright/chromium_headless_shell-*/chrome-headless-shell-linux64/chrome-headless-shell",
+        ".cache/ms-playwright/chromium_headless_shell-*/chrome-headless-shell-linux/chrome-headless-shell",
+        ".cache/ms-playwright/chromium-*/chrome-headless-shell-linux64/chrome-headless-shell",
+        ".cache/ms-playwright/chromium-*/chrome-linux64/headless_shell",
+        ".cache/ms-playwright/chromium-*/chrome-linux/headless_shell",
+    ):
+        yield from sorted(home.glob(pattern), reverse=True)
     for name in ("google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "chrome"):
         value = shutil.which(name)
         if value:
@@ -296,11 +339,9 @@ def browser_candidates():
         "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
     ):
         yield Path(value)
-    home = Path.home()
     for pattern in (
-        ".cache/ms-playwright/chromium-*/chrome-linux/chrome",
         ".cache/ms-playwright/chromium-*/chrome-linux64/chrome",
-        ".cache/ms-playwright/chromium-*/chrome-linux/headless_shell",
+        ".cache/ms-playwright/chromium-*/chrome-linux/chrome",
         "Library/Caches/ms-playwright/chromium-*/chrome-mac*/Chromium.app/Contents/MacOS/Chromium",
     ):
         yield from sorted(home.glob(pattern), reverse=True)
@@ -331,6 +372,7 @@ def validate_dumped_dom(value):
         "err_access_denied", "err_file_not_found", "err_name_not_resolved",
         "err_connection_refused", "your file couldn't be accessed",
         "this site can’t be reached", "this site can't be reached",
+        "no usable sandbox",
     )
     if any(marker in normalized for marker in error_markers):
         raise CoverError("浏览器内容探针检测到错误页")
@@ -338,23 +380,39 @@ def validate_dumped_dom(value):
         raise CoverError("浏览器内容探针未找到封面画布或标题")
 
 
+def _format_browser_detail(stderr, limit=180):
+    text = " ".join((stderr or "").split())
+    if not text:
+        return ""
+    return text[:limit]
+
+
 def probe_dom(browser, html_uri, profile, timeout):
     command = [
-        str(browser), "--headless=new", "--disable-gpu", "--disable-background-networking",
+        str(browser), "--headless=new", *browser_runtime_flags(),
+        "--disable-gpu", "--disable-background-networking",
         "--disable-default-apps", "--disable-dev-shm-usage", "--disable-extensions",
         "--disable-sync", "--no-first-run", "--no-default-browser-check",
         f"--user-data-dir={profile}", "--dump-dom", html_uri,
     ]
-    if hasattr(os, "geteuid") and os.geteuid() == 0:
-        command.insert(1, "--no-sandbox")
     try:
         result = subprocess.run(
             command, text=True, capture_output=True, timeout=min(timeout, 15)
         )
-    except (OSError, subprocess.TimeoutExpired) as exc:
+    except subprocess.TimeoutExpired as exc:
+        raise CoverError("浏览器内容探针超时") from exc
+    except OSError as exc:
         raise CoverError(f"浏览器内容探针失败：{exc}") from exc
     if result.returncode:
+        detail = _format_browser_detail(result.stderr)
+        if detail:
+            raise CoverError(f"浏览器内容探针执行失败：{detail}")
         raise CoverError("浏览器内容探针执行失败")
+    if not (result.stdout or "").strip():
+        detail = _format_browser_detail(result.stderr)
+        if detail:
+            raise CoverError(f"浏览器内容探针无输出：{detail}")
+        raise CoverError("浏览器内容探针无输出")
     validate_dumped_dom(result.stdout)
 
 
@@ -368,17 +426,17 @@ def screenshot(browser, html_path, output, timeout):
     profile = staging / "profile"
     try:
         shutil.copy2(html_path, staged_html)
+        profile.mkdir(parents=True, exist_ok=True)
         probe_dom(browser, staged_html.as_uri(), profile, timeout)
         command = [
-            str(browser), "--headless=new", "--disable-gpu", "--disable-background-networking",
+            str(browser), "--headless=new", *browser_runtime_flags(),
+            "--disable-gpu", "--disable-background-networking",
             "--disable-default-apps", "--disable-dev-shm-usage", "--disable-extensions",
             "--disable-sync", "--hide-scrollbars", "--no-first-run", "--no-default-browser-check",
             "--force-device-scale-factor=1", "--run-all-compositor-stages-before-draw",
             "--virtual-time-budget=1000", f"--user-data-dir={profile}",
             f"--window-size={WIDTH},{HEIGHT}", f"--screenshot={temporary}", staged_html.as_uri(),
         ]
-        if hasattr(os, "geteuid") and os.geteuid() == 0:
-            command.insert(1, "--no-sandbox")
         try:
             process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
         except OSError as exc:

@@ -2,13 +2,18 @@
   "version": 4,
   "profiles": {
     "a": {
-      "label": "公众号 A",
+      "label": "熵增时刻",
       "audience": "关注科技、人工智能和职业变化的普通职场读者",
       "writer_instructions": "优先解释热点对工作流程、企业经营和普通人选择的现实影响，语气清晰、克制、信息密度中等。",
       "topic_discovery": {
         "window_hours": 24,
         "fallback_hours": 72,
-        "categories": ["人工智能", "科技产品", "就业变化", "中国高新技术"]
+        "categories": [
+          "人工智能",
+          "科技产品",
+          "就业变化",
+          "中国高新技术"
+        ]
       },
       "theme_strategy": "random",
       "inline_visuals": {
@@ -34,7 +39,19 @@
       "topic_discovery": {
         "window_hours": 72,
         "fallback_hours": 168,
-        "categories": ["就业", "教育", "医疗", "养老", "交通", "住房", "公共服务", "中国制造", "高新技术", "基础设施", "重大工程"]
+        "categories": [
+          "就业",
+          "教育",
+          "医疗",
+          "养老",
+          "交通",
+          "住房",
+          "公共服务",
+          "中国制造",
+          "高新技术",
+          "基础设施",
+          "重大工程"
+        ]
       },
       "theme_strategy": "random",
       "inline_visuals": {

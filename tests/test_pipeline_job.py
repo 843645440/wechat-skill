@@ -93,6 +93,7 @@ class PipelineJobTests(unittest.TestCase):
         for name in (
             "write",
             "fact-check",
+            "humanize",
             "format",
             "inline-visuals",
             "validate",
@@ -266,7 +267,7 @@ class PipelineJobTests(unittest.TestCase):
                 f.write('<section><p><span leaf="">正文。</span></p></section>')
             with open(os.path.join(job_dir, "inline-visuals.json"), "w", encoding="utf-8") as f:
                 json.dump({"version": 1, "theme": "moyu-green", "modules": []}, f)
-            for name in ("write", "fact-check", "format", "validate"):
+            for name in ("write", "fact-check", "humanize", "format", "validate"):
                 self.update_stage(job_path, name, "completed")
             self.update_stage(
                 job_path,
@@ -285,7 +286,7 @@ class PipelineJobTests(unittest.TestCase):
             job_dir = os.path.dirname(job_path)
             with open(os.path.join(job_dir, "article.html"), "w", encoding="utf-8") as f:
                 f.write('<section><p><span leaf="">正文。</span></p></section>')
-            for name in ("write", "fact-check", "format", "validate"):
+            for name in ("write", "fact-check", "humanize", "format", "validate"):
                 self.update_stage(job_path, name, "completed")
             self.update_stage(job_path, "inline-visuals", "skipped")
             self.update_stage(job_path, "cover", "completed")

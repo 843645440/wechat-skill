@@ -605,9 +605,31 @@ def render_document(title, sections, plan, theme):
     return "".join(output)
 
 
+def coerce_plan_shape(plan, theme):
+    """Keep modules when agents omit top-level version/theme shell fields."""
+    if not isinstance(plan, dict):
+        return plan
+    out = dict(plan)
+    version = out.get("version", 1)
+    if version in (None, "", "1", 1, 1.0):
+        out["version"] = 1
+    if not out.get("theme"):
+        out["theme"] = theme
+    if "modules" not in out or out.get("modules") is None:
+        out["modules"] = []
+    return out
+
+
 def validate_plan_shape(plan, theme):
-    if not isinstance(plan, dict) or set(plan) != {"version", "theme", "modules"}:
+    if not isinstance(plan, dict):
         raise RenderError("inline-visuals.json 结构无效")
+    # Allow only the three top-level fields after coercion.
+    unknown = sorted(set(plan) - {"version", "theme", "modules"})
+    if unknown:
+        raise RenderError(f"inline-visuals.json 包含未知字段：{', '.join(unknown)}")
+    missing = sorted({"version", "theme", "modules"} - set(plan))
+    if missing:
+        raise RenderError(f"inline-visuals.json 缺少字段：{', '.join(missing)}")
     if plan["version"] != 1 or plan["theme"] != theme or not isinstance(plan["modules"], list):
         raise RenderError("信息模块版本、主题或 modules 无效")
     if len(plan["modules"]) > 3:
@@ -633,8 +655,17 @@ def main():
         degraded = False
         reason = ""
         try:
-            plan = json.loads(plan_path.read_text(encoding="utf-8"))
+            plan = coerce_plan_shape(
+                json.loads(plan_path.read_text(encoding="utf-8")),
+                args.theme,
+            )
             validate_plan_shape(plan, args.theme)
+            # Persist coerced shell so later stages see a canonical plan.
+            atomic_json(plan_path, {
+                "version": plan["version"],
+                "theme": plan["theme"],
+                "modules": plan["modules"],
+            })
             rendered = render_document(title, sections, plan, THEMES[args.theme])
             module_count = len(plan["modules"])
             kinds = [item["kind"] for item in plan["modules"]]

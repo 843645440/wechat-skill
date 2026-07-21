@@ -2,6 +2,18 @@
 
 发布层按账号隔离凭证、`access_token` 和封面素材。原文自带远程图片时，发布脚本仍会按目标账号上传；自动内容流水线不会主动生成正文图片。账号必须已开通对应接口权限，并将执行环境的公网 IP 加入公众号白名单。
 
+## 0. 网络：草稿/发布 API 默认直连
+
+`scripts/wechat_publish.py` 对 `api.weixin.qq.com` **强制直连**（`ProxyHandler({})` / `_urlopen_direct`），忽略 `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY`。正文外链图片下载仍可走系统代理。
+
+本机若常开本地代理，默认 `urllib` 会走代理出口 IP，与微信 IP 白名单不一致。白名单应加**直连出口公网 IP**：
+
+```bash
+curl -4 -fsS --noproxy '*' https://ifconfig.me/ip
+```
+
+不要用「经代理测到的 IP」当作草稿推送白名单（除非改回走代理）。上游 `git pull` 后若直连补丁丢失，需重新确认 `_urlopen_direct` 仍在。
+
 ## 1. 配置账号
 
 ```bash
