@@ -150,30 +150,21 @@ class ArticleRendererTests(unittest.TestCase):
                 self.assertIn("丙公司", output)
                 self.assertIn(theme["underline"], output)
 
-    def test_anchor_failure_degrades_once_to_plain_article(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            article = Path(tmp) / "article.md"
-            plan = Path(tmp) / "inline-visuals.json"
-            output = Path(tmp) / "article.html"
-            article.write_text(ARTICLE, encoding="utf-8")
-            invalid = plan_for("insight", "moyu-green")
-            invalid["modules"][0]["placement"]["after_text"] = "不存在的锚点"
-            plan.write_text(json.dumps(invalid, ensure_ascii=False), encoding="utf-8")
+    def test_markdown_image_renders_as_wechat_image_block(self):
+        article = """# 正文图测试标题
 
-            original = os.sys.argv
-            try:
-                os.sys.argv = [
-                    "render_article.py", "--article", str(article), "--plan", str(plan),
-                    "--theme", "moyu-green", "--output", str(output),
-                ]
-                with contextlib.redirect_stdout(io.StringIO()):
-                    self.assertEqual(0, renderer.main())
-            finally:
-                os.sys.argv = original
+说明文字。
 
-            degraded = json.loads(plan.read_text(encoding="utf-8"))
-            self.assertEqual([], degraded["modules"])
-            self.assertNotIn("正文信息卡", output.read_text(encoding="utf-8"))
+![流程示意](imgs/workflow.png)
+"""
+        _, sections = renderer.parse_article(article)
+        self.assertEqual("image", sections[-1]["blocks"][-1]["kind"])
+        output = renderer.render_document("正文图测试标题", sections, renderer.THEMES["moyu-green"])
+        errors, warnings, _ = validator.validate(output)
+        self.assertEqual([], errors)
+        self.assertEqual([], warnings)
+        self.assertIn('<img src="imgs/workflow.png"', output)
+        self.assertIn('alt="流程示意"', output)
 
     def test_plain_text_preserves_literal_operators_and_cpp(self):
         value = "C++ 是语言，a == b，邮箱 a++b@example.com"

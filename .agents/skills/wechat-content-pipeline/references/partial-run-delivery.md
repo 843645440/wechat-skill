@@ -5,7 +5,7 @@
 用户明确要求「不要再往下 / 只写到去 AI 味 / 完整文章发我 / 先别排版封面草稿」时：
 
 1. 做完：热点（优先 Tavily）→ 写作 → **一轮** `humanizer-zh`（**默认 strong**）。
-2. **停止**：禁止 `prepare`、inline-visuals、cover、`finish`、发布。
+2. **停止**：禁止正文配图、`prepare`、cover、`finish`、发布。
 3. **对话贴全文**：去 AI 后的完整 Markdown（`#` 标题 + 正文），不要只丢路径。
 4. 一行附注即可：本地路径 + 约略字数。不要追问“要不要继续跑完”。
 5. 半程演示可不 `pipeline_job init`；定时日更/要进草稿箱时仍走完整 init→…→finish。

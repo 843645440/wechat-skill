@@ -7,6 +7,7 @@
 
 import argparse
 import hashlib
+import io
 import json
 import mimetypes
 import os
@@ -16,12 +17,21 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import warnings
+
+try:
+    from PIL import Image, ImageFile
+except ImportError:  # 安全失败；不得退回只看 magic bytes 的弱校验。
+    Image = None
+    ImageFile = None
 
 
 API_BASE = "https://api.weixin.qq.com"
 TOKEN_ERRORS = {40001, 40014, 42001}
 MP_IMAGE_HOSTS = {"mmbiz.qpic.cn", "mmbiz.qlogo.cn"}
+MAX_IMAGE_BYTES = 20 * 1024 * 1024
 IMG_SRC = re.compile(r"(<img\b[^>]*?\bsrc\s*=\s*)(['\"])(.*?)\2", re.I | re.S)
+IMG_TAG = re.compile(r"<img\b[^>]*>", re.I | re.S)
 PUBLISH_PLACEHOLDER = re.compile(
     r"\{\{[^{}]+\}\}|【(?:插入|待补|待填写)[^】]*】"
 )
@@ -211,27 +221,122 @@ class WeChatClient:
         )
 
 
-def read_image(source, base_dir):
+def _valid_webp(data):
+    if (
+        len(data) < 20
+        or not data.startswith(b"RIFF")
+        or data[8:12] != b"WEBP"
+        or int.from_bytes(data[4:8], "little") + 8 != len(data)
+    ):
+        return False
+    offset = 12
+    has_image_chunk = False
+    while offset < len(data):
+        if offset + 8 > len(data):
+            return False
+        chunk_type = data[offset:offset + 4]
+        chunk_size = int.from_bytes(data[offset + 4:offset + 8], "little")
+        chunk_end = offset + 8 + chunk_size
+        if chunk_end > len(data):
+            return False
+        if chunk_type in (b"VP8 ", b"VP8L", b"ANMF"):
+            has_image_chunk = True
+        offset = chunk_end + (chunk_size % 2)
+    return offset == len(data) and has_image_chunk
+
+
+def _detected_image_type(data):
+    if (
+        len(data) >= 24
+        and data.startswith(b"\x89PNG\r\n\x1a\n")
+        and data[12:16] == b"IHDR"
+        and data.endswith(b"IEND\xaeB`\x82")
+    ):
+        return "image/png"
+    if data.startswith(b"\xff\xd8\xff") and data.endswith(b"\xff\xd9"):
+        return "image/jpeg"
+    if (
+        len(data) >= 15
+        and data.startswith((b"GIF87a", b"GIF89a"))
+        and data.endswith(b"\x3b")
+        and b"\x2c" in data[13:-1]
+    ):
+        return "image/gif"
+    if _valid_webp(data):
+        return "image/webp"
+    return None
+
+
+def _normalize_image_type(value):
+    aliases = {
+        "image/jpg": "image/jpeg",
+        "image/pjpeg": "image/jpeg",
+        "image/x-png": "image/png",
+    }
+    return aliases.get((value or "").lower(), (value or "").lower())
+
+
+def _verify_decodable_image(data):
+    if Image is None or ImageFile is None:
+        raise PublishError("图片内容格式无法完整校验：当前环境缺少 Pillow")
+    format_types = {
+        "PNG": "image/png",
+        "JPEG": "image/jpeg",
+        "GIF": "image/gif",
+        "WEBP": "image/webp",
+    }
+    previous_truncated = ImageFile.LOAD_TRUNCATED_IMAGES
+    ImageFile.LOAD_TRUNCATED_IMAGES = False
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            with Image.open(io.BytesIO(data)) as image:
+                decoded_type = format_types.get((image.format or "").upper())
+                if not decoded_type:
+                    raise PublishError("图片内容格式不受支持")
+                frame_count = int(getattr(image, "n_frames", 1))
+                if frame_count < 1 or frame_count > 500:
+                    raise PublishError("图片内容格式的帧数无效或过多")
+                image.verify()
+            with Image.open(io.BytesIO(data)) as image:
+                for frame_index in range(frame_count):
+                    image.seek(frame_index)
+                    image.load()
+        return decoded_type
+    except PublishError:
+        raise
+    except Exception as exc:
+        raise PublishError("图片内容格式无效或已损坏") from exc
+    finally:
+        ImageFile.LOAD_TRUNCATED_IMAGES = previous_truncated
+
+
+def read_image(source, base_dir, allow_outside=False, strict_declared=True):
     parsed = urllib.parse.urlparse(source)
     if parsed.scheme in ("http", "https"):
         req = urllib.request.Request(source, headers={"User-Agent": "wechat-skill/1.0"})
         try:
             with urllib.request.urlopen(req, timeout=30) as response:
-                data = response.read(20 * 1024 * 1024 + 1)
+                data = response.read(MAX_IMAGE_BYTES + 1)
                 content_type = response.headers.get_content_type()
         except (urllib.error.URLError, TimeoutError) as exc:
             raise PublishError(f"下载图片失败 {source}: {exc}") from exc
-        if len(data) > 20 * 1024 * 1024:
+        if len(data) > MAX_IMAGE_BYTES:
             raise PublishError(f"图片超过 20 MiB：{source}")
         filename = os.path.basename(parsed.path) or "image"
-    elif parsed.scheme in ("", "file"):
-        path = urllib.request.url2pathname(parsed.path) if parsed.scheme == "file" else source
-        path = path if os.path.isabs(path) else os.path.join(base_dir, path)
+    elif parsed.scheme == "":
+        base_real = os.path.realpath(base_dir)
+        path = source if os.path.isabs(source) else os.path.join(base_real, source)
+        path = os.path.realpath(path)
+        if not allow_outside and os.path.commonpath((base_real, path)) != base_real:
+            raise PublishError(f"本地图片路径越出 HTML 目录：{source}")
         try:
             with open(path, "rb") as f:
-                data = f.read()
+                data = f.read(MAX_IMAGE_BYTES + 1)
         except OSError as exc:
             raise PublishError(f"读取图片失败 {path}: {exc}") from exc
+        if len(data) > MAX_IMAGE_BYTES:
+            raise PublishError(f"图片超过 20 MiB：{source}")
         filename = os.path.basename(path)
         content_type = mimetypes.guess_type(path)[0]
     else:
@@ -241,23 +346,63 @@ def read_image(source, base_dir):
         content_type = guessed_type
     if not content_type or not content_type.startswith("image/"):
         raise PublishError(f"文件不是可识别的图片：{source}")
-    return filename, data, content_type
+    detected_type = _detected_image_type(data)
+    if not detected_type:
+        raise PublishError(f"图片内容格式无法识别：{source}")
+    decoded_type = _verify_decodable_image(data)
+    if decoded_type != detected_type:
+        raise PublishError(
+            f"图片 magic bytes 类型 {detected_type} 与解码结果 {decoded_type} 不一致：{source}"
+        )
+    declared_types = {
+        _normalize_image_type(value)
+        for value in (content_type, guessed_type)
+        if value and value.startswith("image/")
+    }
+    if strict_declared and any(value != detected_type for value in declared_types):
+        declared = ", ".join(sorted(declared_types))
+        raise PublishError(
+            f"图片声明格式 {declared} 与实际格式 {detected_type} 不一致：{source}"
+        )
+    extension = {
+        "image/png": ".png",
+        "image/jpeg": ".jpg",
+        "image/gif": ".gif",
+        "image/webp": ".webp",
+    }[detected_type]
+    filename = os.path.splitext(filename)[0] + extension
+    return filename, data, detected_type
 
 
 def upload_html_images(html, html_path, client):
     uploaded = {}
+    skipped = 0
 
-    def replace(match):
+    def replace_tag(tag_match):
+        nonlocal skipped
+        tag = tag_match.group(0)
+        match = IMG_SRC.search(tag)
+        if not match:
+            return tag
         source = match.group(3)
         parsed = urllib.parse.urlparse(source)
         if parsed.hostname in MP_IMAGE_HOSTS:
-            return match.group(0)
+            return tag
         if source not in uploaded:
-            filename, data, content_type = read_image(source, os.path.dirname(html_path))
+            try:
+                filename, data, content_type = read_image(
+                    source, os.path.dirname(html_path), strict_declared=False
+                )
+            except PublishError as exc:
+                if "路径越出" in str(exc):
+                    raise
+                skipped += 1
+                return ""
             uploaded[source] = client.upload_content_image(filename, data, content_type)
-        return match.group(1) + match.group(2) + uploaded[source] + match.group(2)
+        replacement = match.group(1) + match.group(2) + uploaded[source] + match.group(2)
+        return IMG_SRC.sub(replacement, tag, count=1)
 
-    return IMG_SRC.sub(replace, html), uploaded
+    return IMG_TAG.sub(replace_tag, html), uploaded, skipped
 
 
 def validate_html(html, strict=False):
@@ -277,6 +422,42 @@ def validate_publish_ready(html):
     match = PUBLISH_PLACEHOLDER.search(html)
     if match:
         raise PublishError(f"HTML 仍包含发布占位内容：{match.group(0)}")
+
+
+def preflight_send(account, args, html):
+    """Validate all local publish inputs without credentials or network access."""
+    base_dir = os.path.dirname(os.path.abspath(args.html))
+    checked = set()
+    skipped = set()
+    for match in IMG_SRC.finditer(html):
+        source = match.group(3)
+        parsed = urllib.parse.urlparse(source)
+        if parsed.hostname in MP_IMAGE_HOSTS:
+            continue
+        if parsed.scheme in ("http", "https"):
+            raise PublishError(f"dry-run 不允许联网校验外部图片：{source}")
+        if source not in checked and source not in skipped:
+            try:
+                read_image(source, base_dir, strict_declared=False)
+                checked.add(source)
+            except PublishError as exc:
+                if "路径越出" in str(exc):
+                    raise
+                skipped.add(source)
+    if args.cover:
+        parsed = urllib.parse.urlparse(args.cover)
+        if parsed.scheme in ("http", "https"):
+            raise PublishError(f"dry-run 不允许联网校验外部封面：{args.cover}")
+        read_image(args.cover, os.getcwd(), allow_outside=True)
+    else:
+        env_name = account.get("default_thumb_media_id_env")
+        has_thumb = bool(
+            (env_name and os.environ.get(env_name))
+            or account.get("default_thumb_media_id")
+        )
+        if not has_thumb:
+            raise PublishError("dry-run 需要有效 --cover 或已配置的默认 thumb_media_id")
+    return len(checked), len(skipped)
 
 
 def write_result(result, path=None):
@@ -313,7 +494,9 @@ def client_for_account(config, alias, no_token_cache=False):
 
 def resolve_thumb(account, args, client):
     if args.cover:
-        filename, data, content_type = read_image(args.cover, os.getcwd())
+        filename, data, content_type = read_image(
+            args.cover, os.getcwd(), allow_outside=True
+        )
         return client.upload_cover(filename, data, content_type)
     env_name = account.get("default_thumb_media_id_env")
     if env_name and os.environ.get(env_name):
@@ -359,20 +542,26 @@ def cmd_send(config, args):
     validate_html(html, args.strict)
     validate_publish_ready(html)
     if args.dry_run:
+        checked_images, skipped_images = preflight_send(account, args, html)
         result = {
             "dry_run": True,
             "account": args.account,
             "action": args.action,
+            "run_id": getattr(args, "run_id", None),
             "html": os.path.abspath(args.html),
             "title": args.title,
             "content_images": len(IMG_SRC.findall(html)),
+            "checked_local_images": checked_images,
+            "skipped_content_images": skipped_images,
             "cover": args.cover or "configured thumb_media_id",
         }
         write_result(result, args.result_file)
         return
 
     account, client = client_for_account(config, args.account, args.no_token_cache)
-    html, images = upload_html_images(html, os.path.abspath(args.html), client)
+    html, images, skipped_images = upload_html_images(
+        html, os.path.abspath(args.html), client
+    )
     thumb_media_id = resolve_thumb(account, args, client)
     article = {
         "title": args.title,
@@ -391,8 +580,10 @@ def cmd_send(config, args):
     result = {
         "account": args.account,
         "action": args.action,
+        "run_id": getattr(args, "run_id", None),
         "draft_media_id": draft_media_id,
         "uploaded_content_images": len(images),
+        "skipped_content_images": skipped_images,
     }
     if args.action == "publish":
         publish_result = client.publish(draft_media_id)
@@ -436,6 +627,7 @@ def build_parser():
     send.add_argument("--source-url")
     send.add_argument("--cover", help="封面图片路径或 URL")
     send.add_argument("--action", choices=("draft", "publish"), default="draft")
+    send.add_argument("--run-id", help="调用方生成的本次运行 ID")
     send.add_argument(
         "--wait-seconds", type=nonnegative_int, default=0,
         help="提交发布后等待最终结果；定时任务建议 300",

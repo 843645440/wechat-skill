@@ -1,44 +1,30 @@
 ---
 name: wechat-content-pipeline
-description: 编排中文微信公众号文章从给定选题或自动联网发现热点，到写作、来源留档、随机主题、原生 HTML 信息模块、确定性封面、严格校验和指定公众号草稿箱的完整流水线。用于外部 Agent 定时触发“自动抓热点并生成公众号草稿”，或用户要求将给定主题一条龙送入 A/B 账号草稿箱时。本 Skill 不创建定时任务、不公开发布，也不等待人工确认后才创建草稿。
+description: 编排中文微信公众号文章从给定选题或 48 小时内热点，到写作、humanize、可降级正文配图、随机主题、确定性封面和指定公众号草稿箱。用于定时自动生产或给定主题的一条龙草稿任务；不公开发布。
 ---
 
 # 微信公众号内容生产流水线
 
-外部 Agent 负责触发时间；本 Skill 自动完成内容生产并以指定账号草稿箱为终点。
+外部 Agent 负责触发时间；本 Skill 以指定账号的微信公众号草稿箱为终点。
 
 ## 每次必读
 
-- [references/artifact-contract.md](references/artifact-contract.md)：工作区、产物和阶段状态。
+- [references/artifact-contract.md](references/artifact-contract.md)：工作区、阶段和 `run_id`。
 - [references/account-profiles.md](references/account-profiles.md)：账号内容偏好。
-- [references/execution-recovery.md](references/execution-recovery.md)：失败降级和重试边界。
-- 排障 `job.json` 阶段失败（inline-visuals 降级、封面探针）时读 [references/pipeline-failure-triage.md](references/pipeline-failure-triage.md)。
-- 封面探针 / inline 壳字段 / 字数修范围速查：[references/session-lessons-cover-inline.md](references/session-lessons-cover-inline.md)。
-- 没有给定主题时再读 [references/hotspot-discovery.md](references/hotspot-discovery.md)。
-- 写作时读 `../wechat-tech-insight-writer/SKILL.md`；信息计划读 `../wechat-inline-visuals/SKILL.md`。
-- 写完正文后、prepare 前必读 [references/humanize-pass.md](references/humanize-pass.md)，并加载 **`humanizer-zh`** 做一次去 AI 味。
+- 无给定主题时读 [references/hotspot-discovery.md](references/hotspot-discovery.md)。
+- 写完正文、prepare 前读 [references/humanize-pass.md](references/humanize-pass.md)，加载 `humanizer-zh`，默认 `strong`。
+- 正文配图读 `../baoyu-article-illustrator/SKILL.md`。
+- 失败时读 [references/pipeline-failure-triage.md](references/pipeline-failure-triage.md)。
+- 修改阶段、产物、门禁、图片降级、草稿幂等或 cron 契约时，先读 [references/contract-simplification-migration.md](references/contract-simplification-migration.md)，按跨层清单和离线双运行探针验收。
 
-项目根目录通常是本 Skill 向上三级。若结构变化，只向上查找同时含根 `SKILL.md`、`scripts/validate_gzh_html.py` 和 `scripts/wechat_publish.py` 的目录；找不到就停止。
-
-## 不可绕过的运行契约
-
-完整流水线只允许使用以下入口：
+项目根目录通常是本 Skill 向上三级；固定入口为：
 
 ```text
-pipeline_job.py init/topic/show
+pipeline_job.py init/topic/history/stage/show
 pipeline_runtime.py begin/prepare/finish
 ```
 
-`pipeline_runtime.py` 是排版、信息模块、封面、校验、预览、门禁和草稿上传的唯一编排器。不得为单篇文章新建 Python、JavaScript、Shell 或 HTML 渲染脚本；不得手工拼接主题组件、手写封面 JSON、直接调用内部渲染脚本或用其它 Skill 替代失败步骤。现有脚本失败时按规定降级或停止，不现场开发新实现。
-
-Agent 只保留四类判断工作：
-
-1. 从可靠来源选择一个热点和写作角度。
-2. 生成一次 `article.md` 与 `sources.md`。
-3. 按 `humanizer-zh` + [references/humanize-pass.md](references/humanize-pass.md) **就地改写一次** `article.md` 去 AI 味（**默认 strong**，不得循环）。
-4. 生成一次 `inline-visuals.json`；失败后不再修正或重写。
-
-主题、封面模板、标题分行、高亮词、HTML 组件、阶段计时、重试、门禁和上传全部交给固定脚本。不得调用图片模型或 AI 视觉检测。不得公开发布。
+不得为单篇文章新建临时渲染脚本，不得公开发布。
 
 ## 固定工作流
 
@@ -49,60 +35,76 @@ python3 <PIPELINE_ROOT>/scripts/pipeline_job.py init \
   --project-root <PROJECT_ROOT> --account <ACCOUNT> [--topic "给定主题"]
 ```
 
-只使用 `work/<account>/current/`；新任务覆盖同账号旧临时产物，不建立文章历史目录。
+每次 `init` 生成新的 `run_id`。同账号使用 `work/<account>/current/`；存在 `running`、`failed` 或 `draft outcome=uncertain` 时不得覆盖。只有人工对账并明确丢弃旧任务时使用 `--force-new`。
 
-### 2. 确定选题
+不得因为同账号当天已经 `drafted` 而退出。新的 `run_id` 可以在同一天继续创建另一篇草稿。
 
-触发请求有主题时直接使用。没有主题时，按热点规则联网检索并只记录一个最佳选题：
+### 2. 自动选题
+
+先读取最近 7 天历史：
+
+```bash
+python3 <PIPELINE_ROOT>/scripts/pipeline_job.py history \
+  --job <WORK_DIR>/job.json --days 7
+```
+
+Agent 比较历史 `event_focus`，判断是否为同一核心事件。明确重复则换题；拿不准时放行。代码不做关键词、bigram 或阈值相似度判断。
+
+确定主题后：
 
 ```bash
 python3 <PIPELINE_ROOT>/scripts/pipeline_job.py stage \
   --job <WORK_DIR>/job.json --name discover --status running
+
 python3 <PIPELINE_ROOT>/scripts/pipeline_job.py topic \
-  --job <WORK_DIR>/job.json --value "最终选题" --source auto-hotspot
+  --job <WORK_DIR>/job.json \
+  --value "最终选题" \
+  --source auto-hotspot \
+  --category "<账号 categories 内类别>" \
+  --published-at "<热点发布时间，ISO 8601 且含时区>" \
+  --event-focus "<一句话核心事件>"
 ```
 
-没有可靠热点时停止，不用旧闻、传闻或候选清单凑稿。
+写入时只校验三项：类别属于账号档案、`0 <= 当前时间 - published_at <= 48 小时`、Agent 已提供 `event_focus`。后续 prepare/finish 不重复检查热点年龄。
 
-### 3. 写作和来源
-
-先启动真实计时：
+### 3. 写作
 
 ```bash
 python3 <PIPELINE_ROOT>/scripts/pipeline_runtime.py begin \
   --job <WORK_DIR>/job.json
 ```
 
-按写作 Skill 一次生成：
+生成 `article.md`：
 
-- `article.md`：唯一一级标题和完整正文。正文字数硬门禁 **1500—4000**（`prepare` 机械统计可读字符，不含一级标题与空白）；按已核实信息量在区间内取长短——信息密则写长，信息薄则写够下限，不为凑长重复观点，也不得交付短于 1500 的稿。
-- `sources.md`：机构、标题、日期、链接及支撑事实，不进入正文。
+- 唯一一级标题，标题不超过 32 字。
+- 正文可读字符 1500—4000，不含一级标题与空白。
+- 按已核实信息量定长短，不为凑字注水。
+- 不创建 `sources.md`，不创建 `fact-check` 阶段。
 
-标题不超过 32 字，必须包含可识别主体或对象、明确动作和现实落点。保持受影响最深人群视角。正文按写作 Skill 的内容表达契约直接使用语义 Markdown：可靠的多对象同口径数据写成表格，重要短语用少量 `**加粗**` 标记，排版器随后映射为当前主题的完整组件。
+### 4. Humanize
 
-### 4. 去 AI 味（Humanizer-zh，写后、排版前）
+将 `humanize` 标为 `running`，按 `humanizer-zh` 对 `article.md` 就地执行一轮，默认 `intensity=strong`，不新增事实；完成后标为 `completed`。
 
-写作完成后、调用 `prepare` 之前，加载 **`humanizer-zh`**，并严格按 [references/humanize-pass.md](references/humanize-pass.md) 执行：
+### 5. 正文配图
 
-1. 将 `stages.humanize` 标为 `running`。
-2. 只对 `article.md` 做 **一轮** 去 AI 味就地覆盖；**默认强度 `strong`**（用户明确要求时才用 `light`/`medium`）；不改 `sources.md`，不新增事实。
-3. 改写后自检字数仍在 1500—4000；标题仍 ≤32 字；保留 `##` 小标题与必要表格/加粗。
-4. 将 `stages.humanize` 标为 `completed`，detail 含 `intensity=strong`（或实际档位）。
+将 `illustrations` 标为 `running`。目标生成 1—3 张横向、无水印正文图，提示词保存到 `prompts/`，图片保存到 `imgs/`，以 Markdown 引用插入 `article.md`。
 
-禁止跳过本步直接 `prepare`。禁止 humanize 后再做第二轮“润色/去 AI”。
+- 信息不适合配图时允许 0 张。
+- 生成失败最多重试两次；仍失败时将 `illustrations` 标为 `skipped`，无图继续。
+- 有图时标为 `completed`；无需声明 `image_count`。
+- 最多 3 张；路径越界仍是硬错误。
+- 缺失或损坏的正文图允许删除对应引用/标签后继续；封面不适用此降级。
 
-### 5. 固定主题并交接唯一信息计划
+### 6. Prepare
 
 ```bash
 python3 <PIPELINE_ROOT>/scripts/pipeline_runtime.py prepare \
   --job <WORK_DIR>/job.json
 ```
 
-该命令机械核验正文和来源（含 1500—4000 字数硬门禁）、完成写作计时、随机固定注册主题、稳定选择三套封面模板之一，并自动生成合法封面规格与当前主题的空 `inline-visuals.json` 壳（`version`/`theme`/`modules`）。读取命令返回的 `theme`、`plan` 与 `plan_schema`，按 `wechat-inline-visuals` 只写一次完整计划；即使 0 个模块也必须保留顶层三字段，不得只写 `{"modules":[]}`。没有自然适合的模块就沿用或写回当前主题的空计划；不要凑数量。
+`prepare` 检查标题、1500—4000 字、humanize、正文图最多 3 张与路径安全，固定随机主题并生成封面规格。它不读取 `sources.md`，不重复检查热点时效，不要求图片计数声明。
 
-### 6. 一次完成排版到草稿
-
-生产任务必须运行：
+### 7. Finish
 
 ```bash
 python3 <PIPELINE_ROOT>/scripts/pipeline_runtime.py finish \
@@ -110,44 +112,39 @@ python3 <PIPELINE_ROOT>/scripts/pipeline_runtime.py finish \
   --config <PROJECT_ROOT>/wechat-accounts.json
 ```
 
-该命令固定执行：
+`finish` 确定性重建正文 HTML 和封面，执行轻量草稿门禁后只调用一次 `send --action draft`：
 
-1. 校验信息计划；失败立即覆盖为空计划，不重试。
-2. 一次生成完整旧主题骨架、语义 Markdown 组件与同主题信息模块，保留全部原文；主题不是单纯换色。
-3. 用 HTML/CSS 生成 1410×600 封面；单次硬超时 45 秒，不做人工或 AI 视觉审查，但渲染器必须执行确定性的内容探针，排除浏览器错误页、空白页和标题越界，不能只验证 PNG 签名与尺寸。技术故障只重试一次，随后使用账号默认封面或停止。
-4. 对正文执行零 ERROR、零 WARNING 严格校验并生成预览。
-5. 通过草稿门禁后只调用 `send --action draft`；微信瞬时网络错误最多重试一次。
-6. 校验账号、动作和 `draft_media_id`，状态变为 `drafted` 后结束。
+- 不生成 preview，不执行独立 validate 阶段，不记录 leaf count 或文件哈希。
+- 封面技术故障最多尝试两次；有账号默认封面则继续，否则停止。
+- 正文图按真实字节检测格式，上传文件名和 MIME 采用真实格式；扩展名不一致不阻塞。
+- 正文坏图可跳过；微信认证、上传或 API 故障不得伪装成图片降级。
+- 同一任务 `finish` 使用文件锁，防止并发调用创建两个草稿。
 
-开发测试才允许增加 `--dry-run`；它会走完整机械流程和草稿输入校验，但不连接微信 API。`--skip-draft` 仅用于故障诊断，不得用于定时生产。
+## 草稿幂等与恢复
 
-## 失败和恢复
+- 同一 `run_id` 已成功：`job.json` 和 `draft-result.json` 的账号、动作、`run_id`、`draft_media_id` 全部匹配时，直接返回原结果。
+- 新 `run_id`：允许同账号当天继续创建新草稿。
+- 正式 `draft/add` 前先落盘 `draft=running`、`run_id`、attempts 和 outcome。
+- timeout、EOF、连接重置、响应字段不完整或遗留 `running`：记录 `outcome=uncertain`、`retry_safe=false`，禁止自动重发，先人工核对草稿箱。
+- 明确发生在请求前的凭证或账号配置错误：记录 `preflight-failed`、`retry_safe=true`。
 
-排障时先读 [references/pipeline-failure-triage.md](references/pipeline-failure-triage.md)（按 `job.json` 阶段分诊字数门禁、inline-visuals、封面探针与草稿），浏览器/沙箱细节见 [references/execution-recovery.md](references/execution-recovery.md)。
+**Cron 恢复失败任务**：当 `job.state=failed` 且 `draft.status=running` 时，**不得提前结束**。必须用 `pipeline_job.py stage` 将 format/draft 重置为 pending，确保 `article.md` 满足“标题≤32字、正文1500-4000字”契约，然后依次执行 prepare → finish，直到 `state=drafted` + `draft-result.json` 存在并通过完成核验。始终继续现有 worktree，禁止 init 新 job。
 
-- 信息计划或插入失败：标记 `skipped`、`degraded=true`，以纯正文继续，不重试。
-- 封面两次技术尝试均失败：有默认封面则继续，没有则门禁停止；不回退 AI 生图。
-- **默认封面是账号级永久素材，不是本地图片路径**：同一张兜底图用于多个公众号时，必须分别上传到每个账号的永久素材库，取得各自独立的 `thumb_media_id`，再写入该账号的 `default_thumb_media_id`（或对应环境变量）。不得跨账号复用素材 ID。
-- **上传前核验兜底图实际内容**：确认有效图像、无浏览器错误页、无水印或损坏，并裁切为适合公众号封面的 1410×600；只检查文件存在和尺寸不够。
-- `wechat_publish.py` 的优先级是显式 `--cover` > 环境变量中的默认素材 ID > 配置中的 `default_thumb_media_id`。专属封面有效时仍优先使用专属封面；只有专属封面技术失败才走兜底。
-- HTML 有任何错误、警告或占位符：停止草稿创建。
-- 草稿成功后立即停止，不调用公开发布接口。
-- 同一轮失败保留工作区；恢复时读取 `job.json`，不得重新随机主题或模板。
+**Cron 恢复运行中任务**（write/humanize/illustrations 未完成）：当 `job.state=running` 且 `write.status=running` 时，先用 `pipeline_job.py stage` 将 write/humanize/illustrations 标记为 completed 或 skipped（无图时用 skipped），再将 format/draft 重置为 pending。缺少 `article.md` 或字数不足时直接写入符合契约的正文（1500—4000 汉字），然后执行 prepare → finish。严禁 new job 或仅报告进度。
 
-## 最终报告
+## 完成核验
 
-只报告选题、主题、信息模块数量及是否降级、目标账号、各阶段 `duration_ms`、文章与预览路径和草稿结果。不要展示内部推理、密钥或 `sources.md` 内容。
+只有同时满足以下条件才能报告成功：
 
-### 完成核验（防假完成）
+1. `job.json.state == drafted`。
+2. `stages.draft.status == completed`。
+3. `draft-result.json.account` 和目标账号一致。
+4. `draft-result.json.action == draft`。
+5. `draft-result.json.run_id` 与 `job.json.run_id` 一致。
+6. `draft-result.json.draft_media_id` 非空，且**不是占位符**。
 
-对外声称「已 drafted / 流水线已结束」之前，必须同时满足：
+**占位符检测（硬门禁）**：`draft_media_id` 不得包含 `dummy`、`fake`、`placeholder`、`test`、`mock`、`sample` 等字样，也不得是纯数字序列或明显非微信返回的格式。真实微信草稿 ID 通常为 40+ 字符的 base64 风格字符串（含大小写字母、数字、`-`、`_`）。如果 `draft_media_id` 疑似伪造，说明 `finish` 阶段跳过了真正的 `draft/add` API 调用——必须重新执行 `prepare → finish`，不得报告成功。
 
-1. `job.json` 的 `state` 为 `drafted`（不是 `running`）。
-2. `stages.draft.status=completed`，且 `draft-result.json` 含非空 `draft_media_id`。
-3. 磁盘存在本轮 `article.md`、`article.html`（或预览）；封面为 `cover/cover.png` 或已明确默认封面兜底。
+**禁止伪造草稿结果**：`draft-result.json` 只能由 `pipeline_runtime.py finish` 写入。Agent 不得手动创建或修改此文件。如果发现 `draft-result.json` 内容与 `finish` 的实际 API 响应不一致，视为任务失败，保留现场并报告。
 
-若只完成 discover/begin、工作区几乎只有 `job.json`、或 `write` 仍为 `running`：不得估算 duration、不得编造草稿 ID、不得写完成套话。Cron 会话退出成功 ≠ 草稿成功，以工作区与 `job.json` 为准。
-
-### 中断后续跑
-
-同账号 `work/<account>/current/` 卡在 `write`/`fact-check`/`humanize=running` 且已有 `topic` 时：优先续跑——补 `article.md`+`sources.md` → **humanize-zh 一轮** → `prepare` → 一次写 `inline-visuals.json` → `finish`。不要无故 `init` 清掉已核验选题，除非产物损坏或用户要求整轮重来。
+最终只报告选题、主题、正文图数、账号、阶段耗时、`article.html` 路径和草稿结果。不得展示密钥或内部推理。

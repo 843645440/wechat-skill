@@ -32,7 +32,7 @@ python3 <SKILL_ROOT>/scripts/render_cover.py \
   --output <WORK_DIR>/cover/cover.png --timeout 45
 ```
 
-4. 使用脚本返回的调色板对比度、PNG 签名和 1410×600 尺寸校验结果。成功即采用。
+4. 使用脚本返回的调色板对比度、PNG 签名和 1410×600 尺寸校验结果做技术门禁；这些结果不代表标题已经可读。随后检查实际像素，逐字确认标题无粘连、重叠、裁切或乱码，并确认缩略图尺度仍可辨认。中文标题出现笔画膨胀或多模板共同粘连时，按 [references/cjk-title-legibility.md](references/cjk-title-legibility.md) 做封面单测与受控收敛。两类门禁都通过后才采用。
 
 ## 运行条件
 

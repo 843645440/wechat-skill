@@ -1,6 +1,6 @@
 # 流水线内 Humanizer-zh 去 AI 味（写后、排版前）
 
-在 `article.md` / `sources.md` 写完之后、`pipeline_runtime.py prepare` 之前，**必须**做一次去 AI 味。只此一次，不得循环。
+在 `article.md` 写完之后、`pipeline_runtime.py prepare` 之前，**必须**做一次去 AI 味。只此一次，不得循环。
 
 ## 加载哪个 Skill
 
@@ -35,7 +35,7 @@ Skill 名均为 **`humanizer-zh`**。
 ## 在流水线中的位置
 
 ```text
-begin → 写 article.md + sources.md → humanize（本步，默认 strong）→ prepare → inline-visuals → finish
+begin → 写 article.md → humanize（本步，默认 strong）→ illustrations → prepare → finish
 ```
 
 阶段记账：
@@ -53,12 +53,12 @@ python3 <PIPELINE_ROOT>/scripts/pipeline_job.py stage \
 
 ## 硬约束（覆盖 humanizer-zh 里与公众号冲突的建议）
 
-1. **只改 `article.md`**，不改 `sources.md`，不新增事实、数据、机构表述、引语或案例。
+1. **只改 `article.md`**，不新增事实、数据、机构表述、引语或案例。
 2. **保留唯一一级标题**（可微调措辞，仍 ≤32 字，且保持“具体对象 + 动作 + 落点”）。strong 下标题可以更冲，但仍须具体、可核验，禁悬空金句。
 3. **保留 `##` 小标题结构**（可改写标题文字，不要整篇打成无小标题长文）。
 4. **保留语义 Markdown**：表格、少量 `**加粗**`、列表仍可用于扫读；不要为“去 AI”删光结构。
 5. **字数**：改写后正文仍须落在 **1500—4000**（`prepare` 硬门禁）。去 AI 不是删成短讯，也不是注水拉长。
-6. **禁止**为“有灵魂”而编造第一人称经历、伪访谈、未核验细节；strong 允许克制判断与场景化表述，但须能被 `sources.md` 支撑。
+6. **禁止**为“有灵魂”而编造第一人称经历、伪访谈、未核验细节；strong 允许克制判断与场景化表述，但事实必须可核验。
 7. **禁止**聊天腔收尾（“希望对你有帮助”“让我们一起”）、emoji、英文 AI 套话直译残留。
 8. 只跑 **一轮** humanize；不要 humanize → 再全文改写 → 再 humanize。
 9. **默认 intensity=`strong`**；仅当用户明确要求 light/medium 时降档。

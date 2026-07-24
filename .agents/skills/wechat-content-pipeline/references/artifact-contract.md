@@ -2,54 +2,52 @@
 
 ## 工作区
 
-每个账号只维护一个当前工作区：
+每个账号维护一个当前工作区：
 
 ```text
 work/<account>/current/
 ├── job.json
 ├── article.md
-├── sources.md
-├── inline-visuals.json
+├── imgs/
+├── prompts/
 ├── cover/
 │   ├── cover.spec.json
 │   ├── cover.html
 │   └── cover.png
 ├── article.html
-├── article_preview.html
 └── draft-result.json
 ```
 
-外部定时任务每次触发时重新初始化该账号的 `current/`。这里用于 Skill 间传递内容，不是文章档案库；正式审核和留存发生在微信公众号草稿箱。
+`current/` 用于本轮 Skill 间传递，不是文章档案库；正式审核和留存在微信公众号草稿箱。新一轮 `init` 可在安全状态下清空并重建工作区，每次生成不同 `run_id`。
 
 ## 阶段
 
 固定阶段为：
 
-1. `discover`：使用给定主题，或联网发现热点。
+1. `discover`：使用给定主题，或发现并记录 48 小时内热点。
 2. `write`：完成 `article.md`。
-3. `fact-check`：完成 `sources.md` 和事实核验。
-4. `humanize`：用 `humanizer-zh` 对 `article.md` 做一轮去 AI 味（写后、prepare 前；**默认 intensity=strong**）；不改事实与来源文件。
-5. `format`：随机选择主题，由固定渲染器一次生成完整 `article.html`。
-6. `inline-visuals`：从正文提取结构化信息，并在同一次渲染中插入同主题原生 HTML 模块；没有合适信息时以 0 个模块正常完成，计划或锚点异常时降级为空计划。
-7. `cover`：通过确定性 HTML 渲染器生成封面，或确认账号默认封面可用。
-8. `validate`：严格校验、预览和占位符检查通过。
-9. `draft`：指定账号草稿创建成功。
+3. `humanize`：用 `humanizer-zh` 对正文执行一轮改写，默认 strong。
+4. `format`：固定随机主题并生成 `article.html`。
+5. `illustrations`：尝试生成 0—3 张正文图；成功为 `completed`，失败降级为 `skipped`。
+6. `cover`：生成确定性 HTML 封面，或确认账号默认封面可用。
+7. `draft`：创建指定账号草稿。
 
-状态只使用 `pending`、`running`、`completed`、`failed`、`skipped`。每个阶段开始前必须先标记 `running`，结束时记录 `started_at`、`completed_at` 和真实 `duration_ms`；不再用相邻阶段的更新时间推算耗时。原生信息模块正常为空时标记 `completed`；计划或插入异常降级为空时标记 `skipped`，并记录 `degraded=true`、`module_count=0` 和原因。草稿门禁只接受结构正确、主题一致的空计划。封面不可用时标记 `skipped`，继续完成 HTML 校验，最后由门禁判断是否有默认封面。
+状态只使用 `pending`、`running`、`completed`、`failed`、`skipped`。`humanize` 和 `illustrations` 完成前必须先标记 `running`。每个阶段记录真实 `started_at`、`completed_at` 和 `duration_ms`。
 
-正文流程不生成 PNG、SVG 或截图，不调用图片模型、图片上传或 AI 视觉检测。排版与信息模块由同一固定脚本完成，不创建单篇临时渲染脚本。封面只依赖字段校验、PNG 签名和精确尺寸；浏览器硬超时 45 秒，不执行视觉审查，技术故障最多原命令重试一次。
+不存在 `fact-check`、`validate` 阶段；不存在 `sources.md`、预览、leaf count 或文件哈希 checkpoint。
 
-## 正文和来源
+## `run_id`
 
-`article.md` 第一行是唯一一级标题，不包含写作计划、来源清单或待办说明。`humanize` 只去掉 AI 腔与套话，不得新增事实；排版与原生信息模块 Skill 都不得改变事实与核心判断。
+- 每次新 `init` 生成随机 `run_id`。
+- 草稿成功结果必须保存同一个 `run_id`。
+- 同一 `run_id` 的已完成草稿可复用；新 `run_id` 可在同一天再建一篇。
+- `draft=running` 或 `failed/uncertain` 时不得自动覆盖或重发。
+- `finish` 对同一任务加文件锁，防止两个并发调用同时进入 `draft/add`。
 
-`inline-visuals.json` 只保存正文中可定位、可核验的信息模块计划，不是另一份正文。每个模块必须保留原文锚点和证据。
+## 正文与图片
 
-`sources.md` 是内部事实记录。当前信息需包含机构、标题、日期、链接和支撑事实；未使用时效性事实时也要明确说明。它不进入公众号正文。
+`article.md` 第一行是唯一一级标题，不包含写作计划或待办。正文图由 Baoyu skill 调用当前 Hermes `image_generate` 后端生成，提示词保存在 `prompts/`，图片保存在 `imgs/`。
 
-## 重试与覆盖
+正文允许 0—3 张图。缺失或损坏图片可删除对应引用/HTML 标签后继续；路径越界、微信认证失败、有效图片上传失败仍是硬错误。图片上传时以真实文件字节和解码结果决定 MIME 与文件名，不依赖扩展名。
 
-- 同一轮执行失败时保留工作区，可从 `job.json` 继续。
-- 新一轮 `init` 清空该账号旧的 `current/` 后重建。
-- A、B 使用不同账号工作区，互不覆盖。
-- 草稿创建成功后不再自动操作；覆盖本地工作区不影响微信草稿箱。
+封面不使用正文图降级规则：显式封面必须是可解码且声明格式一致的有效图片；封面生成失败时只允许回退到当前账号已配置的默认 `thumb_media_id`。

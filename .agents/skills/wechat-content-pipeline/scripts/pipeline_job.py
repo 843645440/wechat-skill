@@ -9,17 +9,16 @@ import re
 import secrets
 import shutil
 import sys
+from urllib.parse import urlparse
 
 
 STAGES = (
     "discover",
     "write",
-    "fact-check",
     "humanize",
+    "illustrations",
     "format",
-    "inline-visuals",
     "cover",
-    "validate",
     "draft",
 )
 STATUSES = ("pending", "running", "completed", "failed", "skipped")
@@ -29,6 +28,9 @@ THEME_SECTION_RE = re.compile(
     r"^## 已注册主题\s*$\n(?P<body>.*?)(?=^## |\Z)", re.MULTILINE | re.DOTALL
 )
 PLACEHOLDER_RE = re.compile(r"\{\{[^{}]+\}\}|【(?:插入|待补|待填写)[^】]*】")
+TOPIC_HISTORY_VERSION = 2
+TOPIC_HISTORY_MAX_ENTRIES = 100
+TOPIC_DEDUP_DAYS = 7
 
 
 class JobError(RuntimeError):
@@ -67,17 +69,92 @@ def atomic_write(path, data):
     os.replace(tmp, path)
 
 
+def topic_history_path(job):
+    job_dir = os.path.realpath(os.path.abspath(job.get("job_dir", "")))
+    account_dir = os.path.dirname(job_dir)
+    if os.path.basename(job_dir) != "current" or os.path.basename(account_dir) != job["account"]:
+        raise JobError("选题历史路径不安全")
+    return os.path.join(account_dir, "topic-history.json")
+
+
+def load_topic_history(job):
+    path = topic_history_path(job)
+    if not os.path.exists(path):
+        return {"version": TOPIC_HISTORY_VERSION, "account": job["account"], "topics": []}
+    try:
+        with open(path, encoding="utf-8") as f:
+            history = json.load(f)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise JobError(f"无法读取选题历史 {path}: {exc}") from exc
+    if (
+        history.get("version") not in (1, TOPIC_HISTORY_VERSION)
+        or history.get("account") != job["account"]
+        or not isinstance(history.get("topics"), list)
+    ):
+        raise JobError("选题历史格式不受支持")
+    if history.get("version") == 1:
+        for entry in history["topics"]:
+            if isinstance(entry, dict) and not entry.get("event_focus"):
+                entry["event_focus"] = entry.get("topic", "")
+        history["version"] = TOPIC_HISTORY_VERSION
+    return history
+
+
+def recent_topic_entries(history, now=None):
+    current = now or dt.datetime.now(dt.timezone.utc)
+    cutoff = current.astimezone(dt.timezone.utc) - dt.timedelta(days=TOPIC_DEDUP_DAYS)
+    recent = []
+    for entry in history["topics"]:
+        if not isinstance(entry, dict):
+            continue
+        try:
+            selected = parse_iso(entry.get("selected_at"))
+        except (TypeError, ValueError):
+            continue
+        if selected is not None and selected.astimezone(dt.timezone.utc) >= cutoff:
+            recent.append(entry)
+    return recent
+
+
+def record_topic_history(job, value, event_focus, selected_at=None):
+    history = load_topic_history(job)
+    selected_at = selected_at or now_iso()
+    new_entry = {
+        "topic": value,
+        "event_focus": event_focus,
+        "selected_at": selected_at,
+    }
+    topics = history["topics"]
+    if not any(
+        isinstance(entry, dict)
+        and entry.get("topic") == value
+        and entry.get("selected_at") == selected_at
+        for entry in topics
+    ):
+        topics.append(new_entry)
+    history["topics"] = topics[-TOPIC_HISTORY_MAX_ENTRIES:]
+    atomic_write(topic_history_path(job), history)
+
+
 def load_job(path):
     try:
         with open(path, encoding="utf-8") as f:
             job = json.load(f)
     except (OSError, json.JSONDecodeError) as exc:
         raise JobError(f"无法读取任务清单 {path}: {exc}") from exc
-    if job.get("schema_version") != 4 or not isinstance(job.get("stages"), dict):
+    if job.get("schema_version") not in (4, 5) or not isinstance(job.get("stages"), dict):
         raise JobError("任务清单格式不受支持")
-    # Tolerate jobs created before newer stages existed.
+    for removed in ("fact-check", "validate"):
+        job["stages"].pop(removed, None)
     for name in STAGES:
         job["stages"].setdefault(name, stage_record("pending"))
+    for removed in ("sources", "preview"):
+        job.get("artifacts", {}).pop(removed, None)
+    if not job.get("run_id"):
+        account = re.sub(r"[^a-zA-Z0-9_-]", "-", str(job.get("account", "unknown")))
+        created = re.sub(r"[^a-zA-Z0-9_-]", "-", str(job.get("created_at", "unknown")))
+        job["run_id"] = f"legacy-{account}-{created}"
+    job["schema_version"] = 5
     return job
 
 
@@ -88,10 +165,16 @@ def save_job(path, job):
 
 def summarize_state(job):
     stages = job["stages"]
-    if stages["draft"]["status"] == "completed":
-        return "drafted"
     if any(item["status"] == "failed" for item in stages.values()):
         return "failed"
+    if stages["draft"]["status"] == "completed":
+        return "drafted"
+    if stages["draft"]["status"] == "skipped":
+        details = stages["draft"].get("details", {})
+        if details.get("dry_run") == "true" and details.get("gate") == "passed":
+            return "validated-dry-run"
+        if details.get("gate") == "passed":
+            return "validated"
     if any(item["status"] in ("running", "completed", "skipped") for item in stages.values()):
         return "running"
     return "initialized"
@@ -99,8 +182,8 @@ def summarize_state(job):
 
 def resolve_work_dir(project_root, work_dir, account):
     base = work_dir if os.path.isabs(work_dir) else os.path.join(project_root, work_dir)
-    base = os.path.abspath(base)
-    job_dir = os.path.abspath(os.path.join(base, account, "current"))
+    base = os.path.realpath(os.path.abspath(base))
+    job_dir = os.path.realpath(os.path.join(base, account, "current"))
     if os.path.commonpath((base, job_dir)) != base or job_dir == base:
         raise JobError("工作区路径不安全")
     return job_dir
@@ -114,7 +197,7 @@ def load_profiles(project_root, value):
     except (OSError, json.JSONDecodeError) as exc:
         raise JobError(f"无法读取账号内容档案 {path}: {exc}") from exc
     profiles = config.get("profiles")
-    if config.get("version") != 4 or not isinstance(profiles, dict):
+    if config.get("version") not in (4, 5) or not isinstance(profiles, dict):
         raise JobError("账号内容档案格式不受支持")
     return os.path.abspath(path), profiles
 
@@ -127,27 +210,54 @@ def cmd_init(args):
     if args.account not in profiles:
         raise JobError(f"账号 {args.account} 未在内容档案中配置")
     profile = profiles[args.account]
-    inline_visuals = profile.get("inline_visuals", {})
+    illustrations = profile.get("illustrations", {})
     cover = profile.get("cover", {})
     if (
         profile.get("theme_strategy") != "random"
-        or inline_visuals.get("enabled") is not True
-        or inline_visuals.get("mode") != "native-html"
-        or type(inline_visuals.get("max_blocks")) is not int
-        or not 0 <= inline_visuals["max_blocks"] <= 3
+        or illustrations.get("enabled") is not True
+        or illustrations.get("skill") != "baoyu-article-illustrator"
+        or illustrations.get("backend") != "image_generate"
+        or type(illustrations.get("max_images")) is not int
+        or not 1 <= illustrations["max_images"] <= 3
         or cover.get("enabled") is not True
         or cover.get("backend") != "html"
         or cover.get("aspect") != "2.35:1"
         or cover.get("theme") != "article"
         or cover.get("text") != "title-only"
         or profile.get("publishing", {}).get("target") != "draft"
+        or not isinstance(profile.get("audience"), str)
+        or not profile.get("audience", "").strip()
+        or profile.get("topic_discovery", {}).get("max_age_hours") != 48
+        or not profile.get("topic_discovery", {}).get("categories")
     ):
         raise JobError(
-            "账号内容档案必须启用原生 HTML 信息模块、HTML 封面、随机主题，"
+            "账号内容档案必须启用 Baoyu 正文配图、HTML 封面、随机主题，"
             "并以草稿箱为终点"
         )
     job_dir = resolve_work_dir(project_root, args.work_dir, args.account)
     if os.path.isdir(job_dir):
+        current_job_path = os.path.join(job_dir, "job.json")
+        if not args.force_new:
+            if not os.path.isfile(current_job_path):
+                raise JobError(
+                    "现有工作区缺少 job.json，无法安全判定；"
+                    "请先检查，确认丢弃后使用 --force-new"
+                )
+            try:
+                current_job = load_job(current_job_path)
+            except JobError as exc:
+                raise JobError(
+                    "现有工作区无法安全判定；请先检查，确认丢弃后使用 --force-new"
+                ) from exc
+            unresolved = [
+                name for name, stage in current_job["stages"].items()
+                if stage["status"] in ("running", "failed")
+            ]
+            if unresolved:
+                raise JobError(
+                    "现有工作区包含未解决阶段 " + ",".join(unresolved)
+                    + "；请恢复现有任务，确认丢弃后使用 --force-new"
+                )
         shutil.rmtree(job_dir)
     elif os.path.exists(job_dir):
         raise JobError(f"工作区路径不是目录：{job_dir}")
@@ -157,23 +267,22 @@ def cmd_init(args):
     has_topic = bool(args.topic and args.topic.strip())
     discover_status = "completed" if has_topic else "pending"
     job = {
-        "schema_version": 4,
+        "schema_version": 5,
         "created_at": created,
         "updated_at": created,
         "project_root": project_root,
         "profiles_path": profiles_path,
         "job_dir": job_dir,
         "account": args.account,
+        "run_id": secrets.token_hex(12),
         "topic": args.topic.strip() if has_topic else None,
         "topic_source": "provided" if has_topic else None,
         "state": "initialized",
         "artifacts": {
             "article": "article.md",
-            "sources": "sources.md",
-            "inline_visuals": "inline-visuals.json",
+            "illustrations": "imgs",
             "cover": "cover/cover.png",
             "html": "article.html",
-            "preview": "article_preview.html",
             "draft_result": "draft-result.json",
         },
         "stages": {
@@ -193,9 +302,9 @@ def cmd_init(args):
 
 
 def artifact_path(job_path, value):
-    job_dir = os.path.dirname(os.path.abspath(job_path))
+    job_dir = os.path.dirname(os.path.realpath(os.path.abspath(job_path)))
     candidate = value if os.path.isabs(value) else os.path.join(job_dir, value)
-    candidate = os.path.abspath(candidate)
+    candidate = os.path.realpath(os.path.abspath(candidate))
     if os.path.commonpath((job_dir, candidate)) != job_dir:
         raise JobError("产物路径必须位于当前账号工作区内")
     return candidate, os.path.relpath(candidate, job_dir)
@@ -215,11 +324,56 @@ def parse_pairs(items, label, path_mode=False, job_path=None):
     return parsed
 
 
+def validate_auto_hotspot_metadata(job, now=None, details=None):
+    """Validate the selected hotspot once, before it is persisted."""
+    details = details or job.get("stages", {}).get("discover", {}).get("details", {})
+    project_root = os.path.realpath(os.path.abspath(job.get("project_root", "")))
+    profile_path = os.path.realpath(os.path.abspath(job.get("profiles_path", "")))
+    if not project_root or os.path.commonpath((project_root, profile_path)) != project_root:
+        raise JobError("热点元数据引用的账号档案路径不安全")
+    try:
+        with open(profile_path, encoding="utf-8") as f:
+            discovery = json.load(f)["profiles"][job["account"]]["topic_discovery"]
+    except (OSError, KeyError, TypeError, json.JSONDecodeError) as exc:
+        raise JobError(f"热点元数据无法读取账号档案：{exc}") from exc
+
+    category = details.get("category")
+    event_focus = details.get("event_focus")
+    published_text = details.get("published_at")
+    if category not in discovery.get("categories", []):
+        raise JobError("自动热点类别不属于当前账号类别")
+    if not isinstance(event_focus, str) or not event_focus.strip():
+        raise JobError("自动热点必须提供简短事件重点 event_focus")
+    try:
+        published = parse_iso(published_text)
+    except (TypeError, ValueError) as exc:
+        raise JobError(f"热点发布时间不合法：{published_text}") from exc
+    if published is None or published.tzinfo is None:
+        raise JobError("热点发布时间必须包含时区")
+    current = now or dt.datetime.now(dt.timezone.utc)
+    if current.tzinfo is None:
+        raise JobError("热点校验时间必须包含时区")
+    age_hours = (
+        current.astimezone(dt.timezone.utc) - published.astimezone(dt.timezone.utc)
+    ).total_seconds() / 3600
+    if not 0 <= age_hours <= discovery.get("max_age_hours", 48):
+        raise JobError("自动热点必须位于最近 48 小时内")
+
+
 def cmd_topic(args):
     value = args.value.strip()
     if not value:
         raise JobError("选题不能为空")
     job = load_job(args.job)
+    details = {"source": args.source}
+    if args.source == "auto-hotspot":
+        details.update({
+            "category": (args.category or "").strip(),
+            "published_at": (args.published_at or "").strip(),
+            "event_focus": (args.event_focus or "").strip(),
+        })
+        validate_auto_hotspot_metadata(job, details=details)
+
     job["topic"] = value
     job["topic_source"] = args.source
     finished = now_iso()
@@ -227,14 +381,32 @@ def cmd_topic(args):
     started = current.get("started_at") or finished
     duration = max(0, round((parse_iso(finished) - parse_iso(started)).total_seconds() * 1000))
     job["stages"]["discover"] = stage_record(
-        "completed", started, "已确定本轮选题", {"source": args.source}
+        "completed", started, "已确定本轮选题", details
     )
     job["stages"]["discover"].update(
         {"completed_at": finished, "duration_ms": duration, "updated_at": finished}
     )
     job["state"] = summarize_state(job)
     save_job(args.job, job)
+    if args.source == "auto-hotspot":
+        record_topic_history(job, value, details["event_focus"], selected_at=finished)
     print(value)
+
+
+def cmd_history(args):
+    job = load_job(args.job)
+    history = load_topic_history(job)
+    entries = recent_topic_entries(history)
+    if args.days != TOPIC_DEDUP_DAYS:
+        current = dt.datetime.now(dt.timezone.utc)
+        cutoff = current - dt.timedelta(days=args.days)
+        entries = [
+            entry for entry in history["topics"]
+            if isinstance(entry, dict)
+            and parse_iso(entry.get("selected_at"))
+            and parse_iso(entry["selected_at"]).astimezone(dt.timezone.utc) >= cutoff
+        ]
+    print(json.dumps(entries, ensure_ascii=False, indent=2))
 
 
 def cmd_choose_theme(args):
@@ -277,16 +449,23 @@ def cmd_stage(args):
     job = load_job(args.job)
     item = job["stages"][args.name]
     timestamp = now_iso()
+    if (
+        args.name in ("humanize", "illustrations")
+        and args.status == "completed"
+        and item.get("status") == "pending"
+    ):
+        raise JobError(f"阶段 {args.name} 完成前必须先标记 running")
     if args.status == "pending":
         item.update(
             {
                 "status": "pending", "started_at": None, "completed_at": None,
-                "duration_ms": None, "updated_at": timestamp,
+                "duration_ms": None, "updated_at": timestamp, "details": {},
             }
         )
     elif args.status == "running":
         if item.get("status") != "running" or not item.get("started_at"):
             item["started_at"] = timestamp
+            item["details"] = {}
         item.update(
             {
                 "status": "running", "completed_at": None,
@@ -332,47 +511,18 @@ def validate_ready_html(job_path, job):
         raise JobError(f"排版产物仍包含占位内容：{match.group(0)}")
 
 
-def validate_inline_stage(job_path, job):
-    stage = job["stages"]["inline-visuals"]
-    if stage["status"] == "completed":
-        return
-    details = stage.get("details", {})
-    if not (
-        stage["status"] == "skipped"
-        and details.get("degraded") == "true"
-        and details.get("module_count") == "0"
-    ):
-        raise JobError("阶段 inline-visuals 尚未完成或未按规则降级")
-    plan_value = job["artifacts"].get("inline_visuals", "inline-visuals.json")
-    plan_path, _ = artifact_path(job_path, plan_value)
-    try:
-        with open(plan_path, encoding="utf-8") as f:
-            plan = json.load(f)
-    except (OSError, json.JSONDecodeError) as exc:
-        raise JobError(f"无法读取降级后的信息模块计划：{exc}") from exc
-    selected_theme = job["stages"]["format"].get("details", {}).get("theme")
-    if (
-        not isinstance(plan, dict)
-        or plan.get("version") != 1
-        or plan.get("theme") != selected_theme
-        or plan.get("modules") != []
-    ):
-        raise JobError("降级后的信息模块计划必须是当前主题的空计划")
+def validate_illustration_stage(job):
+    status = job["stages"]["illustrations"]["status"]
+    if status not in ("completed", "skipped"):
+        raise JobError("阶段 illustrations 尚未完成或降级")
 
 
 def cmd_gate(args):
     job = load_job(args.job)
-    for stage_name in (
-        "discover",
-        "write",
-        "fact-check",
-        "humanize",
-        "format",
-        "validate",
-    ):
+    for stage_name in ("discover", "write", "humanize", "format"):
         if job["stages"][stage_name]["status"] != "completed":
             raise JobError(f"阶段 {stage_name} 尚未完成")
-    validate_inline_stage(args.job, job)
+    validate_illustration_stage(job)
     validate_ready_html(args.job, job)
     cover_stage = job["stages"]["cover"]
     has_generated_cover = cover_stage["status"] == "completed"
@@ -399,11 +549,22 @@ def build_parser():
     init.add_argument("--profiles", default="config/wechat-content-profiles.json")
     init.add_argument("--account", required=True)
     init.add_argument("--topic")
+    init.add_argument(
+        "--force-new", action="store_true",
+        help="明确丢弃现有 running/failed 工作区并新建任务",
+    )
 
     topic = sub.add_parser("topic", help="记录自动发现或外部提供的选题")
     topic.add_argument("--job", required=True)
     topic.add_argument("--value", required=True)
     topic.add_argument("--source", choices=("provided", "auto-hotspot"), required=True)
+    topic.add_argument("--category")
+    topic.add_argument("--published-at")
+    topic.add_argument("--event-focus")
+
+    history = sub.add_parser("history", help="输出近期选题重点供 Agent 做语义去重")
+    history.add_argument("--job", required=True)
+    history.add_argument("--days", type=int, default=7)
 
     choose = sub.add_parser("choose-theme", help="从已注册主题中随机选择并固定本轮主题")
     choose.add_argument("--job", required=True)
@@ -432,6 +593,7 @@ def main():
         {
             "init": cmd_init,
             "topic": cmd_topic,
+            "history": cmd_history,
             "choose-theme": cmd_choose_theme,
             "stage": cmd_stage,
             "gate": cmd_gate,

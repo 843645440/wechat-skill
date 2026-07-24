@@ -65,6 +65,7 @@ TABLE_SEPARATOR_RE = re.compile(
     r"^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$"
 )
 END_HEADING_RE = re.compile(r"结语|结论|总结|写在最后|最后的话|尾声")
+IMAGE_RE = re.compile(r"^!\[([^\]\n]*)\]\(([^()\s]+)(?:\s+\"[^\"]*\")?\)$")
 
 
 class RenderError(RuntimeError):
@@ -210,6 +211,12 @@ def parse_article(source):
                 "raw_rows": rows_raw,
             })
             continue
+        elif image := IMAGE_RE.match(line):
+            flush_paragraph()
+            flush_bullets()
+            sections[-1]["blocks"].append({
+                "kind": "image", "alt": image.group(1), "src": image.group(2),
+            })
         elif not line:
             flush_paragraph()
             flush_bullets()
@@ -522,6 +529,14 @@ def render_block(block, theme):
         )
     if kind == "table":
         return render_table(block, theme)
+    if kind == "image":
+        src = html.escape(block["src"], quote=True)
+        alt = html.escape(block["alt"], quote=True)
+        return (
+            f'<section style="margin:28px 14px;text-align:center;">'
+            f'<img src="{src}" alt="{alt}" style="display:block;width:100%;height:auto;border-radius:{theme["radius"]};">'
+            "</section>"
+        )
     raise RenderError(f"不支持的正文块：{kind}")
 
 
@@ -576,8 +591,13 @@ def render_end(theme):
     )
 
 
-def render_document(title, sections, plan, theme):
-    anchors = module_map(plan, sections)
+def render_document(title, sections, plan_or_theme, theme=None):
+    """Render body images by default; accept a legacy plan only for standalone callers."""
+    if theme is None:
+        theme = plan_or_theme
+        anchors = {}
+    else:
+        anchors = module_map(plan_or_theme, sections)
     font = "-apple-system,BlinkMacSystemFont,Segoe UI,PingFang SC,Hiragino Sans GB,Microsoft YaHei,sans-serif"
     output = [
         f'<section style="box-sizing:border-box;max-width:677px;margin:0 auto;padding:8px 0 30px;background:{theme["paper"]};color:{theme["body"]};font-family:{font};overflow-x:hidden;">'
@@ -637,9 +657,8 @@ def validate_plan_shape(plan, theme):
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="一次生成丰富主题正文与同主题信息模块")
+    parser = argparse.ArgumentParser(description="一次生成丰富主题正文与正文配图")
     parser.add_argument("--article", required=True)
-    parser.add_argument("--plan", required=True)
     parser.add_argument("--theme", choices=tuple(THEMES), required=True)
     parser.add_argument("--output", required=True)
     return parser.parse_args()
@@ -648,46 +667,22 @@ def parse_args():
 def main():
     args = parse_args()
     started = time.monotonic()
-    article_path, plan_path, output_path = map(Path, (args.article, args.plan, args.output))
+    article_path, output_path = map(Path, (args.article, args.output))
     try:
         source = article_path.read_text(encoding="utf-8")
         title, sections = parse_article(source)
-        degraded = False
-        reason = ""
-        try:
-            plan = coerce_plan_shape(
-                json.loads(plan_path.read_text(encoding="utf-8")),
-                args.theme,
-            )
-            validate_plan_shape(plan, args.theme)
-            # Persist coerced shell so later stages see a canonical plan.
-            atomic_json(plan_path, {
-                "version": plan["version"],
-                "theme": plan["theme"],
-                "modules": plan["modules"],
-            })
-            rendered = render_document(title, sections, plan, THEMES[args.theme])
-            module_count = len(plan["modules"])
-            kinds = [item["kind"] for item in plan["modules"]]
-        except (OSError, json.JSONDecodeError, KeyError, TypeError, RenderError) as exc:
-            degraded = True
-            reason = str(exc)
-            plan = {"version": 1, "theme": args.theme, "modules": []}
-            atomic_json(plan_path, plan)
-            rendered = render_document(title, sections, plan, THEMES[args.theme])
-            module_count = 0
-            kinds = []
+        rendered = render_document(title, sections, THEMES[args.theme])
         atomic_text(output_path, rendered + "\n")
     except (OSError, RenderError) as exc:
         print(json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False), file=sys.stderr)
         return 1
     result = {
         "status": "ok", "title": title, "theme": args.theme,
-        "module_count": module_count, "kinds": kinds, "degraded": degraded,
+        "image_count": sum(
+            1 for section in sections for block in section["blocks"] if block["kind"] == "image"
+        ),
         "duration_ms": round((time.monotonic() - started) * 1000),
     }
-    if reason:
-        result["degrade_reason"] = reason
     print(json.dumps(result, ensure_ascii=False))
     return 0
 

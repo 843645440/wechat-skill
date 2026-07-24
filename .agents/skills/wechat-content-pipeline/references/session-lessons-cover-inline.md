@@ -1,4 +1,4 @@
-# 会话沉淀：封面探针、inline-visuals、字数、humanize、假完成
+# 会话沉淀：封面探针、正文配图、字数、humanize、假完成
 
 供流水线排障与维护时快速对齐；细节仍以 `pipeline-failure-triage.md` / `execution-recovery.md` / `humanize-pass.md` 与脚本为准。
 
@@ -13,11 +13,15 @@
 ## 写后去 AI 味（humanizer-zh）
 
 - 顺序：`write/sources` → **`humanize`（一轮）** → `prepare` → inline → finish。禁止跳过。
-- Skill：`humanizer-zh`（`~/.hermes/skills/creative/humanizer-zh`，git：`op7418/Humanizer-zh`）。**不要用英文 `humanizer` 处理中文公众号正文。**
-- 约束全文：`humanize-pass.md`（**默认 strong**；不增事实、不改 sources、改后仍 1500–4000、保留 `##` 与语义 Markdown、禁止伪第一人称经历）。
-- 阶段：`stages.humanize` running→completed；`cmd_gate` 要求 humanize 已 completed。
-- Cron：`skills` 须含 `wechat-content-pipeline` **与** `humanizer-zh`；prompt 写明 humanize 步骤。
-- 文件内只留终稿，不要把「改写说明/模式列表」写进 `article.md`。
+- **默认 intensity=`strong`**（`light`/`medium` 仅用户明确指定）。档位见 `humanize-pass.md`。
+- Skill 路径优先级：
+  1. **monorepo vendored（推荐）**：`wechat-skill/.agents/skills/humanizer-zh/`
+  2. 独立副本：`creative/humanizer-zh/`（若并存，裸名会**歧义**；用完整路径加载）
+- **不要用英文 `humanizer`** 处理中文公众号正文。
+- 约束：不增事实、不改 sources、改后仍 1500–4000、保留 `##`；strong 可有克制阅读反应，禁编造亲历。
+- 阶段 detail 含 `intensity=strong`；`cmd_gate` 要求 humanize completed。
+- Cron：`skills` 含 pipeline + humanizer-zh；prompt 写明 **默认 strong**。
+- 半程成稿：停在 humanize，**对话贴全文**（`partial-run-delivery.md`）。
 
 ## 封面「浏览器内容探针执行失败」
 
@@ -26,16 +30,12 @@
 - 复现：`python3 .agents/skills/wechat-html-cover/scripts/render_cover.py --spec work/<a|b>/current/cover/cover.spec.json --output /tmp/cover-probe.png --timeout 45`
 - 成功：`status=ok`，PNG 1410×600。有默认 `thumb_media_id` 时可降级继续草稿，禁止 AI 生图回退。
 
-## inline-visuals 稳定性（用户：不要老降级）
+## 正文配图稳定性
 
-- `module_count=0` 先看 `job.json` → `stages.inline-visuals` 的 `degraded` / `reason` / `partial`。
-- 「缺少字段：version」≠ 信息量不足。Agent 常写残缺 plan。
-- **三层网**：
-  1. `prepare` 写入 `{version,theme,modules:[]}` 空壳 + `plan_schema`
-  2. `coerce_plan` / `coerce_module`：补顶层；`name`/`title`/`step`→`label`；`afterHeading`→`after_heading`；超长截断；缺 id 补 `inline-NN`；重写为规范键
-  3. `salvage_plan`：整包失败时**按模块抢救**，只丢坏块（`partial=true`），不再因一个字段写错清空全部
-- 仍会丢模块：锚点/证据不是原文、章节不存在、JSON 损坏、全部模块无效。
-- 规范字段仍应直接写 `label`+`text`；别名是稳定网不是鼓励乱写。见 `../wechat-inline-visuals/references/plan-schema.md` 与 `validate_plan.py`。
+- 当前主流程使用 `baoyu-article-illustrator`，不再生成 `inline-visuals.json`。
+- `illustrations` 必须先 `running`，真实图片写入 `imgs/`、Markdown 引用插入 `article.md` 后才可 `completed`。
+- `image_count` 必须为 1—3，并与 Markdown 图片引用数一致；`prepare` 还会检查路径不越界、文件真实存在。
+- 配图失败时停止并从 `illustrations` 定点续跑，不以纯正文或空计划降级。
 
 ## 假完成 / Cron 中断 / 续跑
 

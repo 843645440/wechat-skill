@@ -1,13 +1,12 @@
 {
-  "version": 4,
+  "version": 5,
   "profiles": {
     "a": {
       "label": "熵增时刻",
       "audience": "关注科技、人工智能和职业变化的普通职场读者",
       "writer_instructions": "优先解释热点对工作流程、企业经营和普通人选择的现实影响，语气清晰、克制、信息密度中等。",
       "topic_discovery": {
-        "window_hours": 24,
-        "fallback_hours": 72,
+        "max_age_hours": 48,
         "categories": [
           "人工智能",
           "科技产品",
@@ -16,10 +15,14 @@
         ]
       },
       "theme_strategy": "random",
-      "inline_visuals": {
+      "illustrations": {
         "enabled": true,
-        "mode": "native-html",
-        "max_blocks": 3
+        "skill": "baoyu-article-illustrator",
+        "backend": "image_generate",
+        "output_dir": "imgs",
+        "max_images": 3,
+        "aspect_ratio": "landscape",
+        "watermark": false
       },
       "cover": {
         "enabled": true,
@@ -37,8 +40,7 @@
       "audience": "关注就业、教育、医疗、养老、交通、住房、公共服务和中国长期建设成果的普通读者",
       "writer_instructions": "从真实成果和普通人的实际变化出发，写清谁的生活变好了、为什么变好、还有什么问题。允许温暖和振奋，但不得煽情、消费苦难、制造群体对立或依靠贬低他国获得情绪效果。",
       "topic_discovery": {
-        "window_hours": 72,
-        "fallback_hours": 168,
+        "max_age_hours": 48,
         "categories": [
           "就业",
           "教育",
@@ -54,10 +56,14 @@
         ]
       },
       "theme_strategy": "random",
-      "inline_visuals": {
+      "illustrations": {
         "enabled": true,
-        "mode": "native-html",
-        "max_blocks": 3
+        "skill": "baoyu-article-illustrator",
+        "backend": "image_generate",
+        "output_dir": "imgs",
+        "max_images": 3,
+        "aspect_ratio": "landscape",
+        "watermark": false
       },
       "cover": {
         "enabled": true,
