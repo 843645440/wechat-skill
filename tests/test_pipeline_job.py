@@ -36,10 +36,9 @@ class PipelineJobTests(unittest.TestCase):
             },
             "cover": {
                 "enabled": True,
-                "backend": overrides.get("cover_backend", "html"),
-                "aspect": "2.35:1",
-                "theme": "article",
-                "text": "title-only",
+                "backend": overrides.get("cover_backend", "image_generate"),
+                "aspect": overrides.get("cover_aspect", "16:9"),
+                "subject_focus": True,
             },
             "publishing": {"target": "draft"},
         }
@@ -83,6 +82,9 @@ class PipelineJobTests(unittest.TestCase):
             "topic", "--job", str(job_path), "--value", "机器人进入汽车工厂",
             "--source", "auto-hotspot", "--category", category,
             "--published-at", published_at, "--event-focus", focus,
+            "--hook", "产线先省的是搬运，不是安全签字",
+            "--tension", "效率提升 vs 停线与安全责任",
+            "--reader-stakes", "产线与维护人员要重新划分谁能停机、谁背锅",
         ])
         with contextlib.redirect_stdout(io.StringIO()):
             pipeline_job.cmd_topic(args)
@@ -143,7 +145,8 @@ class PipelineJobTests(unittest.TestCase):
     def test_init_rejects_invalid_profile_backends_and_image_count(self):
         cases = (
             ({"illustration_backend": "other"}, "Baoyu"),
-            ({"cover_backend": "other"}, "HTML 封面"),
+            ({"cover_backend": "html"}, "生图 API 封面"),
+            ({"cover_backend": "other"}, "生图 API 封面"),
             ({"max_images": 4}, "Baoyu"),
         )
         for kwargs, message in cases:
@@ -174,6 +177,18 @@ class PipelineJobTests(unittest.TestCase):
                 with self.assertRaisesRegex(pipeline_job.JobError, message):
                     self.record_hotspot(job_path, published, category)
 
+    def test_auto_hotspot_requires_story_kernel(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            job_path = self.init_job(tmp, topic=None)
+            args = pipeline_job.build_parser().parse_args([
+                "topic", "--job", str(job_path), "--value", "某公司发布新模型",
+                "--source", "auto-hotspot", "--category", "人工智能",
+                "--published-at", datetime.now(timezone.utc).isoformat(),
+                "--event-focus", "某公司发布新模型",
+            ])
+            with self.assertRaisesRegex(pipeline_job.JobError, "hook"):
+                pipeline_job.cmd_topic(args)
+
     def test_history_returns_last_seven_days_without_mechanical_rejection(self):
         with tempfile.TemporaryDirectory() as tmp:
             job_path = self.init_job(tmp, topic=None)
@@ -191,6 +206,69 @@ class PipelineJobTests(unittest.TestCase):
             entries = json.loads(output.getvalue())
             self.record_hotspot(job_path, focus="机器人走进汽车制造现场")
         self.assertEqual(["机器人进入产线"], [entry["event_focus"] for entry in entries])
+
+    def test_history_rotation_and_shape_enforces_structure_pool(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            job_path = self.init_job(tmp, topic=None)
+            now = datetime.now(timezone.utc)
+            history_path = Path(tmp) / "work/a/topic-history.json"
+            history_path.write_text(json.dumps({
+                "version": 2, "account": "a", "topics": [
+                    {
+                        "topic": f"t{i}",
+                        "event_focus": f"e{i}",
+                        "selected_at": (now - timedelta(hours=i)).isoformat(),
+                        "structure_id": "felt_essay" if i < 2 else "conflict",
+                        "opening_type": "emotion_sting" if i == 0 else "contrast",
+                        "ending_type": "unresolved" if i == 0 else "duty_point",
+                        "tension_type": "efficiency_vs_duty" if i < 2 else "demo_vs_deploy",
+                    }
+                    for i in range(3)
+                ],
+            }, ensure_ascii=False), encoding="utf-8")
+            self.record_hotspot(job_path)
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                pipeline_job.cmd_history(pipeline_job.build_parser().parse_args([
+                    "history", "--job", str(job_path), "--rotation",
+                ]))
+            payload = json.loads(out.getvalue())
+            self.assertIn("rotation", payload)
+            self.assertIn("felt_essay", payload["rotation"]["blocked_structures"])
+            # blocked opening from last 5
+            self.assertIn("emotion_sting", payload["rotation"]["blocked_openings"])
+            with self.assertRaisesRegex(pipeline_job.JobError, "structure_id=felt_essay"):
+                pipeline_job.cmd_shape(pipeline_job.build_parser().parse_args([
+                    "shape", "--job", str(job_path),
+                    "--structure-id", "felt_essay",
+                    "--opening-type", "scene",
+                    "--ending-type", "hook_return",
+                ]))
+            with self.assertRaisesRegex(pipeline_job.JobError, "opening_type=emotion_sting"):
+                pipeline_job.cmd_shape(pipeline_job.build_parser().parse_args([
+                    "shape", "--job", str(job_path),
+                    "--structure-id", "myth_bust",
+                    "--opening-type", "emotion_sting",
+                    "--ending-type", "hook_return",
+                ]))
+            ok = io.StringIO()
+            with contextlib.redirect_stdout(ok):
+                pipeline_job.cmd_shape(pipeline_job.build_parser().parse_args([
+                    "shape", "--job", str(job_path),
+                    "--structure-id", "myth_bust",
+                    "--opening-type", "scene",
+                    "--ending-type", "hook_return",
+                    "--felt-sense", "讽刺",
+                    "--tension-type", "hype_vs_adoption",
+                    "--heading-count", "3",
+                    "--body-band", "mid",
+                ]))
+            shape = json.loads(ok.getvalue())
+            job = pipeline_job.load_job(job_path)
+            history = json.loads(history_path.read_text(encoding="utf-8"))
+        self.assertEqual("myth_bust", shape["structure_id"])
+        self.assertEqual("myth_bust", job["article_shape"]["structure_id"])
+        self.assertEqual("myth_bust", history["topics"][-1]["structure_id"])
 
     def test_stage_requires_running_before_humanize_or_illustrations_complete(self):
         with tempfile.TemporaryDirectory() as tmp:

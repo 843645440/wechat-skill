@@ -1,6 +1,6 @@
 ---
 name: wechat-content-pipeline
-description: 编排中文微信公众号文章从给定选题或 48 小时内热点，到写作、humanize、可降级正文配图、随机主题、确定性封面和指定公众号草稿箱。用于定时自动生产或给定主题的一条龙草稿任务；不公开发布。
+description: 编排中文微信公众号文章从给定选题或 48 小时内热点，到写作、humanize、可降级正文配图、生图 API 封面、随机主题和指定公众号草稿箱。用于定时自动生产或给定主题的一条龙草稿任务；不公开发布。
 ---
 
 # 微信公众号内容生产流水线
@@ -12,15 +12,17 @@ description: 编排中文微信公众号文章从给定选题或 48 小时内热
 - [references/artifact-contract.md](references/artifact-contract.md)：工作区、阶段和 `run_id`。
 - [references/account-profiles.md](references/account-profiles.md)：账号内容偏好。
 - 无给定主题时读 [references/hotspot-discovery.md](references/hotspot-discovery.md)。
+- 写作前读 [references/structure-rotation.md](references/structure-rotation.md)：结构池与近文轮换，防同质限流。
 - 写完正文、prepare 前读 [references/humanize-pass.md](references/humanize-pass.md)，加载 `humanizer-zh`，默认 `strong`。
-- 正文配图读 `../baoyu-article-illustrator/SKILL.md`。
+- 正文配图读 `../baoyu-article-illustrator/SKILL.md` + [references/baoyu-illustrations-integration.md](references/baoyu-illustrations-integration.md)：**baoyu 负责分析与提示词，出图用当前环境自有后端**。
+- 封面读 [references/ai-cover-generation.md](references/ai-cover-generation.md)：**品牌名+品牌色+场景**，禁止默认画完整商标 Logo。
 - 失败时读 [references/pipeline-failure-triage.md](references/pipeline-failure-triage.md)。
 - 修改阶段、产物、门禁、图片降级、草稿幂等或 cron 契约时，先读 [references/contract-simplification-migration.md](references/contract-simplification-migration.md)，按跨层清单和离线双运行探针验收。
 
 项目根目录通常是本 Skill 向上三级；固定入口为：
 
 ```text
-pipeline_job.py init/topic/history/stage/show
+pipeline_job.py init/topic/history/shape/stage/show
 pipeline_runtime.py begin/prepare/finish
 ```
 
@@ -41,14 +43,17 @@ python3 <PIPELINE_ROOT>/scripts/pipeline_job.py init \
 
 ### 2. 自动选题
 
-先读取最近 7 天历史：
+先读取最近 7 天历史（**带结构轮换计划**）：
 
 ```bash
 python3 <PIPELINE_ROOT>/scripts/pipeline_job.py history \
-  --job <WORK_DIR>/job.json --days 7
+  --job <WORK_DIR>/job.json --days 7 --rotation
 ```
 
-Agent 比较历史 `event_focus`，判断是否为同一核心事件。明确重复则换题；拿不准时放行。代码不做关键词、bigram 或阈值相似度判断。
+Agent 比较历史 `event_focus`，判断是否为同一核心事件。明确重复则换题；拿不准时放行。代码不做关键词、bigram 或阈值相似度判断。  
+同时阅读 `rotation.blocked_*` / `preferred_*`，供写作前 `shape` 选型（结构轮换与事件去重同等重要）。
+
+选题必须同时具备故事核：`event_focus`、`hook`、`tension`、`reader_stakes`。写不出矛盾与点击理由的“纯发布说明书”应换题或 `discover=failed`。细则见 [references/hotspot-discovery.md](references/hotspot-discovery.md)。
 
 确定主题后：
 
@@ -62,49 +67,83 @@ python3 <PIPELINE_ROOT>/scripts/pipeline_job.py topic \
   --source auto-hotspot \
   --category "<账号 categories 内类别>" \
   --published-at "<热点发布时间，ISO 8601 且含时区>" \
-  --event-focus "<一句话核心事件>"
+  --event-focus "<一句话核心事件>" \
+  --hook "<为什么要点开>" \
+  --tension "<核心矛盾>" \
+  --reader-stakes "<读者切身代价>"
 ```
 
-写入时只校验三项：类别属于账号档案、`0 <= 当前时间 - published_at <= 48 小时`、Agent 已提供 `event_focus`。后续 prepare/finish 不重复检查热点年龄。
+写入时校验：类别、48 小时时效、`event_focus`，以及 **hook / tension / reader_stakes**。后续 prepare/finish 不重复检查热点年龄。
 
-### 3. 写作
+### 3. 锁定文章结构（防同质）
+
+在 `begin`/写作前，根据 `history --rotation` 选择不在 blocked 列表中的形状并锁定：
+
+```bash
+python3 <PIPELINE_ROOT>/scripts/pipeline_job.py shape \
+  --job <WORK_DIR>/job.json \
+  --structure-id <preferred 中的 id> \
+  --opening-type <preferred opening> \
+  --ending-type <preferred ending> \
+  --felt-sense "<主情绪>" \
+  --tension-type <tension 类型> \
+  --heading-count 3 \
+  --body-band mid
+```
+
+`shape` 会写入 `job.article_shape` 并合并进 `topic-history.json`。冲突则换型重锁，禁止默认总用 `felt_essay` + 同一种开头。细则见 [references/structure-rotation.md](references/structure-rotation.md)。
+
+### 4. 写作
 
 ```bash
 python3 <PIPELINE_ROOT>/scripts/pipeline_runtime.py begin \
   --job <WORK_DIR>/job.json
 ```
 
-生成 `article.md`：
+加载 `wechat-tech-insight-writer`，读取账号 `writer_instructions` / `voice`（默认**强情感主观**）、job 的 `hook`/`tension`/`reader_stakes` 与 **`article_shape`**。生成 `article.md`：
 
-- 唯一一级标题，标题不超过 32 字。
-- 正文可读字符 1500—4000，不含一级标题与空白。
-- 按已核实信息量定长短，不为凑字注水。
+- 叙述人：第一人称「我」；主导情绪具体，且与近文 `felt_sense` 不雷同。
+- 标题 ≤32 字，信息锚点 + 情感刺点；禁止周报体。
+- **严格按已锁定 structure_id / opening / ending / heading_count / body_band 组织**，不是篇篇同一七段。
+- 国内读者可能陌生的主体先 1—3 句简介再展开。
+- **必须有读者带走物**（清单/判断标准/误读对照等），禁止白看一场。
+- 正文 1500—4000；情绪钉在机制上；禁止编造亲历。中立简报、同质模具、纯情绪空文视为失败。
 - 不创建 `sources.md`，不创建 `fact-check` 阶段。
 
-### 4. Humanize
+### 5. Humanize
 
-将 `humanize` 标为 `running`，按 `humanizer-zh` 对 `article.md` 就地执行一轮，默认 `intensity=strong`，不新增事实；完成后标为 `completed`。
+将 `humanize` 标为 `running`，按 `humanizer-zh` + [references/humanize-pass.md](references/humanize-pass.md) 就地改写，默认 `intensity=strong`，不新增事实。目标是**懂行者带强情感说话**，禁止抹平成中立 briefing；不得删掉清单与可执行段落。完成后标为 `completed`。
 
-### 5. 正文配图
+### 6. 正文配图（baoyu 分析 + 自有后端出图）
 
-将 `illustrations` 标为 `running`。目标生成 1—3 张横向、无水印正文图，提示词保存到 `prompts/`，图片保存到 `imgs/`，以 Markdown 引用插入 `article.md`。
+将 `illustrations` 标为 `running`。按 [references/baoyu-illustrations-integration.md](references/baoyu-illustrations-integration.md)：
 
-- 信息不适合配图时允许 0 张。
-- 生成失败最多重试两次；仍失败时将 `illustrations` 标为 `skipped`，无图继续。
-- 有图时标为 `completed`；无需声明 `image_count`。
-- 最多 3 张；路径越界仍是硬错误。
-- 缺失或损坏的正文图允许删除对应引用/标签后继续；封面不适用此降级。
+1. 加载 **`baoyu-article-illustrator`**：分析插图位、Type×Style×Palette、**先写 `prompts/` 再出图**。流水线默认跳过向用户确认（全自动）。  
+2. **出图**使用当前环境**自有**生图后端（`image_generate` / Imagine / Agnes 等），保存到 `imgs/`，插入 Markdown。  
+3. 禁止跳过 baoyu、随手一句 prompt 直接出图。  
+4. 0—3 张；失败可 `skipped`；**禁止视觉审图**。  
+5. detail 示例：`analyzer=baoyu;backend=image_generate;count=N;visual_check=none`。
 
-### 6. Prepare
+### 7. 封面（品牌名 + 品牌色 + 场景）
+
+将 `cover` 标为 `running`。按 [references/ai-cover-generation.md](references/ai-cover-generation.md)：
+
+- 主识别：**品牌/产品名文字** + **品牌色**；辅以文章张力场景。  
+- **默认禁止**完整官方 Logo/注册商标图形；禁止官方海报误导体。  
+- 用当前环境自有生图后端；`prompts/cover.txt`；输出 `cover/cover.png`。  
+- **禁止** HTML 封面与视觉审图。  
+- 成功：`visual_check=none`。
+
+### 8. Prepare
 
 ```bash
 python3 <PIPELINE_ROOT>/scripts/pipeline_runtime.py prepare \
   --job <WORK_DIR>/job.json
 ```
 
-`prepare` 检查标题、1500—4000 字、humanize、正文图最多 3 张与路径安全，固定随机主题并生成封面规格。它不读取 `sources.md`，不重复检查热点时效，不要求图片计数声明。
+`prepare` 检查标题、1500—4000 字、humanize、正文图最多 3 张与路径安全，固定随机主题。**不再生成 HTML 封面规格。** 不读 `sources.md`，不重复检查热点时效。
 
-### 7. Finish
+### 9. Finish
 
 ```bash
 python3 <PIPELINE_ROOT>/scripts/pipeline_runtime.py finish \
@@ -112,13 +151,12 @@ python3 <PIPELINE_ROOT>/scripts/pipeline_runtime.py finish \
   --config <PROJECT_ROOT>/wechat-accounts.json
 ```
 
-`finish` 确定性重建正文 HTML 和封面，执行轻量草稿门禁后只调用一次 `send --action draft`：
+`finish` 重建正文 HTML，**验收** `cover/cover.png`（不渲染 HTML 封面），轻量门禁后 `send --action draft`：
 
-- 不生成 preview，不执行独立 validate 阶段，不记录 leaf count 或文件哈希。
-- 封面技术故障最多尝试两次；有账号默认封面则继续，否则停止。
-- 正文图按真实字节检测格式，上传文件名和 MIME 采用真实格式；扩展名不一致不阻塞。
-- 正文坏图可跳过；微信认证、上传或 API 故障不得伪装成图片降级。
-- 同一任务 `finish` 使用文件锁，防止并发调用创建两个草稿。
+- 不生成 preview，不做独立 validate，不记 leaf/哈希。
+- 生图封面缺失且无默认 thumb → 失败。
+- 正文坏图可跳过；微信 API 故障不得伪装成图片降级。
+- 同一任务 `finish` 文件锁防双草稿。
 
 ## 草稿幂等与恢复
 

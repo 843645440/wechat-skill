@@ -1,31 +1,44 @@
-# Baoyu 正文配图集成
+# Baoyu 正文配图集成（分析用 baoyu · 出图用自有后端）
 
-## 适用范围
+## 分工
 
-当公众号流水线不再使用原生 HTML 信息模块，而要在文章正文中使用可发布的配图时采用此约定。
+| 步骤 | 用谁 | 做什么 |
+|------|------|--------|
+| 分析文章、选插入点、定 Type×Style×Palette、写提示词文件 | **`baoyu-article-illustrator`** | 读 `../baoyu-article-illustrator/SKILL.md`，按 workflow 产出 outline + `prompts/` |
+| 真正生成栅格图 | **当前环境自有生图后端** | `image_generate` / Imagine / Agnes / 运行时原生工具等；**不要**为迁就环境跳过 baoyu 分析步骤 |
+| 流水线编排 | `wechat-content-pipeline` | stage 记账、路径、0—3 张、可降级 |
+
+流水线模式默认：**跳过 baoyu 的「向用户确认风格」交互**（等价用户已授权全自动：`直接生成` / 按档案默认），但仍必须：
+
+1. 分析正文选位；  
+2. 先落盘完整 prompt 文件再出图；  
+3. 用**自有后端**按 prompt 出图到 `imgs/`；  
+4. 插入 Markdown；  
+5. **不做视觉审图**。
 
 ## 固定顺序
 
-1. 完成 `article.md`、事实核验与 `humanizer-zh`。
-2. 将 `illustrations` 标记为 `running`，再用 `baoyu-article-illustrator` 生成 1—3 张正文图；不得把图片中不可核验的数字、结论当作事实来源。
-3. 将图片保存到当前工作目录的 `imgs/`，将完整提示词保存到 `prompts/`。
-4. 在 `article.md` 中插入相对路径 Markdown，例如：`![研究流程示意](imgs/research-workflow.png)`。
-5. 仅在图片与提示词真实落盘、Markdown 已插入后，将 `illustrations` 标记为 `completed`，记录 `image_count=N` 与 `skill=baoyu-article-illustrator`。
-6. 再执行 `prepare` 与 `finish`；渲染器会把 Markdown 图片转成公众号 HTML 的响应式 `<img>`。
+1. `article.md` + humanize 完成。  
+2. `illustrations` → `running`。  
+3. 加载 baoyu-article-illustrator：  
+   - 分析 1—3 个最增值插图位（机制、对比、流程优先；少用纯装饰）。  
+   - 选定 type/style/palette（可用档案默认或 `editorial` + 文章气质）。  
+   - 写入 `prompts/NN-{type}-{slug}.md`（或 `prompts/` 下等价结构）。  
+4. **出图**：对每个 prompt，调用**当前 runtime 自有**生图工具（非 baoyu 内部专用 CLI 亦可），保存到 `imgs/`。  
+   - 失败单张重试 1 次；全部失败 → `illustrations=skipped`，无图继续。  
+5. 在 `article.md` 对应段落后插入 `![说明](imgs/...)`。  
+6. `illustrations` → `completed`（或 `skipped`），detail 可含 `analyzer=baoyu;backend=image_generate;count=N;visual_check=none`。  
+7. 再跑封面生图 → `prepare` → `finish`。
+
+## 内容要求
+
+- 图必须服务**理解**：流程、对比、架构、代价分配；禁止与正文无关的炫图。  
+- 图中少字；需要标签时用短英文或极简中文，错字则重生成 prompt，**禁止**画完用代码涂字。  
+- 不得把图中数字当未核验事实写回正文。  
+- 不要创建 `inline-visuals.json`。
 
 ## 门禁
 
-- `illustrations` 不允许跳过或用空计划降级。
-- `image_count` 必须在 1—3 之间。
-- 最终 `article.html` 的 `<img>` 数量必须等于 `image_count`；不一致时停止草稿发布。
-- 图片必须是正文图片，而非信息卡/模块截图；不要再创建 `inline-visuals.json` 或传递 `--plan`。
-
-## 验证
-
-至少运行：
-
-```bash
-python3 -m unittest tests.test_pipeline_job tests.test_pipeline_runtime tests.test_article_renderer tests.test_wechat_publish
-```
-
-端到端验证用隔离副本和 `finish --dry-run`，检查输出中的 `image_count`、生成的 `article.html` 的图片数，以及 `article_preview.html` 是否存在；不得调用微信草稿 API。不要把 `--dry-run` 与 `--skip-draft` 叠加：后者可能在草稿输入预检前直接返回，造成假通过。
+- 0—3 张；路径不越界。  
+- **禁止**跳过 baoyu 分析、直接随手写一句 prompt 出图（测试捷径不算正式契约）。  
+- **禁止**视觉/OCR 审图；用户草稿箱人工核对。  

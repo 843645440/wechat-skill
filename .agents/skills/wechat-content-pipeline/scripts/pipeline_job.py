@@ -32,6 +32,58 @@ TOPIC_HISTORY_VERSION = 2
 TOPIC_HISTORY_MAX_ENTRIES = 100
 TOPIC_DEDUP_DAYS = 7
 
+# 写作结构池（防同质/限流）：与 wechat-tech-insight-writer article-structures 对齐
+STRUCTURE_IDS = (
+    "felt_essay",
+    "conflict",
+    "myth_bust",
+    "workflow_day",
+    "judgment_first",
+    "sting_list",
+    "qa_drive",
+    "quick_take",
+    "event_read",
+    "tech_explain",
+    "company_compete",
+    "industry_game",
+    "tech_livelihood",
+    "non_invest_finance",
+)
+OPENING_TYPES = (
+    "emotion_sting",
+    "contrast",
+    "myth",
+    "scene",
+    "judgment_first",
+    "date_announce",
+)
+ENDING_TYPES = (
+    "duty_point",
+    "unresolved",
+    "actionable_question",
+    "hook_return",
+    "brief_approval",
+)
+TENSION_TYPES = (
+    "efficiency_vs_duty",
+    "demo_vs_deploy",
+    "cheap_vs_trust",
+    "speed_vs_safety",
+    "access_vs_privacy",
+    "hype_vs_adoption",
+    "other",
+)
+BODY_BANDS = ("short", "mid", "long")
+SHAPE_KEYS = (
+    "structure_id",
+    "opening_type",
+    "ending_type",
+    "felt_sense",
+    "tension_type",
+    "heading_count",
+    "body_band",
+)
+
 
 class JobError(RuntimeError):
     pass
@@ -116,14 +168,23 @@ def recent_topic_entries(history, now=None):
     return recent
 
 
-def record_topic_history(job, value, event_focus, selected_at=None):
+def record_topic_history(job, value, event_focus, selected_at=None, story=None):
     history = load_topic_history(job)
     selected_at = selected_at or now_iso()
     new_entry = {
         "topic": value,
-        "event_focus": event_focus,
+        "event_focus": event_focus or value,
         "selected_at": selected_at,
+        "run_id": job.get("run_id"),
     }
+    story = story or {}
+    for key in ("hook", "tension", "reader_stakes"):
+        text = story.get(key)
+        if isinstance(text, str) and text.strip():
+            new_entry[key] = text.strip()
+    for key in SHAPE_KEYS:
+        if key in story and story[key] not in (None, ""):
+            new_entry[key] = story[key]
     topics = history["topics"]
     if not any(
         isinstance(entry, dict)
@@ -134,6 +195,212 @@ def record_topic_history(job, value, event_focus, selected_at=None):
         topics.append(new_entry)
     history["topics"] = topics[-TOPIC_HISTORY_MAX_ENTRIES:]
     atomic_write(topic_history_path(job), history)
+
+
+def compute_rotation_plan(entries):
+    """根据近文历史给出禁用/告警结构，供 Agent 选题写作前阅读。"""
+    timed = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        try:
+            selected = parse_iso(entry.get("selected_at"))
+        except (TypeError, ValueError):
+            selected = None
+        timed.append((selected or dt.datetime.min.replace(tzinfo=dt.timezone.utc), entry))
+    timed.sort(key=lambda item: item[0], reverse=True)
+    last7 = [e for _, e in timed[:7]]
+    last5 = [e for _, e in timed[:5]]
+    last3 = [e for _, e in timed[:3]]
+
+    structure_counts = {}
+    for entry in last7:
+        sid = entry.get("structure_id")
+        if sid:
+            structure_counts[sid] = structure_counts.get(sid, 0) + 1
+    blocked_structures = sorted(
+        sid for sid, count in structure_counts.items() if count >= 2
+    )
+    recent_structures = [e.get("structure_id") for e in last3 if e.get("structure_id")]
+    blocked_openings = sorted({
+        e.get("opening_type") for e in last5 if e.get("opening_type")
+    })
+    blocked_endings = sorted({
+        e.get("ending_type") for e in last5 if e.get("ending_type")
+    })
+    tension_counts = {}
+    for entry in last5:
+        tid = entry.get("tension_type")
+        if tid:
+            tension_counts[tid] = tension_counts.get(tid, 0) + 1
+    blocked_tensions = sorted(
+        tid for tid, count in tension_counts.items() if count >= 2
+    )
+    recent_felt = [e.get("felt_sense") for e in last3 if e.get("felt_sense")]
+    preferred_structures = [
+        sid for sid in STRUCTURE_IDS
+        if sid not in blocked_structures and sid not in recent_structures
+    ]
+    if not preferred_structures:
+        preferred_structures = [
+            sid for sid in STRUCTURE_IDS if sid not in blocked_structures
+        ]
+    preferred_openings = [o for o in OPENING_TYPES if o not in blocked_openings and o != "date_announce"]
+    preferred_endings = [e for e in ENDING_TYPES if e not in blocked_endings]
+    return {
+        "window": {
+            "structure_lookback": 7,
+            "opening_ending_lookback": 5,
+            "recent_structure_lookback": 3,
+        },
+        "rules": {
+            "structure_id": "近7篇同一 structure_id 最多2次；且尽量避开近3篇已用",
+            "opening_type": "近5篇 opening_type 不得重复；慎用 date_announce",
+            "ending_type": "近5篇 ending_type 不得重复",
+            "tension_type": "近5篇同一 tension_type 最多2次",
+            "felt_sense": "近3篇主情绪尽量不雷同",
+            "heading_count": "2–5 轮换，禁止连三篇相同个数",
+            "body_band": "short/mid/long 轮换",
+        },
+        "blocked_structures": blocked_structures,
+        "recent_structures": recent_structures,
+        "blocked_openings": blocked_openings,
+        "blocked_endings": blocked_endings,
+        "blocked_tensions": blocked_tensions,
+        "recent_felt_senses": recent_felt,
+        "preferred_structures": preferred_structures,
+        "preferred_openings": preferred_openings or list(OPENING_TYPES),
+        "preferred_endings": preferred_endings or list(ENDING_TYPES),
+        "structure_counts_last7": structure_counts,
+        "allowed_structure_ids": list(STRUCTURE_IDS),
+        "allowed_opening_types": list(OPENING_TYPES),
+        "allowed_ending_types": list(ENDING_TYPES),
+        "allowed_tension_types": list(TENSION_TYPES),
+        "allowed_body_bands": list(BODY_BANDS),
+    }
+
+
+def validate_shape_against_history(entries, shape, *, enforce=True):
+    plan = compute_rotation_plan(entries)
+    errors = []
+    sid = shape.get("structure_id")
+    if sid in plan["blocked_structures"]:
+        errors.append(f"structure_id={sid} 在近7篇已用满2次，必须换结构")
+    if sid and sid in plan["recent_structures"] and len(plan["preferred_structures"]) > 0:
+        # Soft block for last-3 if alternatives exist
+        if sid in plan["recent_structures"]:
+            errors.append(
+                f"structure_id={sid} 出现在近3篇，请改用 preferred_structures 之一"
+            )
+    opening = shape.get("opening_type")
+    if opening in plan["blocked_openings"]:
+        errors.append(f"opening_type={opening} 在近5篇已出现，必须换开头类型")
+    ending = shape.get("ending_type")
+    if ending in plan["blocked_endings"]:
+        errors.append(f"ending_type={ending} 在近5篇已出现，必须换结尾类型")
+    tension = shape.get("tension_type")
+    if tension in plan["blocked_tensions"]:
+        errors.append(f"tension_type={tension} 在近5篇已用满2次，请换矛盾类型")
+    # heading_count: no three identical in a row
+    timed = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        try:
+            selected = parse_iso(entry.get("selected_at"))
+        except (TypeError, ValueError):
+            selected = None
+        timed.append((selected or dt.datetime.min.replace(tzinfo=dt.timezone.utc), entry))
+    timed.sort(key=lambda item: item[0], reverse=True)
+    last_heads = [
+        e.get("heading_count") for _, e in timed[:3]
+        if e.get("heading_count") is not None
+    ]
+    hc = shape.get("heading_count")
+    if (
+        hc is not None
+        and len(last_heads) >= 2
+        and last_heads[0] == last_heads[1] == hc
+    ):
+        errors.append(f"heading_count={hc} 已连续两篇相同，请换 2–5 中的其他个数")
+    if enforce and errors:
+        raise JobError("；".join(errors))
+    return errors
+
+
+def parse_shape_from_args(args):
+    shape = {
+        "structure_id": (args.structure_id or "").strip(),
+        "opening_type": (args.opening_type or "").strip(),
+        "ending_type": (args.ending_type or "").strip(),
+        "felt_sense": (getattr(args, "felt_sense", None) or "").strip(),
+        "tension_type": (getattr(args, "tension_type", None) or "").strip(),
+        "body_band": (getattr(args, "body_band", None) or "").strip(),
+    }
+    if getattr(args, "heading_count", None) is not None:
+        shape["heading_count"] = int(args.heading_count)
+    if shape["structure_id"] not in STRUCTURE_IDS:
+        raise JobError(
+            f"structure_id 无效，可选：{', '.join(STRUCTURE_IDS)}"
+        )
+    if shape["opening_type"] not in OPENING_TYPES:
+        raise JobError(
+            f"opening_type 无效，可选：{', '.join(OPENING_TYPES)}"
+        )
+    if shape["ending_type"] not in ENDING_TYPES:
+        raise JobError(
+            f"ending_type 无效，可选：{', '.join(ENDING_TYPES)}"
+        )
+    if shape["tension_type"] and shape["tension_type"] not in TENSION_TYPES:
+        raise JobError(
+            f"tension_type 无效，可选：{', '.join(TENSION_TYPES)}"
+        )
+    if shape["body_band"] and shape["body_band"] not in BODY_BANDS:
+        raise JobError(f"body_band 无效，可选：{', '.join(BODY_BANDS)}")
+    if "heading_count" in shape and not 2 <= shape["heading_count"] <= 5:
+        raise JobError("heading_count 必须在 2–5")
+    if shape["opening_type"] == "date_announce":
+        # allowed but discouraged — still valid enum
+        pass
+    # drop empty optionals
+    return {k: v for k, v in shape.items() if v not in (None, "")}
+
+
+def merge_shape_into_history(job, shape):
+    history = load_topic_history(job)
+    topics = history["topics"]
+    run_id = job.get("run_id")
+    updated = False
+    for entry in reversed(topics):
+        if not isinstance(entry, dict):
+            continue
+        if run_id and entry.get("run_id") == run_id:
+            entry.update(shape)
+            updated = True
+            break
+        if (
+            not updated
+            and entry.get("topic") == job.get("topic")
+            and not entry.get("structure_id")
+        ):
+            entry.update(shape)
+            if run_id:
+                entry["run_id"] = run_id
+            updated = True
+            break
+    if not updated and job.get("topic"):
+        topics.append({
+            "topic": job["topic"],
+            "event_focus": job.get("event_focus") or job["topic"],
+            "selected_at": now_iso(),
+            "run_id": run_id,
+            **shape,
+        })
+        history["topics"] = topics[-TOPIC_HISTORY_MAX_ENTRIES:]
+        updated = True
+    if updated:
+        atomic_write(topic_history_path(job), history)
+    return updated
 
 
 def load_job(path):
@@ -220,10 +487,8 @@ def cmd_init(args):
         or type(illustrations.get("max_images")) is not int
         or not 1 <= illustrations["max_images"] <= 3
         or cover.get("enabled") is not True
-        or cover.get("backend") != "html"
-        or cover.get("aspect") != "2.35:1"
-        or cover.get("theme") != "article"
-        or cover.get("text") != "title-only"
+        or cover.get("backend") != "image_generate"
+        or cover.get("aspect") not in ("16:9", "2.35:1", "20:9", "3:2")
         or profile.get("publishing", {}).get("target") != "draft"
         or not isinstance(profile.get("audience"), str)
         or not profile.get("audience", "").strip()
@@ -231,7 +496,7 @@ def cmd_init(args):
         or not profile.get("topic_discovery", {}).get("categories")
     ):
         raise JobError(
-            "账号内容档案必须启用 Baoyu 正文配图、HTML 封面、随机主题，"
+            "账号内容档案必须启用 Baoyu 正文配图、生图 API 封面、随机主题，"
             "并以草稿箱为终点"
         )
     job_dir = resolve_work_dir(project_root, args.work_dir, args.account)
@@ -344,6 +609,14 @@ def validate_auto_hotspot_metadata(job, now=None, details=None):
         raise JobError("自动热点类别不属于当前账号类别")
     if not isinstance(event_focus, str) or not event_focus.strip():
         raise JobError("自动热点必须提供简短事件重点 event_focus")
+    for key, label in (
+        ("hook", "点击钩子 hook"),
+        ("tension", "核心矛盾 tension"),
+        ("reader_stakes", "读者代价 reader_stakes"),
+    ):
+        text = details.get(key)
+        if not isinstance(text, str) or not text.strip():
+            raise JobError(f"自动热点必须提供{label}，禁止无故事核的说明书选题")
     try:
         published = parse_iso(published_text)
     except (TypeError, ValueError) as exc:
@@ -371,11 +644,27 @@ def cmd_topic(args):
             "category": (args.category or "").strip(),
             "published_at": (args.published_at or "").strip(),
             "event_focus": (args.event_focus or "").strip(),
+            "hook": (args.hook or "").strip(),
+            "tension": (args.tension or "").strip(),
+            "reader_stakes": (args.reader_stakes or "").strip(),
         })
         validate_auto_hotspot_metadata(job, details=details)
+    else:
+        # Optional story fields when the caller already knows the angle.
+        for key, attr in (
+            ("hook", "hook"),
+            ("tension", "tension"),
+            ("reader_stakes", "reader_stakes"),
+        ):
+            text = (getattr(args, attr, None) or "").strip()
+            if text:
+                details[key] = text
 
     job["topic"] = value
     job["topic_source"] = args.source
+    for key in ("hook", "tension", "reader_stakes", "event_focus"):
+        if details.get(key):
+            job[key] = details[key]
     finished = now_iso()
     current = job["stages"]["discover"]
     started = current.get("started_at") or finished
@@ -388,8 +677,22 @@ def cmd_topic(args):
     )
     job["state"] = summarize_state(job)
     save_job(args.job, job)
-    if args.source == "auto-hotspot":
-        record_topic_history(job, value, details["event_focus"], selected_at=finished)
+    # 所有选题都进账号历史，供事件去重与结构轮换
+    event_focus = details.get("event_focus") or value
+    if args.source != "auto-hotspot" and not details.get("event_focus"):
+        job["event_focus"] = event_focus
+        save_job(args.job, job)
+    record_topic_history(
+        job,
+        value,
+        event_focus,
+        selected_at=finished,
+        story={
+            "hook": details.get("hook"),
+            "tension": details.get("tension"),
+            "reader_stakes": details.get("reader_stakes"),
+        },
+    )
     print(value)
 
 
@@ -406,7 +709,34 @@ def cmd_history(args):
             and parse_iso(entry.get("selected_at"))
             and parse_iso(entry["selected_at"]).astimezone(dt.timezone.utc) >= cutoff
         ]
-    print(json.dumps(entries, ensure_ascii=False, indent=2))
+    if getattr(args, "rotation", False):
+        payload = {
+            "entries": entries,
+            "rotation": compute_rotation_plan(entries),
+        }
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        print(json.dumps(entries, ensure_ascii=False, indent=2))
+
+
+def cmd_shape(args):
+    """锁定本轮文章结构形状，并写入 job + topic-history（防同质轮换）。"""
+    job = load_job(args.job)
+    if not job.get("topic"):
+        raise JobError("请先完成选题再锁定文章结构 shape")
+    shape = parse_shape_from_args(args)
+    history = load_topic_history(job)
+    # 校验时排除本 run 已写入但尚未带 shape 的占位，以及本 run 旧 shape
+    entries = [
+        entry for entry in recent_topic_entries(history)
+        if not (job.get("run_id") and entry.get("run_id") == job.get("run_id"))
+    ]
+    enforce = not getattr(args, "force", False)
+    validate_shape_against_history(entries, shape, enforce=enforce)
+    job["article_shape"] = shape
+    save_job(args.job, job)
+    merge_shape_into_history(job, shape)
+    print(json.dumps(shape, ensure_ascii=False, indent=2))
 
 
 def cmd_choose_theme(args):
@@ -561,10 +891,40 @@ def build_parser():
     topic.add_argument("--category")
     topic.add_argument("--published-at")
     topic.add_argument("--event-focus")
+    topic.add_argument("--hook", help="点击钩子：读者为什么要点开")
+    topic.add_argument("--tension", help="核心矛盾/故事核")
+    topic.add_argument(
+        "--reader-stakes",
+        dest="reader_stakes",
+        help="目标读者的切身代价、压力或误判风险",
+    )
 
     history = sub.add_parser("history", help="输出近期选题重点供 Agent 做语义去重")
     history.add_argument("--job", required=True)
     history.add_argument("--days", type=int, default=7)
+    history.add_argument(
+        "--rotation",
+        action="store_true",
+        help="同时输出结构轮换计划（blocked/preferred structure/opening/ending）",
+    )
+
+    shape = sub.add_parser(
+        "shape",
+        help="锁定本轮文章结构形状并写入历史（structure/opening/ending 轮换）",
+    )
+    shape.add_argument("--job", required=True)
+    shape.add_argument("--structure-id", required=True, dest="structure_id")
+    shape.add_argument("--opening-type", required=True, dest="opening_type")
+    shape.add_argument("--ending-type", required=True, dest="ending_type")
+    shape.add_argument("--felt-sense", dest="felt_sense")
+    shape.add_argument("--tension-type", dest="tension_type")
+    shape.add_argument("--heading-count", type=int, dest="heading_count")
+    shape.add_argument("--body-band", dest="body_band", choices=BODY_BANDS)
+    shape.add_argument(
+        "--force",
+        action="store_true",
+        help="跳过轮换硬校验（仅人工排障时使用）",
+    )
 
     choose = sub.add_parser("choose-theme", help="从已注册主题中随机选择并固定本轮主题")
     choose.add_argument("--job", required=True)
@@ -594,6 +954,7 @@ def main():
             "init": cmd_init,
             "topic": cmd_topic,
             "history": cmd_history,
+            "shape": cmd_shape,
             "choose-theme": cmd_choose_theme,
             "stage": cmd_stage,
             "gate": cmd_gate,

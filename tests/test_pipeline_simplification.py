@@ -45,10 +45,9 @@ class SimplifiedPipelineTests(unittest.TestCase):
                 },
                 "cover": {
                     "enabled": True,
-                    "backend": "html",
-                    "aspect": "2.35:1",
-                    "theme": "article",
-                    "text": "title-only",
+                    "backend": "image_generate",
+                    "aspect": "16:9",
+                    "subject_focus": True,
                 },
                 "publishing": {"target": "draft"},
             }},
@@ -71,6 +70,9 @@ class SimplifiedPipelineTests(unittest.TestCase):
             "topic", "--job", str(job_path), "--value", value,
             "--source", "auto-hotspot", "--category", "人工智能",
             "--published-at", published_at, "--event-focus", focus,
+            "--hook", "机器人进厂后，最先变的是谁能按急停",
+            "--tension", "节拍加快 vs 安全与维护责任",
+            "--reader-stakes", "工厂员工与主管要承担新的停线与点检压力",
         ])
         with contextlib.redirect_stdout(io.StringIO()):
             pipeline_job.cmd_topic(args)
@@ -102,6 +104,11 @@ class SimplifiedPipelineTests(unittest.TestCase):
             "某机器人公司把机器人部署到汽车总装线",
             history["topics"][-1]["event_focus"],
         )
+        self.assertEqual(
+            "机器人进厂后，最先变的是谁能按急停",
+            history["topics"][-1]["hook"],
+        )
+        self.assertIn("tension", history["topics"][-1])
         self.assertNotIn("evidence", history["topics"][-1])
 
     def test_hotspot_rejects_older_than_48_hours_and_future_time(self):

@@ -4,7 +4,33 @@
     "a": {
       "label": "熵增时刻",
       "audience": "关注科技、人工智能和职业变化的普通职场读者",
-      "writer_instructions": "优先解释热点对工作流程、企业经营和普通人选择的现实影响，语气清晰、克制、信息密度中等。",
+      "writer_instructions": "用长期盯科技与工作流的「我」来写：主观、强情感、有行业洞察。看到通稿先怀疑甩锅与形容词，再拆机制。允许烦、火大、发紧、无力、冷笑，也允许对真减负短暂兴奋——情绪必须钉在权限、责任、验收、工时、成本等可核验机制上。每篇必须让读者带走可执行清单或判断标准（反白看一场）。国内读者可能陌生的公司、产品、名人先一两句简介。禁止编造亲历。结构从池中轮换。常打：演示≠部署，效率≠减负，功能≠可负责。封面：品牌名文字+品牌色+场景，不画完整商标Logo。正文图：baoyu分析+自有后端出图。",
+      "voice": {
+        "tone": "strong-emotion-subjective",
+        "emotion_level": "strong",
+        "narrator": "first-person-industry-watcher",
+        "title_style": "spoken-sting",
+        "banned_title_patterns": [
+          "把…引入/装上/开放…，…转向/面对…",
+          "纯发布通报",
+          "中立周报体"
+        ],
+        "allowed_emotions": [
+          "愤怒",
+          "烦躁",
+          "不安",
+          "发紧",
+          "无力",
+          "讽刺",
+          "谨慎的兴奋"
+        ],
+        "signature_moves": [
+          "先写我被刺到的那一下，再补新闻",
+          "情绪钉在签字/权限/验收/事故单上",
+          "明确我支持什么、厌恶什么",
+          "结尾可以不和解"
+        ]
+      },
       "topic_discovery": {
         "max_age_hours": 48,
         "categories": [
@@ -12,7 +38,8 @@
           "科技产品",
           "就业变化",
           "中国高新技术"
-        ]
+        ],
+        "require_story_kernel": true
       },
       "theme_strategy": "random",
       "illustrations": {
@@ -26,10 +53,9 @@
       },
       "cover": {
         "enabled": true,
-        "backend": "html",
-        "aspect": "2.35:1",
-        "theme": "article",
-        "text": "title-only"
+        "backend": "image_generate",
+        "aspect": "16:9",
+        "subject_focus": true
       },
       "publishing": {
         "target": "draft"
@@ -38,7 +64,31 @@
     "b": {
       "label": "思想的野路子丶",
       "audience": "关注就业、教育、医疗、养老、交通、住房、公共服务和中国长期建设成果的普通读者",
-      "writer_instructions": "从真实成果和普通人的实际变化出发，写清谁的生活变好了、为什么变好、还有什么问题。允许温暖和振奋，但不得煽情、消费苦难、制造群体对立或依靠贬低他国获得情绪效果。",
+      "writer_instructions": "用关心普通人日子的「我」来写：可以温暖、可以振奋，也可以为还没解决的问题着急或难过——强情感，但落在具体服务、价格、路程、等待、公平上。写清谁的生活真变好了、我为什么高兴；也写清还卡在哪、我为什么不放心。每篇要有读者能做的一件具体事或可检查标准。专有名词若可能懵，先一句说清。禁止消费苦难与空泛口号。封面：主体名+色+场景，不画完整商标。正文图：baoyu分析+自有后端出图。",
+      "voice": {
+        "tone": "strong-emotion-warm-concrete",
+        "emotion_level": "strong",
+        "narrator": "first-person-public-life-watcher",
+        "title_style": "spoken-sting",
+        "banned_title_patterns": [
+          "空泛成就口号",
+          "纯发布通报无普通人落点",
+          "中立周报体"
+        ],
+        "allowed_emotions": [
+          "振奋",
+          "心疼",
+          "着急",
+          "欣慰",
+          "不甘",
+          "谨慎的乐观"
+        ],
+        "signature_moves": [
+          "具体场景里的情绪，不靠形容词堆砌",
+          "高兴与不放心可以同时存在",
+          "结尾落到还没解决的人的处境"
+        ]
+      },
       "topic_discovery": {
         "max_age_hours": 48,
         "categories": [
@@ -53,7 +103,8 @@
           "高新技术",
           "基础设施",
           "重大工程"
-        ]
+        ],
+        "require_story_kernel": true
       },
       "theme_strategy": "random",
       "illustrations": {
@@ -67,10 +118,9 @@
       },
       "cover": {
         "enabled": true,
-        "backend": "html",
-        "aspect": "2.35:1",
-        "theme": "article",
-        "text": "title-only"
+        "backend": "image_generate",
+        "aspect": "16:9",
+        "subject_focus": true
       },
       "publishing": {
         "target": "draft"

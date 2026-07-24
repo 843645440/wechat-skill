@@ -6,7 +6,7 @@
 
 1. `state` 与各 `stages.*.status`。
 2. `stages.*.details.message/reason/outcome/retry_safe/run_id`。
-3. 对照 `article.md`、`imgs/`、`cover/cover.spec.json`、`cover/cover.png`、`article.html`、`draft-result.json`。
+3. 对照 `article.md`、`imgs/`、`cover/cover.png`（生图封面）、`prompts/cover.txt`、`article.html`、`draft-result.json`。
 
 不存在 `sources.md`、`fact-check`、`validate`、预览、leaf count 或文件哈希 checkpoint；不要按旧契约补这些产物。
 
@@ -21,15 +21,16 @@
 - 正文允许 0—3 张，目标尽量至少 1 张。
 - 生成失败最多重试两次；仍失败则 `illustrations=skipped`，无图继续。
 - `prepare` 会拒绝超过 3 张或路径越界；缺失引用会被移除。
-- 发布器按真实字节和解码结果决定 MIME 与文件名，正文图扩展名不一致不阻塞。
-- 缺失、损坏或不可解码的正文图会删除完整 `<img>` 标签并继续。
-- 路径越界、有效图片上传失败、微信认证或 API 失败仍是硬错误。
+- 发布器按真实字节和解码结果决定 MIME 与文件名；损坏图可删引用后继续。
+- **不要**做视觉/OCR 审图；用户草稿箱人工核对。
+- 路径越界、微信认证或 API 失败仍是硬错误。
 
 ## 封面
 
-- 封面不使用正文图降级规则，错后缀、损坏或不可解码仍失败。
-- HTML 封面技术故障最多尝试两次；有当前账号默认 `thumb_media_id` 则继续，否则门禁停止。
-- AppArmor userns 限制时优先 `headless_shell` 或按封面 Skill 使用 no-sandbox 方案。
+- **已取消 HTML/Chrome 封面**；生图 API 写入 `cover/cover.png`（见 `ai-cover-generation.md`）。
+- `finish` 只做机械检查（存在/非空/魔数），**不做视觉校验**。
+- 生图 API/落盘失败最多重试两次；仅当有默认 `thumb_media_id` 可 `skipped`。
+- 若日志仍出现 build_cover_spec/render_cover，说明跑了旧流程。
 
 ## 草稿
 

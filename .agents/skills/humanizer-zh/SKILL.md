@@ -491,8 +491,10 @@ metadata:
 
 1. 输入输出都是任务目录里的 `article.md`（就地覆盖）。
 2. 只改写一轮；不改 `sources.md`。
-3. 遵守流水线 `references/humanize-pass.md` 的硬约束（事实不新增、字数 1500—4000、保留标题层级与语义 Markdown）。
-4. 不要输出“改写说明/模式列表”到 `article.md` 里；文件内只留终稿正文。
+3. 遵守 `references/wechat-pipeline-constraints.md` 与流水线 `humanize-pass.md`：事实不新增；字数 1500—4000；保留标题层级。
+4. **目标声口 = 懂行者第一人称 + 强情感**（烦/发紧/兴奋/无力/讽刺），情绪钉在机制上；消灭汇报体与中立简报腔。
+5. 允许加强「我很烦/我发紧/说真的」；禁止虚构亲历与伪访谈。
+6. 不要把改写说明写进 `article.md`。
 
 
 ---
@@ -501,6 +503,6 @@ metadata:
 
 - 本目录为 `op7418/Humanizer-zh` 的 vendored 副本，随 wechat-skill 一并分发。
 - 上游：https://github.com/op7418/Humanizer-zh
-- 被 `wechat-content-pipeline` 在写后、`prepare` 前调用；流水线默认 **intensity=strong**，细则见 `../wechat-content-pipeline/references/humanize-pass.md`。
-- 更新策略：可对照上游 diff 手工同步；勿在流水线约束之上放宽“可编造经历”。
+- 被 `wechat-content-pipeline` 在写后、`prepare` 前调用；默认 **intensity=strong**，声口为强情感主观，见 `../wechat-content-pipeline/references/humanize-pass.md`。
+- 更新策略：同步上游时保留「不编造经历」；**不要**把声口退回中立 briefing。
 
