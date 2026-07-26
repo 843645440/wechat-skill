@@ -771,6 +771,99 @@ def render_markdown(result):
     return "\n".join(lines)
 
 
+def score_title(title, thresholds):
+    """给单个标题打分（100）。标题是整条漏斗最窄的一道闸门，值得单独算。
+
+    刺点类型也一并返回：三个候选如果全是同一类刺点，等于只想出了一个标题——
+    这个信息比总分更有用，所以要能被调用方看到。
+    """
+    flat = re.sub(r"\s+", "", title)
+    window = flat[: thresholds["title_sting_window"]]
+    notes, score = [], 100.0
+
+    if len(flat) > thresholds["title_max"]:
+        over = len(flat) - thresholds["title_max"]
+        score -= min(30, 6 * over)
+        notes.append(f"超长 {over} 字（上限 {thresholds['title_max']}）")
+    elif len(flat) < 10:
+        score -= 15
+        notes.append(f"只有 {len(flat)} 字，信息量不足")
+
+    labels = {
+        r"\d": "数字",
+        r"[一二三四五六七八九十百千万两]\s*(?:条|个|种|点|步|招|年|天|次|倍|成|块|周|月)": "数字",
+        r"不是[^，。]{1,20}(?:，|、)?而是": "反差",
+        r"(?:比|相比)[^，。]{1,16}(?:更|还|少|多|快|慢|贵|便宜)": "反差",
+        r"(?:别|不要|不用|没必要|未必|根本|其实不|不值得|先别)": "否定断言",
+        r"(?:坑|翻车|踩雷|白干|白忙|亏|代价|后果|真相|误会|想错|搞错|错在)": "代价",
+        r"(?:如果你|普通人|新手|老板|打工人|程序员|做号|中小)": "对号入座",
+        r"(?:怎么选|该不该|要不要|值不值|能不能|凭什么|为什么)": "决策疑问",
+        r"[?？！!]": "疑问感叹",
+    }
+    front, anywhere = set(), set()
+    for pattern, label in labels.items():
+        if re.search(pattern, window):
+            front.add(label)
+        elif re.search(pattern, flat):
+            anywhere.add(label)
+
+    if not front and not anywhere:
+        score -= 35
+        notes.append("完全没有刺点：加一个数字、一个反差、或一句得罪人的断言")
+    elif not front:
+        score -= 18
+        notes.append(
+            f"刺点（{'、'.join(sorted(anywhere))}）在后半截，"
+            f"列表页只稳定露出前 {thresholds['title_sting_window']} 字，把它提到前面"
+        )
+    else:
+        notes.append("刺点：" + "、".join(sorted(front)))
+
+    if re.search(r"(?:的一些|几点|浅谈|漫谈|随笔|思考|探讨|之我见)", flat):
+        score -= 20
+        notes.append("周报腔：「思考/浅谈/几点」是过程词，读者要的是结果")
+    if re.search(r"^[^，。？！]{6,}(?:引入|接入|上线|发布|推出|开放)[^，。？！]*[，,]", flat):
+        score -= 15
+        notes.append("通报体：只说发生了什么，没说关读者什么事")
+    if not re.search(r"[一-龥]", flat):
+        score -= 10
+        notes.append("没有中文实词")
+
+    return {
+        "title": title,
+        "score": round(max(0.0, score), 1),
+        "chars": len(flat),
+        "stings": sorted(front),
+        "late_stings": sorted(anywhere),
+        "notes": notes,
+    }
+
+
+def rank_titles(titles, thresholds):
+    ranked = sorted(
+        (score_title(t, thresholds) for t in titles),
+        key=lambda r: (-r["score"], r["chars"]),
+    )
+    kinds = {s for item in ranked for s in item["stings"] + item["late_stings"]}
+    advice = []
+    if len(titles) < 3:
+        advice.append("候选少于 3 个：不同刺点各写一个（数字 / 反差 / 损失），再挑")
+    if len(kinds) <= 1 and len(titles) >= 3:
+        advice.append(
+            "三个候选用的是同一类刺点，等于只想出了一个标题。"
+            "换个方向再写一个：把收益框架改成损失框架（「教你省钱」→「别再花冤枉钱」）"
+        )
+    if ranked and ranked[0]["score"] < 70:
+        advice.append("最好的候选也不到 70 分：先想清楚这篇最狠的一句话是什么，再写标题")
+    return {
+        "status": "ok" if ranked and ranked[0]["score"] >= 70 else "fix",
+        "best": ranked[0]["title"] if ranked else "",
+        "ranked": ranked,
+        "advice": advice,
+        "next": "选定后写进 article.md 的一级标题；正文前三分之一必须兑现标题里的承诺",
+    }
+
+
 def load_thresholds(config_path):
     thresholds = dict(THRESHOLDS)
     if not config_path:
@@ -790,16 +883,43 @@ def build_parser():
     parser = argparse.ArgumentParser(
         description="稿件体检：信息量 / 利他性 / 可读性 / 抓人，四维打分并给出逐条修法",
     )
-    parser.add_argument("--article", required=True, help="article.md 路径")
+    parser.add_argument("--article", help="article.md 路径")
+    parser.add_argument(
+        "--titles", nargs="+", metavar="标题",
+        help="只给标题候选打分排序（不看正文）。写正文之前先用它挑标题",
+    )
     parser.add_argument("--config", help="writer-config.json，用于覆盖阈值")
     parser.add_argument("--markdown", action="store_true", help="输出给人看的报告")
     parser.add_argument("--out", help="把 JSON 结果另存到这个路径")
     return parser
 
 
+def render_titles_markdown(result):
+    lines = ["# 标题候选", ""]
+    for index, item in enumerate(result["ranked"], start=1):
+        mark = "✅" if index == 1 else "  "
+        lines.append(f"{mark} **{item['score']}** · {item['chars']} 字 · {item['title']}")
+        lines += [f"   - {note}" for note in item["notes"]]
+    lines.append("")
+    for note in result["advice"]:
+        lines.append(f"⚠️ {note}")
+    lines.append(f"\n下一步：{result['next']}")
+    return "\n".join(lines)
+
+
 def main(argv=None):
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
     thresholds = load_thresholds(args.config)
+
+    if args.titles:
+        result = rank_titles(args.titles, thresholds)
+        print(render_titles_markdown(result) if args.markdown
+              else json.dumps(result, ensure_ascii=False))
+        return 0
+    if not args.article:
+        parser.error("需要 --article（或用 --titles 只给标题打分）")
+
     try:
         article = Path(args.article).read_text(encoding="utf-8")
     except OSError as exc:

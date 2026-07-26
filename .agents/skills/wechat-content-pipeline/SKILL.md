@@ -47,6 +47,9 @@ python3 <PIPELINE>/scripts/pipeline_job.py shape --job <job.json> --auto
 # 5. 开始写作 → 输出 writing_contract，照卡片写 article.md（+ digest.txt）
 #    写作本身没有命令，是你自己写文件。
 #    ⭐ 写之前先读 ../wechat-viral-writer/references/writing-checklist.md（一页纸硬要求）
+#    ⭐ 标题先用 3 个不同刺点的候选跑一次排序（30 秒，比写完再改省事）：
+#       python3 <ROOT>/.agents/skills/wechat-viral-writer/scripts/score_draft.py \
+#               --markdown --titles "候选A" "候选B" "候选C"
 #    深度风格读 ../wechat-tech-insight-writer/SKILL.md
 python3 <PIPELINE>/scripts/pipeline_runtime.py begin --job <job.json>
 

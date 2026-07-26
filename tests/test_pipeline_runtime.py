@@ -439,6 +439,49 @@ class PipelineRuntimeTests(unittest.TestCase):
         self.assertEqual("ok", result["status"])
         self.assertTrue(any("digest" in h for h in result["hints"]))
 
+    def test_digest_that_repeats_the_title_is_flagged(self):
+        """分享卡上标题和摘要并排出现，说同一句话等于只说了一句。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            job_path = self.make_job(tmp)
+            self.write_article(job_path)
+            (job_path.parent / "digest.txt").write_text(
+                "上线前那道验收，卡了我们整整三周的时间", encoding="utf-8")
+            result = pipeline_runtime.cmd_check(self.args(job_path))
+        self.assertTrue(any("复述标题" in h for h in result["hints"]))
+
+    def test_digest_with_a_second_hook_passes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            job_path = self.make_job(tmp)
+            self.write_article(job_path)
+            (job_path.parent / "digest.txt").write_text(
+                "五分钟能改完的配置，为什么拖成了一次需要人工介入的事故",
+                encoding="utf-8")
+            result = pipeline_runtime.cmd_check(self.args(job_path))
+        self.assertFalse(any("复述标题" in h for h in result["hints"]))
+        self.assertFalse(any("太短" in h for h in result["hints"]))
+
+    def test_too_short_digest_is_flagged(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            job_path = self.make_job(tmp)
+            self.write_article(job_path)
+            (job_path.parent / "digest.txt").write_text("很短", encoding="utf-8")
+            result = pipeline_runtime.cmd_check(self.args(job_path))
+        self.assertTrue(any("太短" in h for h in result["hints"]))
+
+    def test_writing_contract_carries_readability_gates(self):
+        """体检判据必须提前告诉写作方，否则每篇都要多返工一轮。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            job_path = self.make_job(tmp)
+            contract = pipeline_runtime.cmd_begin(
+                self.args(job_path))["writing_contract"]
+        gates = contract["readability_gates"]
+        for key in ("opening", "value_anchor", "hook", "paragraph",
+                    "sentence", "takeaway", "banned_ending", "scored_by"):
+            self.assertIn(key, gates)
+        self.assertIn("300", gates["value_anchor"])
+        self.assertIn("75", gates["scored_by"])
+        self.assertIn("1500", contract["length_plan"])
+
     def test_check_carries_writing_health(self):
         """check 顺带跑写作体检：模型已经会跑 check，多一条命令就多一个会被忘掉的步骤。"""
         with tempfile.TemporaryDirectory() as tmp:

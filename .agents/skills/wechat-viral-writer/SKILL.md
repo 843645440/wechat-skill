@@ -16,6 +16,9 @@ description: 写有人愿意读完的中文微信公众号文章，并用脚本�
 <SKILL> = .agents/skills/wechat-viral-writer
 
 # 1）写稿前：读 references/writing-checklist.md（一页纸的全部硬要求）
+# 1.5）先挑标题（写正文之前，30 秒）：三个候选用不同刺点，让它排序
+python3 <SKILL>/scripts/score_draft.py --markdown --titles "候选A" "候选B" "候选C"
+
 # 2）写完之后立刻体检，看 markdown 版逐条修法
 python3 <SKILL>/scripts/score_draft.py --article <article.md> --markdown
 

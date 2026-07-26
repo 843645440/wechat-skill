@@ -16,7 +16,7 @@ import json
 import os
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest import mock
 
@@ -134,6 +134,58 @@ class HookTests(unittest.TestCase):
         article = "# Google Cloud 与 Intel 达成新的技术合作\n\n正文内容。\n"
         found = problems_in(score(article), "hook")
         self.assertTrue(any("没有锚点" in p["what"] for p in found))
+
+
+class TitleRankingTests(unittest.TestCase):
+    """标题是整条漏斗最窄的闸门，所以它有独立的排序模式（写正文之前用）。"""
+
+    def rank(self, *titles):
+        return scorer.rank_titles(list(titles), dict(scorer.THRESHOLDS))
+
+    def test_sting_title_beats_bulletin_title(self):
+        result = self.rank(
+            "英特尔把Gemini引入芯片研发，工程师先面对责任重分配",
+            "别急着上多智能体，先算这三笔账",
+        )
+        self.assertEqual(result["best"], "别急着上多智能体，先算这三笔账")
+        self.assertEqual(result["status"], "ok")
+
+    def test_weekly_report_tone_is_penalised(self):
+        [item] = self.rank("关于公众号写作的几点思考")["ranked"]
+        self.assertLess(item["score"], 60)
+        self.assertTrue(any("周报腔" in n for n in item["notes"]))
+
+    def test_late_sting_is_penalised_but_recognised(self):
+        [item] = self.rank("一套写给内容团队的完整方法论，能省下三成返工")["ranked"]
+        self.assertTrue(item["late_stings"])
+        self.assertFalse(item["stings"])
+        self.assertTrue(any("后半截" in n for n in item["notes"]))
+
+    def test_same_sting_kind_across_candidates_is_called_out(self):
+        result = self.rank("3 个理由", "5 分钟搞定", "10 倍效率")
+        self.assertTrue(any("同一类刺点" in a for a in result["advice"]))
+
+    def test_fewer_than_three_candidates_is_called_out(self):
+        self.assertTrue(any("少于 3 个" in a for a in self.rank("别急着上")["advice"]))
+
+    def test_overlong_title_loses_points(self):
+        long_title = ("别急着上多智能体，先算这三笔账，否则你会在三个月之后"
+                      "收到一张多出四成的云账单")
+        short = self.rank("别急着上多智能体，先算这三笔账")["ranked"][0]["score"]
+        self.assertGreater(len(long_title), scorer.THRESHOLDS["title_max"])
+        self.assertLess(self.rank(long_title)["ranked"][0]["score"], short)
+
+    def test_cli_titles_mode_needs_no_article(self):
+        output = io.StringIO()
+        with redirect_stdout(output):
+            code = scorer.main(["--titles", "别急着上，先算这三笔账"])
+        self.assertEqual(code, 0)
+        self.assertIn("ranked", json.loads(output.getvalue()))
+
+    def test_cli_without_article_or_titles_errors(self):
+        with self.assertRaises(SystemExit):
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                scorer.main([])
 
 
 class ValueDensityTests(unittest.TestCase):

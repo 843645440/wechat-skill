@@ -119,6 +119,21 @@ def run_plain(command):
     return result.stdout
 
 
+def ngram_recall(source, target, size=2):
+    """source 的字符 n-gram 有多少比例出现在 target 里。
+
+    中文没有空格，靠正则「提词」会把句子切成无意义的定长碎片。字符 n-gram 是这里
+    唯一稳的相似度度量，也是判断「摘要是不是在复述标题」的依据。
+    """
+    def grams(text):
+        flat = re.sub(r"\s+", "", text)
+        return {flat[i:i + size] for i in range(max(0, len(flat) - size + 1))}
+    head = grams(source)
+    if not head:
+        return 0.0
+    return len(head & grams(target)) / len(head)
+
+
 def writing_health(article_path):
     """跑写作体检，返回结果字典；Skill 缺失或脚本异常时返回 None（不影响 check）。"""
     if not VIRAL_SCORER.is_file():
@@ -319,7 +334,9 @@ def writing_contract(job):
     band = shape.get("body_band")
     return {
         "output_file": "article.md",
-        "title": "唯一一级标题 # ，≤32 字；刺点放前 16 字；禁周报体/通稿体",
+        "title": "唯一一级标题 # ，≤32 字；刺点放前 16 字；禁周报体/通稿体。"
+        "先写 3 个不同刺点的候选（数字/反差/损失），用 "
+        "wechat-viral-writer/scripts/score_draft.py --titles A B C 排序再定",
         "body_chars": f"可读字符 {MIN_BODY_CHARS}—{MAX_BODY_CHARS}"
         + (f"（本篇目标 {BAND_CHAR_HINTS[band]}）" if band in BAND_CHAR_HINTS else ""),
         "voice": "第一人称「我」+ 强情感；情绪钉在机制/事实上；禁编造亲历、人物、数据",
@@ -332,6 +349,26 @@ def writing_contract(job):
         "每节结尾留一个未解勾子；全文至少 1 句可转发的判断句",
         "images": "正文图 0—3 张，路径必须在工作区内（imgs/xx）；有说明才写 alt",
         "digest": "另写一句 ≤50 字摘要到 digest.txt（分享卡副标题，补标题第二钩子，不复述标题）",
+        # 体检的判据必须提前告诉写作方。让模型先写完再被扣分，等于每篇都多返工一轮；
+        # 这些阈值又都是写之前就能满足的，没有理由藏到 check 才说。
+        "readability_gates": {
+            "opening": "前 150 字内必须出现第一个具体信息；禁「在当今/随着…的发展/"
+                       "近年来/众所周知」开场",
+            "value_anchor": "每 300 字至少一个具体信息（数字/对比/因果/可搜索专名/"
+                            "可核实信源），否则那一段大概率本来就没内容",
+            "hook": "每 500 字至少一次转折或提问；全文至少一个问句",
+            "paragraph": "段落 60—150 字，超过 180 字就拆；每段 1—3 处 **加粗**（判断，不是形容词）",
+            "sentence": "超过 50 字的长句占比压到 20% 以下",
+            "takeaway": "至少两种读者可带走的东西（判断标准/适用边界/可执行步骤/"
+                        "可转述结论），且最后四分之一必须有落点；结尾回扣开头",
+            "banned_ending": "禁「让我们拭目以待」「时间会给出答案」「你怎么看」",
+            "scored_by": "check 会自动跑体检（wechat-viral-writer/scripts/score_draft.py），"
+                         "满分 100，及格 75，high 级问题必须清零。"
+                         "⚠️ 不许为了刷分塞假数字、假案例、假亲历",
+        },
+        "length_plan": "先排篇幅再动笔：开头 150 字 + 小节 N×250 字 + 结尾 150 字。"
+                       f"要够 {MIN_BODY_CHARS} 字，N 至少 5 个，稳妥 6—8 个。"
+                       "字数不够只有一种解法：补真实机制/人群/成本细节，加过渡段会在信息量上再扣一次",
         "after_write": [
             "pipeline_runtime.py check --job <job.json>  # 写完先自检，错误按提示改",
             "pipeline_job.py stage --name humanize --status running → 一轮 strong 去 AI 味改写 → --status completed --detail intensity=strong",
@@ -434,6 +471,17 @@ def cmd_check(args):
         digest = " ".join(digest_path.read_text(encoding="utf-8").split())
         if len(digest) > 64:
             hints.append(f"digest.txt {len(digest)} 字过长，将被截断到 64 字")
+        elif len(digest) < 12:
+            hints.append(
+                f"digest.txt 只有 {len(digest)} 字，太短撑不起分享卡副标题（目标 20—50 字）"
+            )
+        # 摘要复述标题＝白占一个钩子位。分享卡上标题和摘要是并排出现的，
+        # 说同一句话等于只说了一句。
+        if titles and ngram_recall(" ".join(titles[0].split()), digest) > 0.55:
+            hints.append(
+                "digest.txt 在复述标题：它是分享卡的**第二个钩子**，"
+                "该补标题没说完的部分——关键数字、悬念下半句、或读者的代价"
+            )
     if job["stages"]["humanize"]["status"] != "completed":
         hints.append(
             "humanize 未完成：改写前后用 stage --name humanize --status running/completed 记账"

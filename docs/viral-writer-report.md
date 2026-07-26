@@ -83,7 +83,8 @@ caoz（真实经验密度，不做运营动作也能缓慢稳定涨粉）。
 ├── SKILL.md                          入口：四维评分表、路由、硬门禁
 ├── config/writer-config.json         唯一开关面板（热点雷达默认 false）
 ├── scripts/
-│   ├── score_draft.py                稿件体检：四维打分 + 逐行修法
+│   ├── score_draft.py                稿件体检：四维打分 + 逐行修法；
+│   │                                 另有 --titles 模式，写正文前给标题候选排序
 │   └── hot_radar.py                  热点雷达：默认关闭的选题捕获开关
 ├── references/
 │   ├── writing-checklist.md          ⭐ 一页纸硬要求，写之前读它就够了
@@ -110,6 +111,31 @@ caoz（真实经验密度，不做运营动作也能缓慢稳定涨粉）。
 
 「价值锚」认七类：数字、年份、对比、因果、可搜索的外文专名、可核实的信源、
 作者主动标记的重点（小标题/加粗）。**每条问题都带行号和修法**，不是只说「不够好」。
+
+### 标题排序（写正文之前用，30 秒）
+
+标题是整条漏斗最窄的一道闸门，所以它有独立的模式：
+
+```bash
+python3 <SKILL>/scripts/score_draft.py --markdown --titles "候选A" "候选B" "候选C"
+```
+
+它给每个候选打分并说明理由，实测（拿仓库自己的旧标题验证）：
+
+```
+✅ 100.0 · 15 字 · 别急着上多智能体，先算这三笔账          刺点：否定断言
+   100.0 · 19 字 · 写了 2000 字没人读完，问题真不在文笔     刺点：数字
+    50.0 · 28 字 · 英特尔把Gemini引入芯片研发，工程师先…    通报体，没有刺点
+    45.0 · 12 字 · 关于公众号写作的几点思考                 周报腔
+```
+
+还有一条容易被忽略的提醒：**三个候选如果用的是同一类刺点，等于只想出了一个标题**，
+脚本会直接说出来并建议换框架（收益 → 损失）。
+
+### 摘要（digest.txt）也进了检查
+
+分享卡上标题和摘要是并排出现的，**说同一句话等于只说了一句**。
+`check` 现在会用字符 n-gram 判断摘要是不是在复述标题，太短（<12 字）也会提醒。
 
 ### 关键设计决定：挂进 `check`，而不是另开一条命令
 
@@ -168,7 +194,7 @@ python3 <SKILL>/scripts/hot_radar.py --force --markdown  # 试一次，不改配
 ## 五、验证
 
 ```
-209 个离线测试全部通过（新增 48 个）
+221 个离线测试全部通过（新增 60 个）
 5 个 Skill 元数据校验通过（新 Skill 已加进 CI）
 组件库 lint：5/5 干净，0 error 0 warn
 ```
@@ -198,8 +224,11 @@ python3 <SKILL>/scripts/hot_radar.py --force --markdown  # 试一次，不改配
 
 **情况 1：你有主题（默认路径，什么都不用改）**
 
-照旧跑流水线。唯一的变化是 `check` 会多给一段写作反馈，模型会自己修到过线。
-你不需要做任何额外操作。
+照旧跑流水线。变化有两处，都不需要你操作：
+
+- `begin` 输出的 `writing_contract` 里多了 `readability_gates` 和 `length_plan`
+  ——体检的判据在**动笔之前**就交给模型了，不用等写完再返工。
+- `check` 会多给一段写作反馈，模型自己修到过线。
 
 **情况 2：你不知道写什么**
 
@@ -257,8 +286,10 @@ docs/viral-writer-report.md                          （本文件）
 
 ```
 .agents/skills/wechat-content-pipeline/scripts/pipeline_runtime.py   check 挂载体检（软依赖）
+                                                                     + writing_contract 前置判据
+                                                                     + digest 复述标题检查
 .agents/skills/wechat-content-pipeline/SKILL.md                      命令链 + 3.5 节 + 路由表
-tests/test_pipeline_runtime.py                                       夹具换成合格稿 + 3 个集成测试
+tests/test_pipeline_runtime.py                                       夹具换成合格稿 + 7 个集成测试
 .github/workflows/validate.yml                                       新 Skill 进 CI
 AGENTS.md / README.md                                                入口说明
 ```
