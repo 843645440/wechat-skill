@@ -1,0 +1,137 @@
+{
+  "version": 1,
+  "_readme": "本文件是 wechat-viral-writer 的唯一开关面板。热点雷达默认关闭；打分阈值可按账号口味微调，但不建议在没有实测数据的情况下乱改。",
+
+  "hot_topic_radar": {
+    "_readme": "把 enabled 改成 true 就打开自动捕获热点。关着的时候仓库仍是「用户命题」模式：主题由人给。",
+    "enabled": false,
+    "timeout_seconds": 8,
+    "top_n": 8,
+    "min_score": 30,
+    "cluster_threshold": 0.45,
+
+    "keywords_include": [
+      "AI", "人工智能", "大模型", "智能体", "算力", "芯片", "半导体",
+      "机器人", "自动驾驶", "开源", "算法", "数据", "云",
+      "裁员", "招聘", "就业", "工资", "加班", "考公", "应届生",
+      "创业", "融资", "上市", "财报", "涨价", "降价", "补贴",
+      "苹果", "华为", "小米", "字节", "腾讯", "阿里", "英伟达",
+      "OpenAI", "Anthropic", "Claude", "Google", "Meta", "特斯拉"
+    ],
+
+    "keywords_exclude": [
+      "塌房", "恋情", "官宣", "分手", "离婚", "出轨", "绯闻",
+      "综艺", "选秀", "粉丝", "打投", "爱豆", "顶流",
+      "彩票", "股票推荐", "荐股", "内幕", "涨停",
+      "偏方", "祖传", "根治", "包治",
+      "地震", "空难", "遇难", "身亡", "命案", "自杀",
+      "晚报", "早报", "日报", "快讯汇总", "一图看懂", "每日一签",
+      "9点1氪", "氪星", "*ST", "退市", "终止上市", "停牌",
+      "中转", "折扣", "优惠码", "限时", "招募", "招商"
+    ],
+
+    "_max_per_source": "单一来源在最终清单里最多占几条（跨榜条目不受限），防止一个高频更新的科技站霸屏。",
+    "max_per_source": 3,
+
+    "sources": [
+      {
+        "name": "微博热搜",
+        "enabled": true,
+        "kind": "json",
+        "url": "https://weibo.com/ajax/side/hotSearch",
+        "path": "data.realtime",
+        "title_field": "word",
+        "limit": 40,
+        "weight": 1.0,
+        "headers": {
+          "Referer": "https://weibo.com/"
+        },
+        "_note": "没有 Referer 会 403。不需要登录 Cookie。"
+      },
+      {
+        "name": "百度热搜",
+        "enabled": true,
+        "kind": "baidu",
+        "url": "https://top.baidu.com/board?tab=realtime",
+        "limit": 30,
+        "weight": 1.0
+      },
+      {
+        "name": "头条热榜",
+        "enabled": true,
+        "kind": "json",
+        "url": "https://www.toutiao.com/hot-event/hot-board/?origin=toutiao_pc",
+        "path": "data",
+        "title_field": "Title",
+        "limit": 30,
+        "weight": 1.0
+      },
+      {
+        "name": "知乎热榜",
+        "enabled": false,
+        "kind": "json",
+        "url": "https://www.zhihu.com/api/v3/feed/topstory/hot-lists/total?limit=50",
+        "path": "data",
+        "title_field": "target.title",
+        "limit": 40,
+        "weight": 1.1,
+        "_note": "默认关：这个接口要登录 Cookie，匿名请求恒 401。想用就在 headers 里补一条 Cookie（自己浏览器里复制），别把 Cookie 提交进 git。"
+      },
+      {
+        "name": "36氪",
+        "enabled": true,
+        "kind": "rss",
+        "url": "https://36kr.com/feed",
+        "limit": 30,
+        "weight": 1.0
+      },
+      {
+        "name": "少数派",
+        "enabled": true,
+        "kind": "rss",
+        "url": "https://sspai.com/feed",
+        "limit": 20,
+        "weight": 0.8
+      },
+      {
+        "name": "V2EX",
+        "enabled": true,
+        "kind": "json",
+        "url": "https://www.v2ex.com/api/topics/hot.json",
+        "path": "",
+        "title_field": "title",
+        "limit": 20,
+        "weight": 0.9
+      },
+      {
+        "name": "HackerNews",
+        "enabled": true,
+        "kind": "json",
+        "url": "https://hn.algolia.com/api/v1/search?tags=front_page&hitsPerPage=30",
+        "path": "hits",
+        "title_field": "title",
+        "limit": 30,
+        "weight": 0.8
+      },
+      {
+        "name": "IT之家",
+        "enabled": true,
+        "kind": "rss",
+        "url": "https://www.ithome.com/rss/",
+        "limit": 30,
+        "weight": 0.9
+      }
+    ]
+  },
+
+  "scoring": {
+    "_readme": "score_draft.py 的阈值。留空即用脚本内置默认值；这里写了的会覆盖。",
+    "pass_score": 75,
+    "anchor_gap_max": 300,
+    "hook_gap_max": 500,
+    "para_soft_max": 180,
+    "para_hard_max": 260,
+    "lede_max_chars": 150,
+    "heading_gap_max": 800
+  }
+}

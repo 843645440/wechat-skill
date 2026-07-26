@@ -61,7 +61,7 @@
 
 **✅ 适合**：观点/深度分析 · 教程/操作指南 · 测评/工具盘点 · 知识整理/方法论 · 访谈/人物特稿 · 数据复盘/报告 · 生活/情感随笔 · 案例实战 —— 把 Markdown / Word / PDF / 纯文本长文，一键排成可直接粘进公众号编辑器的 HTML；也能按描述或参考图生成自定义主题。
 
-**❌ 不适合**：普通网页/落地页（用前端 Skill）· PPT（用 PPT Skill）· 非公众号平台的排版。仅调用根 `wechat-skill` 时不会代写；科技、AI、产业和民生文章使用 `wechat-tech-insight-writer`，从选题到草稿箱使用 `wechat-content-pipeline`。
+**❌ 不适合**：普通网页/落地页（用前端 Skill）· PPT（用 PPT Skill）· 非公众号平台的排版。仅调用根 `wechat-skill` 时不会代写；科技、AI、产业和民生文章使用 `wechat-tech-insight-writer`，从选题到草稿箱使用 `wechat-content-pipeline`，**想让文章有人读完**（标题钩子、信息密度、利他落点、竖屏节奏，附可量化体检脚本与默认关闭的热点雷达）使用 `wechat-viral-writer`。
 
 ## 🗂 常见使用场景
 

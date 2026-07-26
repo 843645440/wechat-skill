@@ -38,6 +38,16 @@ TRANSIENT_RE = re.compile(
 MIN_BODY_CHARS = 1500
 MAX_BODY_CHARS = 4000
 
+# 写作体检（wechat-viral-writer）。check 负责结构合法性，它负责「有没有人读得下去」。
+# 之所以直接挂进 check 而不是另开一条命令：模型已经会跑 check，多一条命令就多一个
+# 会被忘掉的步骤。软依赖——Skill 不在时 check 照常工作，只是少一段反馈。
+VIRAL_SCORER = (
+    SCRIPT_DIR.parent.parent / "wechat-viral-writer" / "scripts" / "score_draft.py"
+)
+VIRAL_CONFIG = (
+    SCRIPT_DIR.parent.parent / "wechat-viral-writer" / "config" / "writer-config.json"
+)
+
 
 class RuntimeFailure(RuntimeError):
     pass
@@ -107,6 +117,20 @@ def run_plain(command):
         detail = (result.stderr or result.stdout).strip()
         raise RuntimeFailure(detail or f"命令失败：{' '.join(command[:2])}")
     return result.stdout
+
+
+def writing_health(article_path):
+    """跑写作体检，返回结果字典；Skill 缺失或脚本异常时返回 None（不影响 check）。"""
+    if not VIRAL_SCORER.is_file():
+        return None
+    command = [sys.executable, str(VIRAL_SCORER), "--article", str(article_path)]
+    if VIRAL_CONFIG.is_file():
+        command += ["--config", str(VIRAL_CONFIG)]
+    try:
+        result = subprocess.run(command, text=True, capture_output=True, timeout=60)
+        return json.loads(result.stdout)
+    except (subprocess.SubprocessError, OSError, ValueError):
+        return None
 
 
 def job_paths(job_path):
@@ -420,10 +444,37 @@ def cmd_check(args):
             "「用户图 → 生图 → 离线兜底」并记账，无网络/无 API key 也能出图："
             + cover_fallback_command(job, artifacts, titles)
         )
+    # 写作体检：结构合法 ≠ 有人读得下去。high 级问题并进 problems（挡住 status=ok），
+    # 其余进 hints——阈值类问题值得看，但不该让弱模型在这里原地打转。
+    health = writing_health(article_path)
+    writing = None
+    if health:
+        writing = {
+            "score": health.get("score"),
+            "grade": health.get("grade"),
+            "pass_line": 75,
+            "dimensions": {k: v["score"] for k, v in
+                           (health.get("dimensions") or {}).items()},
+            "report_command": (
+                f"python3 {VIRAL_SCORER} --article {article_path} --markdown"
+            ),
+        }
+        for item in health.get("problems", []):
+            line = f"[写作·{item['dim']}] 第 {item.get('line', 0)} 行：" \
+                   f"{item['what']} → {item['fix']}"
+            (problems if item["severity"] == "high" else hints).append(line)
+        if health.get("score") is not None and health["score"] < 75:
+            problems.append(
+                f"[写作] 体检 {health['score']} 分 < 75（{health.get('grade')}）："
+                f"按上面的写作问题逐条改，改完重跑 check。"
+                f"完整报告：{writing['report_command']}"
+            )
+
     return {
         "status": "fail" if problems else "ok",
         "body_chars": body_chars,
         "image_refs": len(refs),
+        "writing": writing,
         "problems": problems,
         "hints": hints,
         "next": "修复 problems 后重跑 check；全部通过后走 humanize → prepare → finish"

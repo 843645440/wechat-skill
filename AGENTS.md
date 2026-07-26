@@ -14,13 +14,17 @@ python3 scripts/validate_gzh_html.py output.html
 python3 scripts/wrap_preview.py output.html output_preview.html
 python3 scripts/extract_docx.py article.docx
 python3 -m unittest discover -s tests -v
+python3 .agents/skills/wechat-viral-writer/scripts/score_draft.py --article work/a/current/article.md --markdown
+python3 .agents/skills/wechat-viral-writer/scripts/hot_radar.py --markdown
 ```
 
 The first command scans all HTML blocks in `references/` and must report zero errors. The second checks generated HTML. The third creates a copy-enabled preview; validate the unwrapped article, not the preview shell. The DOCX command normalizes input, and the final command runs offline publishing and orchestration tests without live APIs.
 
 ## Runtime Pipeline Contract
 
-For a full topic-to-draft task, the user must supply a topic and brief (see `wechat-content-pipeline/references/user-brief.md`). Do not auto-pick hotspots unless the account profile explicitly enables discovery and the user asks. Read `.agents/skills/wechat-content-pipeline/SKILL.md` and use only `pipeline_job.py init/topic/history/shape/stage/show` plus `pipeline_runtime.py begin/prepare/finish`. Do not create per-article renderers, temporary workflow scripts, custom cover JSON, or visual-review loops. The Agent may write only the declared `work/<account>/current/` content artifacts. Public publishing is outside this workflow.
+For a full topic-to-draft task, the user must supply a topic and brief (see `wechat-content-pipeline/references/user-brief.md`). Do not auto-pick hotspots unless the account profile explicitly enables discovery and the user asks; the standalone hot-topic radar (`.agents/skills/wechat-viral-writer/scripts/hot_radar.py`) is likewise off by default and never selects a topic on its own. Read `.agents/skills/wechat-content-pipeline/SKILL.md` and use only `pipeline_job.py init/topic/history/shape/stage/show` plus `pipeline_runtime.py begin/prepare/finish`.
+
+Before writing body copy, read `.agents/skills/wechat-viral-writer/references/writing-checklist.md`. After writing, `pipeline_runtime.py check` automatically runs the writing health scorer (`wechat-viral-writer/scripts/score_draft.py`) and reports it under `writing`; high-severity findings and a sub-75 score both block `status=ok`. Never pad an article with invented numbers, cases, or first-hand experience to raise that score. Do not create per-article renderers, temporary workflow scripts, custom cover JSON, or visual-review loops. The Agent may write only the declared `work/<account>/current/` content artifacts. Public publishing is outside this workflow.
 
 ## Coding Style & Naming Conventions
 

@@ -45,11 +45,18 @@ python3 <PIPELINE>/scripts/pipeline_job.py topic --job <job.json> --value "<主�
 python3 <PIPELINE>/scripts/pipeline_job.py shape --job <job.json> --auto
 
 # 5. 开始写作 → 输出 writing_contract，照卡片写 article.md（+ digest.txt）
-#    写作本身没有命令，是你自己写文件。深度风格读 ../wechat-tech-insight-writer/SKILL.md
+#    写作本身没有命令，是你自己写文件。
+#    ⭐ 写之前先读 ../wechat-viral-writer/references/writing-checklist.md（一页纸硬要求）
+#    深度风格读 ../wechat-tech-insight-writer/SKILL.md
 python3 <PIPELINE>/scripts/pipeline_runtime.py begin --job <job.json>
 
 # 6. 自检（不改状态，一次列出全部问题与修法，修到 status=ok）
+#    check 会连带跑写作体检，结果在 `writing` 字段（score / grade / dimensions）。
+#    体检的 high 级问题会并进 problems，带 [写作·xxx] 前缀；score < 75 也会拦。
 python3 <PIPELINE>/scripts/pipeline_runtime.py check --job <job.json>
+#    想看逐条修法的完整报告（推荐，问题多的时候直接跑这条）：
+python3 <ROOT>/.agents/skills/wechat-viral-writer/scripts/score_draft.py \
+        --article <article.md> --markdown
 
 # 7. Humanize（就地改写 article.md，默认 intensity=strong）
 python3 <PIPELINE>/scripts/pipeline_job.py stage --job <job.json> --name humanize --status running
@@ -140,6 +147,26 @@ python3 <PIPELINE>/scripts/gen_cover_image.py --job <job.json> --record-stage
 深度风格细节读 `wechat-tech-insight-writer`。声口与 `writer_instructions` 已内联在 `init` 的
 `job_contract.account_profile` 里，不必另读账号档案文档。
 
+### 3.5 写作体检（`check` 自动带）
+
+写作契约管的是**交付合法性**，体检管的是**有没有人读得下去**。两者不重叠，都要过。
+
+`check` 的输出里有一个 `writing` 字段：
+
+```json
+"writing": {"score": 86.8, "grade": "B", "pass_line": 75,
+            "dimensions": {"hook": 20, "value_density": 25, "reader_benefit": 15,
+                           "readability": 17.8, "retention": 9},
+            "report_command": "python3 …/score_draft.py --article … --markdown"}
+```
+
+- 体检的 **high 级问题会并进 `problems`**（前缀 `[写作·xxx]`），`score < 75` 也会拦。
+- 问题多的时候直接跑 `report_command`，它给的是**逐条修法**，不是评价。
+- 五个维度的判据和阈值见 `../wechat-viral-writer/SKILL.md`；写之前先读它的
+  [writing-checklist.md](../wechat-viral-writer/references/writing-checklist.md)，
+  可以少返工一轮。
+- ⚠️ **不许为了刷分塞假数字、假案例、假亲历。**体检是用来发现问题的，不是用来刷的。
+
 ## 主题
 
 由 `pipeline_job.py choose-theme` 从 `render_article.py` 的 `THEMES` 里**按 run_id 派生**：
@@ -186,6 +213,8 @@ python3 <PIPELINE>/scripts/gen_cover_image.py --job <job.json> --record-stage
 
 | 卡在哪 | 读什么 |
 |---|---|
+| 写作体检不过线、标题/开头/节奏 | [`../wechat-viral-writer/SKILL.md`](../wechat-viral-writer/SKILL.md) |
+| 不知道写什么（需要开热点开关） | [`../wechat-viral-writer/references/hot-topic-radar.md`](../wechat-viral-writer/references/hot-topic-radar.md) |
 | brief 格式、缺项追问、忠实扩写边界 | [references/user-brief.md](references/user-brief.md) |
 | 结构池与近文轮换 | [references/structure-rotation.md](references/structure-rotation.md) |
 | humanize 改写尺度 | [references/humanize-pass.md](references/humanize-pass.md) |

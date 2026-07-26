@@ -18,6 +18,112 @@ pipeline_runtime = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(pipeline_runtime)
 
 
+# 一篇结构合法且写作体检能过线的样例正文（约 1700 字）。
+# 段落短、有小标题、有加粗、有具体数字、有读者落点、结尾回扣开头。
+PASSING_ARTICLE = """# 上线前那道验收，卡了我们三周
+
+上个月这条流水线卡在最后一步，整整三周。
+
+不是模型不会写，也不是接口调不通。**卡住的是一句谁也没写进文档的话**：这份稿子归谁签字。
+
+## 演示跑通不等于可以交付
+
+演示环境里，一条命令就能从选题走到草稿箱。看起来这件事已经做完了。
+
+但真要放进日常流程，问题立刻换了一批。**谁来确认这篇能发**？出了事找谁？
+这些问题在演示里根本不存在，因为演示没有后果。
+
+我第一次意识到这个差别，是看到一个 40164 的错误码。那是微信在说：你的 IP 不在白名单。
+
+技术上五分钟就能解决。流程上，它需要一个有权限改配置的人，而那个人当时在休假。
+
+## 文档里写的是流程，实际跑的是人情
+
+我们一开始以为缺的是一份文档。于是写了一份，六页，覆盖了每一步该做什么。
+
+结果没人看。**因为文档回答的是「怎么做」，而卡住的问题是「谁来做」**。
+
+这两个问题看起来只差一个字，实际上差着一整套责任分配。怎么做可以写成清单，
+谁来做必须落到具体的人和具体的权限上。
+
+后来我们把那六页删到一页，只留三行：这一步谁执行、谁验收、出问题找谁。
+从那之后，同类的卡壳再也没出现过。
+
+## 效率提升的账，要算到人头上
+
+自动化省下来的时间不会凭空消失。
+
+更常见的情况是**交付节奏跟着变快**，同一个人同时在管的任务数从 3 个变成 7 个。
+省下的不是工时，是每件事上能分到的注意力。
+
+这里有个反直觉的地方：**流程越自动，人工环节反而越贵**。因为剩下的那几个人工环节，
+全是需要判断和担责的环节，没有一个是能靠熟练度加速的。
+
+抽查比例定多少、什么结果必须逐项复核、异常时谁有权暂停——这些都是新增的工作，
+而不是被省掉的工作。
+
+## 三条可以直接抄的判断
+
+说点能用的。如果你也在把一条人工流程改成自动流程，先回答这三个问题：
+
+- **谁签字**：自动化产出的东西，最终由谁确认可以发出去
+- **什么情况必须停**：把暂停条件写死在脚本里，别指望人临场判断
+- **失败之后重跑安不安全**：分不清「没做」和「做了但不知道结果」，就一定会出双份
+
+第三条最容易被忽略。我们踩过一次：一个超时被当成失败重跑，结果草稿箱里躺了两篇。
+
+## 重跑安全，是这里最贵的一条
+
+展开说第三条，因为它的代价最容易被低估。
+
+一次调用失败之后，只有两种可能：**要么根本没执行，要么执行了但结果没读回来**。
+这两种情况看起来一模一样——都是一条报错——但处置方式完全相反。
+
+前者可以直接重跑。后者重跑就会出双份。
+
+我们后来的做法是让发布器自己回答这个问题：它明确知道请求有没有发出去，
+就把结论写进错误信息里，而不是让调用方去猜错误码的语义。
+
+**判断依据必须来自最清楚状况的那一层**。让上层靠正则去猜下层发生了什么，
+是所有重试逻辑里最常见的错法。
+
+## 边界在哪
+
+这套办法有明确的适用范围。
+
+**团队少于 3 个人的时候别抄**。三个人以内，沟通成本本来就低于流程成本，
+把判断写成文档反而更慢。
+
+**流程还在频繁变的时候也别抄**。固化一个还没稳定的流程，等于把返工提前。
+
+## 先改配置，再改代码
+
+顺序也很重要。
+
+我们最初的本能是写脚本：既然人工环节慢，就把它自动化掉。但那三周里真正起作用的，
+是一次五分钟的配置修改——**把「谁验收」这件事从口头约定变成一个字段**。
+
+代码解决的是「怎么执行」，配置解决的是「按谁的意思执行」。当卡点在后者的时候，
+再多的代码只会把错误的默认值执行得更快。
+
+一个便宜的检验方法：把你打算写的那个脚本，先用一句话描述它替代了谁的哪个判断。
+描述不出来，说明这个判断本来就还没人做过，那就先去把判断定下来。
+
+**没有人做过的判断，自动化不了。**这句话我们花了三周才真正接受。
+
+## 回到那三周
+
+那三周最后是怎么解决的？我们没有优化任何一行代码。
+
+我们只是在配置文件里加了一个字段，写清楚这个账号的稿子由谁验收。
+
+**能被写下来的责任，就能被交接。**真正拖慢一件事的，往往不是它有多难，
+而是没人说清楚它归谁。
+
+所以下次卡住的时候，先别急着找技术方案。先问一句：这一步，谁签字。
+"""
+
+
 class PipelineRuntimeTests(unittest.TestCase):
     def make_job(self, tmp, topic="测试主题"):
         job_dir = Path(tmp) / "a/current"
@@ -66,11 +172,15 @@ class PipelineRuntimeTests(unittest.TestCase):
         pipeline_runtime.pipeline_job.save_job(job_path, job)
 
     def write_article(self, job_path, image_refs=()):
-        body = "这是经过核实的完整正文，用于验证公众号流水线的实际运行边界。" * 65
+        """一篇「合格」的稿子。
+
+        check 现在会连带跑写作体检（wechat-viral-writer），所以夹具不能再是
+        「一句话重复 65 遍」——那种正文结构合法但没人读得下去，正是体检要拦的东西。
+        这里的样例带小标题、短段落、加粗、具体数字和读者落点，跑体检是 80 分以上。
+        """
         images = "\n".join(f"![配图]({ref})" for ref in image_refs)
         (job_path.parent / "article.md").write_text(
-            f"# 明确主体进入真实工作流程\n\n{body}\n\n{images}\n",
-            encoding="utf-8",
+            PASSING_ARTICLE + "\n\n" + images + "\n", encoding="utf-8",
         )
 
     def args(self, job_path, **overrides):
@@ -328,6 +438,44 @@ class PipelineRuntimeTests(unittest.TestCase):
             result = pipeline_runtime.cmd_check(self.args(job_path))
         self.assertEqual("ok", result["status"])
         self.assertTrue(any("digest" in h for h in result["hints"]))
+
+    def test_check_carries_writing_health(self):
+        """check 顺带跑写作体检：模型已经会跑 check，多一条命令就多一个会被忘掉的步骤。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            job_path = self.make_job(tmp)
+            self.write_article(job_path)
+            result = pipeline_runtime.cmd_check(self.args(job_path))
+        self.assertIsNotNone(result["writing"])
+        self.assertGreaterEqual(result["writing"]["score"], 75)
+        self.assertEqual(75, result["writing"]["pass_line"])
+        self.assertIn("score_draft.py", result["writing"]["report_command"])
+        self.assertIn("hook", result["writing"]["dimensions"])
+
+    def test_check_blocks_on_unreadable_article(self):
+        """结构合法但没人读得下去的稿子，必须在 check 就被拦住而不是一路发出去。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            job_path = self.make_job(tmp)
+            (job_path.parent / "article.md").write_text(
+                "# 关于行业发展的一些观察与思考\n\n"
+                + "这件事情引发了广泛的关注，相关方面表示将持续推进后续工作。" * 60,
+                encoding="utf-8",
+            )
+            result = pipeline_runtime.cmd_check(self.args(job_path))
+        self.assertEqual("fail", result["status"])
+        self.assertTrue(any("[写作" in p for p in result["problems"]))
+        self.assertLess(result["writing"]["score"], 75)
+
+    def test_check_survives_missing_scorer(self):
+        """写作体检是软依赖：Skill 不在时 check 照常工作，只是少一段反馈。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            job_path = self.make_job(tmp)
+            self.write_article(job_path)
+            with mock.patch.object(
+                pipeline_runtime, "VIRAL_SCORER", Path(tmp) / "nope.py"
+            ):
+                result = pipeline_runtime.cmd_check(self.args(job_path))
+        self.assertIsNone(result["writing"])
+        self.assertEqual("ok", result["status"])
 
     def test_check_hands_out_a_runnable_cover_command(self):
         """封面是 finish 硬门禁：缺封面时必须给出一条可直接执行的命令。
