@@ -29,10 +29,12 @@ class SimplifiedPipelineTests(unittest.TestCase):
         (root / "config").mkdir(exist_ok=True)
         (root / "references").mkdir(exist_ok=True)
         (root / "config/wechat-content-profiles.json").write_text(json.dumps({
-            "version": 5,
+            "version": 6,
             "profiles": {"a": {
                 "audience": "读者",
+                "input_mode": "open",
                 "topic_discovery": {
+                    "enabled": True,
                     "max_age_hours": 48,
                     "categories": ["人工智能"],
                 },

@@ -20,7 +20,7 @@ The first command scans all HTML blocks in `references/` and must report zero er
 
 ## Runtime Pipeline Contract
 
-For a full topic-to-draft task, read `.agents/skills/wechat-content-pipeline/SKILL.md` and use only `pipeline_job.py init/topic/show` plus `pipeline_runtime.py begin/prepare/finish`. Do not create per-article renderers, temporary workflow scripts, custom cover JSON, image-generation fallbacks, or visual-review loops. The Agent may write only the declared `work/<account>/current/` content artifacts. If a bundled step fails, follow its documented degradation or stop condition; never replace it with an improvised implementation. Public publishing is outside this workflow.
+For a full topic-to-draft task, the user must supply a topic and brief (see `wechat-content-pipeline/references/user-brief.md`). Do not auto-pick hotspots unless the account profile explicitly enables discovery and the user asks. Read `.agents/skills/wechat-content-pipeline/SKILL.md` and use only `pipeline_job.py init/topic/history/shape/stage/show` plus `pipeline_runtime.py begin/prepare/finish`. Do not create per-article renderers, temporary workflow scripts, custom cover JSON, or visual-review loops. The Agent may write only the declared `work/<account>/current/` content artifacts. Public publishing is outside this workflow.
 
 ## Coding Style & Naming Conventions
 

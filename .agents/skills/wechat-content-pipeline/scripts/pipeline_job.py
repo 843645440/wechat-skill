@@ -464,7 +464,7 @@ def load_profiles(project_root, value):
     except (OSError, json.JSONDecodeError) as exc:
         raise JobError(f"无法读取账号内容档案 {path}: {exc}") from exc
     profiles = config.get("profiles")
-    if config.get("version") not in (4, 5) or not isinstance(profiles, dict):
+    if config.get("version") not in (4, 5, 6) or not isinstance(profiles, dict):
         raise JobError("账号内容档案格式不受支持")
     return os.path.abspath(path), profiles
 
@@ -633,6 +633,19 @@ def validate_auto_hotspot_metadata(job, now=None, details=None):
         raise JobError("自动热点必须位于最近 48 小时内")
 
 
+def topic_discovery_enabled(job):
+    """Auto hotspot is off unless profile explicitly sets topic_discovery.enabled=true."""
+    try:
+        with open(job["profiles_path"], encoding="utf-8") as f:
+            profile = json.load(f)["profiles"][job["account"]]
+    except (OSError, KeyError, TypeError, json.JSONDecodeError):
+        return False
+    discovery = profile.get("topic_discovery") or {}
+    if profile.get("input_mode") == "user_brief_only":
+        return False
+    return discovery.get("enabled") is True
+
+
 def cmd_topic(args):
     value = args.value.strip()
     if not value:
@@ -640,6 +653,12 @@ def cmd_topic(args):
     job = load_job(args.job)
     details = {"source": args.source}
     if args.source == "auto-hotspot":
+        if not topic_discovery_enabled(job):
+            raise JobError(
+                "当前账号已关闭自动选题（input_mode=user_brief_only 或 "
+                "topic_discovery.enabled!=true）。请使用 --source provided，"
+                "并由用户提供主题与思路；见 references/user-brief.md"
+            )
         details.update({
             "category": (args.category or "").strip(),
             "published_at": (args.published_at or "").strip(),
@@ -650,11 +669,12 @@ def cmd_topic(args):
         })
         validate_auto_hotspot_metadata(job, details=details)
     else:
-        # Optional story fields when the caller already knows the angle.
+        # User brief / externally provided topic: no 48h gate.
         for key, attr in (
             ("hook", "hook"),
             ("tension", "tension"),
             ("reader_stakes", "reader_stakes"),
+            ("event_focus", "event_focus"),
         ):
             text = (getattr(args, attr, None) or "").strip()
             if text:

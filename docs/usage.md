@@ -24,7 +24,7 @@ cd wechat-skill
 
 确保云端 Agent 能读取根 `SKILL.md` 和 `.agents/skills/`。不要只复制根 Skill，否则写作、原生信息模块、封面和完整工作流不会一起加载。
 
-运行环境需要 Python 3。Chrome/Chromium 只用于生成封面；正文信息模块是公众号原生 HTML，不需要浏览器截图或图片 API Key。自动热点发现需要联网能力，创建草稿需要公众号 API 权限。
+运行环境需要 Python 3。正文信息模块是公众号原生 HTML；默认封面/正文图走生图 API（用户也可自备图）。创建草稿需要公众号 API 权限与 IP 白名单。默认不自动选题。
 
 ## 3. 配置公众号账号
 
@@ -100,14 +100,18 @@ python3 scripts/wechat_publish.py --config wechat-accounts.json send \
 
 正文阶段不创建 PNG、SVG 或截图，不调用生图 API，不做 AI 视觉检测，也不上传正文视觉素材。流水线不会公开发布；人工审核发生在微信公众号草稿箱。
 
-## 5. 在 Agent 定时任务中使用
+## 5. 命题生产（推荐用法）
 
-定时由 Agent 自带自动化能力负责，Skill 内没有 cron 或固定时间。可以建立两个外部任务：
+默认**不**自动发现热点。每次由你提供主题与大致思路，例如：
 
-- 早间：`使用 $wechat-content-pipeline 为 A 账号运行完整流程；不指定选题，自动发现热点并创建草稿。`
-- 晚间：`使用 $wechat-content-pipeline 为 B 账号运行完整流程；不指定选题，自动发现热点并创建草稿。`
+> 使用 `$wechat-content-pipeline` 为账号 a 写到草稿箱。  
+> 主题：……  
+> 思路：……（时间线/论点/必须写到/不要写……）  
+> 配图：（可选）封面与正文图路径  
 
-定时任务直接提供选题时，流水线跳过热点选择。排版主题仍随机选择，不按账号写死。
+Agent 应落盘 `user-brief.md`，`--source provided`，不得自行换题。详见 `.agents/skills/wechat-content-pipeline/references/user-brief.md`。
+
+若仍配置定时任务，任务内容必须是「处理收件箱里的用户 brief」或人工粘贴的主题，**不要**写「不指定选题，自动发现热点」。
 
 ## 6. 单独使用某项能力
 

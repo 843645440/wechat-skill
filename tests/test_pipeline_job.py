@@ -23,7 +23,9 @@ class PipelineJobTests(unittest.TestCase):
         (root / "references").mkdir(exist_ok=True)
         profile = {
             "audience": "职场读者",
+            "input_mode": overrides.get("input_mode", "open"),
             "topic_discovery": {
+                "enabled": overrides.get("topic_discovery_enabled", True),
                 "max_age_hours": 48,
                 "categories": ["人工智能", "就业变化"],
             },
@@ -102,14 +104,24 @@ class PipelineJobTests(unittest.TestCase):
         self.assertNotIn("sources", second_job["artifacts"])
         self.assertNotIn("preview", second_job["artifacts"])
 
-    def test_profiles_use_single_48_hour_window(self):
+    def test_profiles_user_brief_only_disables_auto_discovery(self):
         config = json.loads((ROOT / "config/wechat-content-profiles.json").read_text(encoding="utf-8"))
-        self.assertEqual(5, config["version"])
+        self.assertEqual(6, config["version"])
         for profile in config["profiles"].values():
+            self.assertEqual("user_brief_only", profile.get("input_mode"))
             discovery = profile["topic_discovery"]
+            self.assertIs(False, discovery.get("enabled"))
             self.assertEqual(48, discovery["max_age_hours"])
             self.assertNotIn("window_hours", discovery)
             self.assertNotIn("fallback_hours", discovery)
+
+    def test_auto_hotspot_rejected_when_user_brief_only(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            job_path = self.init_job(
+                tmp, topic=None, input_mode="user_brief_only", topic_discovery_enabled=False,
+            )
+            with self.assertRaisesRegex(pipeline_job.JobError, "关闭自动选题"):
+                self.record_hotspot(job_path)
 
     def test_init_preserves_workspace_safety_and_force_new(self):
         with tempfile.TemporaryDirectory() as tmp:
