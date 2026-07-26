@@ -5,186 +5,155 @@ description: 编排中文微信公众号文章：用户提供主题与大致思�
 
 # 微信公众号内容生产流水线
 
-**默认模式：用户命题。** 外部 Agent 或用户给出主题 + 大致思路；本 Skill 负责扩写成稿并送到指定账号草稿箱。
+**默认模式：用户命题。**用户给出主题 + 大致思路，本 Skill 扩写成稿并送到指定账号草稿箱。
 
 - **禁止**在未获主题时自行联网选题、换题或「找个热点凑一篇」。
-- **禁止**公开发布（仅草稿箱，除非用户另行明确要求发布）。
+- **禁止**公开发布（仅草稿箱，除非用户另行明确要求）。
 
-## 每次必读
+## 怎么用这份文档
 
-- [references/user-brief.md](references/user-brief.md)：用户 brief 模板、缺项追问、忠实扩写边界。
-- [references/artifact-contract.md](references/artifact-contract.md)：工作区、阶段和 `run_id`。
-- [references/account-profiles.md](references/account-profiles.md)：账号内容偏好。
-- 写作前读 [references/structure-rotation.md](references/structure-rotation.md)：结构池与近文轮换，防同质限流。
-- 写完正文、prepare 前读 [references/humanize-pass.md](references/humanize-pass.md)，加载 `humanizer-zh`，默认 `strong`。
-- 正文配图：用户已给图则直接用；否则读 `../baoyu-article-illustrator/SKILL.md` + [references/baoyu-illustrations-integration.md](references/baoyu-illustrations-integration.md)。
-- 封面：用户已给封面则用用户图；否则读 [references/ai-cover-generation.md](references/ai-cover-generation.md)。
-- 失败时读 [references/pipeline-failure-triage.md](references/pipeline-failure-triage.md)。
-- 修改阶段、产物、门禁、图片降级、草稿幂等时，先读 [references/contract-simplification-migration.md](references/contract-simplification-migration.md)。
+**每一条命令的 stdout 都会告诉你下一条命令**（`next_command` 字段），`begin` 还会给出
+`writing_contract`——全部写作硬门禁的机器可读卡片。**照命令链和卡片走就能完成全程。**
 
-> 自动热点发现已**默认关闭**。历史文档 [references/hotspot-discovery.md](references/hotspot-discovery.md) 仅作归档；仅当账号档案显式 `topic_discovery.enabled=true` 且用户要求自动选题时才可读，且不得作为日常路径。
+下面的「命令链」是全部流程。只有卡在某一步时才去读对应的 reference。
 
-项目根目录通常是本 Skill 向上三级；固定入口为：
+⚠️ 链上有 **3 步没有命令**，是你自己写文件，最容易漏：
 
-```text
-pipeline_job.py init/topic/history/shape/stage/show
-pipeline_runtime.py begin/prepare/finish
+1. `init` 之后写 `user-brief.md`（第 2 步）
+2. `begin` 之后写 `article.md` + `digest.txt`（第 5 步）
+3. humanize 阶段就地改写 `article.md`（第 7 步）
+
+其余每一步都有现成命令，**不要自己发明命令、不要新建脚本**。
+
+## 命令链
+
+`<PIPELINE>` = 本 Skill 根目录，`<ROOT>` = 项目根目录。所有产出路径由 `init` 打印的
+`job_contract.paths` 给出绝对路径，**不要自己推算路径**。
+
+```bash
+# 1. 初始化（生成 run_id，清空重建工作区，打印 job_contract）
+python3 <PIPELINE>/scripts/pipeline_job.py init --project-root <ROOT> --account <账号> --topic "<用户主题>"
+
+# 2. 落盘用户 brief —— 必须在 init 之后（init 会清空工作区）
+#    写到 job_contract.paths.work_dir/user-brief.md，格式见 references/user-brief.md
+#    这一步没有命令，是你自己写文件；init 的 next_command 会提醒你。
+
+# 3. 固化选题（source 必须是 provided）
+python3 <PIPELINE>/scripts/pipeline_job.py topic --job <job.json> --value "<主题>" --source provided --event-focus "<一句话核心>"
+
+# 4. 锁定结构（防同质，默认 --auto，同 run_id 稳定，永不死锁）
+python3 <PIPELINE>/scripts/pipeline_job.py shape --job <job.json> --auto
+
+# 5. 开始写作 → 输出 writing_contract，照卡片写 article.md（+ digest.txt）
+#    写作本身没有命令，是你自己写文件。深度风格读 ../wechat-tech-insight-writer/SKILL.md
+python3 <PIPELINE>/scripts/pipeline_runtime.py begin --job <job.json>
+
+# 6. 自检（不改状态，一次列出全部问题与修法，修到 status=ok）
+python3 <PIPELINE>/scripts/pipeline_runtime.py check --job <job.json>
+
+# 7. Humanize（就地改写 article.md，默认 intensity=strong）
+python3 <PIPELINE>/scripts/pipeline_job.py stage --job <job.json> --name humanize --status running
+#    ⚠️ 这一步没有脚本，是你自己动手改写。读 ../humanizer-zh/SKILL.md 拿改写手法，
+#    读 references/humanize-pass.md 拿本流水线的尺度限制，然后直接编辑 article.md。
+#    不新增事实，不删 brief 要求保留的时间线与结论，不把字数改到 1500 以下。
+python3 <PIPELINE>/scripts/pipeline_job.py stage --job <job.json> --name humanize --status completed --detail intensity=strong
+
+# 8. 正文配图（一条命令，退出码恒为 0）
+python3 <PIPELINE>/scripts/gen_inline_images.py --article <article.md> --imgs-dir <imgs/> --seed <run_id>
+#    照它 stdout 的 JSON 记账：
+python3 <PIPELINE>/scripts/pipeline_job.py stage --job <job.json> --name illustrations --status <completed|skipped> --detail <backend=…|reason=…>
+
+# 9. 封面（按降级链取第一个可用的，见下节）—— 只要把图放到 job_contract.paths.cover_path，
+#    **不需要** stage --name cover；cover 和 format 两个阶段由 finish 自动推进。
+
+# 10. Prepare（校验标题、字数、humanize、图片数与路径安全，固定主题）
+python3 <PIPELINE>/scripts/pipeline_runtime.py prepare --job <job.json>
+
+# 11. Finish（验收封面，写草稿箱，文件锁防双草稿）
+python3 <PIPELINE>/scripts/pipeline_runtime.py finish --job <job.json> --config <ROOT>/wechat-accounts.json
 ```
 
-不得为单篇文章新建临时渲染脚本，不得公开发布。
+## 三条硬门禁
 
-## 固定工作流
+### 1. 用户 brief（第 1 步之前）
 
-### 1. 接收用户 brief（硬门禁）
-
-用户须提供至少：
-
-1. **主题**（一句话）
-2. **大致思路**（要点、时间线、论点、素材或大纲，可短）
-
+用户须提供**主题**（一句话）+ **大致思路**（要点、时间线、论点、素材或大纲，可短）。
 可选：目标读者、情绪、必须写到的点、禁止写的点、配图/封面路径、字数偏好。
 
-缺主题或思路为空（只有一句话题目、无可展开材料）→ **停止并追问**，最多 1—2 个澄清问题。  
-**不得**自行找热点填空。
+缺主题，或思路为空（只有一句话题目、无可展开材料）→ **停止并追问**，最多 1–2 个问题。
+**不得**自行找热点填空。详见 [references/user-brief.md](references/user-brief.md)。
 
-将 brief 落盘（推荐）：
+⚠️ `user-brief.md` 必须写在 `init` **之后**。`init` 会清空重建工作区，在它之前落盘会被清掉。
 
-```text
-work/<account>/current/user-brief.md
-```
+### 2. 图片降级链
 
-格式见 [references/user-brief.md](references/user-brief.md)。
+**正文配图**——全部交给 `gen_inline_images.py` 一条命令，它内部就是这条链：
 
-### 2. 初始化
+| 情况 | backend | status |
+|---|---|---|
+| 用户已给图（article.md 已引用真实文件，或 imgs/ 里已有图） | `user_provided` | `completed` |
+| 无用户图，生图成功 | `image_generate` | `completed` |
+| 无用户图，无候选位（文章太短/全是代码表格） | `none` | `skipped` |
+| 无用户图，生图失败（无 key / 超时 / 非图片 / 后端非零退出） | `none` | `skipped` |
 
-```bash
-python3 <PIPELINE_ROOT>/scripts/pipeline_job.py init \
-  --project-root <PROJECT_ROOT> --account <ACCOUNT> \
-  --topic "<用户主题>"
-```
+**生不出图就不配图，这是正常结果，不是失败。**脚本退出码恒为 0，article.md 保持原样，
+绝不会留下指向不存在文件的 `![]()`。不要自己分析文章挑插图位，不要视觉审图。
 
-每次 `init` 生成新的 `run_id`。同账号使用 `work/<account>/current/`；存在 `running`、`failed` 或 `draft outcome=uncertain` 时不得覆盖。只有人工对账并明确丢弃旧任务时使用 `--force-new`。
+**封面**（`finish` 的硬门禁，取第一个可用的）：
 
-不得因为同账号当天已经 `drafted` 而退出。新的 `run_id` 可以在同一天继续创建另一篇草稿。
-
-### 3. 固化选题（用户提供，非自动发现）
-
-先读近 7 天历史（**结构轮换**，不是为了换题）：
+1. 用户已给封面 → 写入 `cover/cover.png`，`backend=user_provided`
+2. 有生图能力 → 按 [references/ai-cover-generation.md](references/ai-cover-generation.md) 生图，`backend=image_generate`
+3. 都没有 → 离线兜底渲染，`backend=offline_render`：
 
 ```bash
-python3 <PIPELINE_ROOT>/scripts/pipeline_job.py history \
-  --job <WORK_DIR>/job.json --days 7 --rotation
+python3 <PIPELINE>/scripts/render_cover_fallback.py \
+  --title "<封面文案，`|` 强制换行>" --highlight "<强调片段>" \
+  --kicker "<账号名>" --seed "<run_id>" --output <WORK_DIR>/cover/cover.png
 ```
 
-阅读 `rotation.blocked_*` / `preferred_*`，供 `shape` 选型。  
-若用户主题与近文明显重复，**提示用户**是否仍要写，不得擅自改题。
+4. 仍失败 → 只有配了账号默认 `thumb_media_id` 才能继续。
 
-写入选题（`source` 必须为 `provided`）：
+`check` 在封面缺失时会把第 3 档的完整命令拼好放进 `hints`。**禁止 HTML 封面与视觉审图。**
 
-```bash
-python3 <PIPELINE_ROOT>/scripts/pipeline_job.py topic \
-  --job <WORK_DIR>/job.json \
-  --value "<用户主题>" \
-  --source provided \
-  --event-focus "<一句话核心，可来自 brief>" \
-  --hook "<可选：点击理由，优先摘用户表述>" \
-  --tension "<可选：核心矛盾，优先摘用户表述>" \
-  --reader-stakes "<可选：读者关切，优先摘用户表述>"
-```
+### 3. 写作契约
 
-- **禁止** `--source auto-hotspot`（除非档案显式开启且用户要求）。
-- 不校验 48 小时热点时效。
-- hook / tension / reader_stakes：用户 brief 有则提炼写入；没有则可从思路补全，并在 brief 中可注明「AI 补全」。
-- 故事核写不出时 **回问用户**，不要 `discover=failed` 后偷偷换题。
+`begin` 输出的 `writing_contract` 是权威。**照卡片执行即可满足所有硬门禁。**要点：
 
-`discover` 阶段语义：**brief 已确认**（不是「发现了热点」）。
+- **忠实 brief（第一信源）**：不换题、不推翻用户主判断与事实线；可润色、补机制解释与可读结构。
+- 标题 ≤32 字，禁止周报体。
+- **正文 1500–4000 字**。这里的字数是 `check` 算出来的**纯正文中文字符数**：已扣掉
+  `#` 标题、开头引言、图片引用、代码块和空白，所以**远小于 `wc -c` 的字节数**。
+  别用 `wc` 自估，写完直接跑 `check` 看它报的数。首轮写太短是最高频的返工点。
+- 按已锁 structure 组织，但**内容顺序优先服务 brief 大纲**。
+- 每段留 1–3 个 `**关键短语**`——渲染器把它渲染成主题下划线，是排版的基础标记，缺了排出来会很平。
+- **读者价值服从题材**：有可执行点再写清单；历史案件、人物传记类以认知增量与事实线为主，禁止硬塞防骗清单。
+- 禁止编造亲历；禁止把用户未提供的「内幕」写成既定事实。
+- **正文不写关注段**：文末「在看 / 转发 / 关注」由渲染器自动追加，正文再写一遍就是重复。
+- **摘要**：另写一句 ≤50 字到 `digest.txt`——它是分享卡片副标题，要补标题没说完的第二钩子（关键数字、悬念下半句、读者代价），不要复述标题。
 
-### 4. 锁定文章结构（防同质）
+深度风格细节读 `wechat-tech-insight-writer`。声口与 `writer_instructions` 已内联在 `init` 的
+`job_contract.account_profile` 里，不必另读账号档案文档。
 
-```bash
-python3 <PIPELINE_ROOT>/scripts/pipeline_job.py shape \
-  --job <WORK_DIR>/job.json \
-  --structure-id <preferred 中的 id> \
-  --opening-type <preferred opening> \
-  --ending-type <preferred ending> \
-  --felt-sense "<主情绪>" \
-  --tension-type <tension 类型> \
-  --heading-count 3 \
-  --body-band mid
-```
+## 主题
 
-若用户 brief 指定了结构/结尾方式（如「以人物结局收」「只写时间线与影响」），**优先用户**，在轮换池允许范围内选取最贴近的 shape；冲突时宁可放宽 opening/ending 提示用户，也不得写成与 brief 相反的模具文。
+由 `pipeline_job.py choose-theme` 从 `render_article.py` 的 `THEMES` 里**按 run_id 派生**：
+跨文章会轮换，同一个 run 重跑必然选到同一套（恢复时不换皮）。
 
-细则见 [references/structure-rotation.md](references/structure-rotation.md)。
+主题的单一真相源就是 `render_article.py`。**不要读 `archive/themes-v2/` 下的 Markdown 组件库，
+不要手写排版 HTML，不要为单篇文章新建渲染脚本。**
 
-### 5. 写作
-
-```bash
-python3 <PIPELINE_ROOT>/scripts/pipeline_runtime.py begin \
-  --job <WORK_DIR>/job.json
-```
-
-加载 `wechat-tech-insight-writer`，读取：
-
-1. **`user-brief.md`（第一信源）**
-2. 账号 `writer_instructions` / `voice`
-3. job 的 hook/tension/reader_stakes 与 `article_shape`
-
-生成 `article.md`：
-
-- **忠实 brief**：不换题、不推翻用户主判断与事实线；可润色、补机制解释与可读结构。
-- 叙述人与情绪：按账号声口；第一人称「我」可用，但勿为凑模板强行「我站哪边」「普通人怎么防」——结尾形态服从 brief（影响收束 / 人物结局 / 用户指定均可）。
-- 标题 ≤32 字；禁止周报体。
-- 按已锁 structure 组织，但 **内容顺序优先服务 brief 大纲**。
-- 陌生主体 1—3 句简介（若 brief 读者需要）。
-- **读者价值**服从题材：有可执行点再写清单；历史案件、人物传记类以认知增量与事实线为主，禁止硬塞防骗清单。
-- 正文 1500—4000；禁止编造亲历；禁止把用户未提供的「内幕」写成既定事实。
-- 用户指定配图路径时写入 Markdown，勿丢弃用户图去重生图。
-
-### 6. Humanize
-
-将 `humanize` 标为 `running`，按 `humanizer-zh` + [references/humanize-pass.md](references/humanize-pass.md) 就地改写，默认 `intensity=strong`，不新增事实，不删 brief 要求保留的时间线与结论。完成后 `completed`。
-
-### 7. 正文配图
-
-- **用户已给正文图**：复制到 `imgs/`，插入 `article.md`，`illustrations` → `completed`，detail 含 `backend=user_provided`。
-- **未给图**：按 baoyu 分析 + 自有后端；0—3 张；失败可 `skipped`；禁止视觉审图。
-
-### 8. 封面
-
-- **用户已给封面**：写入 `cover/cover.png`，`cover` → `completed`，`backend=user_provided`。
-- **未给**：按 [references/ai-cover-generation.md](references/ai-cover-generation.md) 生图；禁止 HTML 封面与视觉审图。
-
-### 9. Prepare
-
-```bash
-python3 <PIPELINE_ROOT>/scripts/pipeline_runtime.py prepare \
-  --job <WORK_DIR>/job.json
-```
-
-检查标题、1500—4000 字、humanize、正文图最多 3 张与路径安全，固定随机主题。不读 `sources.md`，不做热点时效检查。
-
-### 10. Finish
-
-```bash
-python3 <PIPELINE_ROOT>/scripts/pipeline_runtime.py finish \
-  --job <WORK_DIR>/job.json \
-  --config <PROJECT_ROOT>/wechat-accounts.json
-```
-
-验收 `cover/cover.png`，轻量门禁后 `send --action draft`。同一任务 `finish` 文件锁防双草稿。
-
-## 草稿幂等与恢复
+## 幂等与恢复
 
 - 同一 `run_id` 已成功：账号、动作、`run_id`、`draft_media_id` 全匹配时直接返回原结果。
-- 新 `run_id`：允许同账号当天继续新草稿。
-- timeout / EOF / 连接重置 / 响应不完整：`outcome=uncertain`，禁止自动重发。
-- 凭证或账号配置错误在请求前：`preflight-failed`、`retry_safe=true`。
-- IP 白名单错误（40164）：报告出口 IP，等待用户加白后**只重跑 finish**，不重写正文。
+- 新 `run_id`：允许同账号当天继续新草稿。**不得**因为今天已有 `drafted` 就退出。
+- timeout / EOF / 连接重置 / 响应不完整 → `outcome=uncertain`，**禁止自动重发**，先人工核对草稿箱。
+- 凭证或账号配置错误发生在请求前 → `preflight-failed`，`retry_safe=true`。
+- IP 白名单错误（40164）→ 报告出口 IP，等用户加白后**只重跑 finish**，不重写正文。
+- `state=failed` 且 draft 曾 running/uncertain → 重置 format/draft 为 pending，确认 `article.md` 契约后 prepare → finish。继续现有工作区，**禁止无故 init 新 job**。
+- write 未完成就中断 → 有 brief 则照 brief 写完；**禁止**改为自动热点选题。
 
-**失败任务恢复**（`state=failed` 且 draft 曾 running/uncertain）：重置 format/draft 为 pending，确认 `article.md` 契约后 prepare → finish。继续现有 worktree，禁止无故 init 新 job。
-
-**运行中断恢复**（write 未完成）：有用户 brief 则按 brief 写完；**禁止**改为自动热点选题。
+`init` 之后任何一步的 stdout 都带 `next_command`，卡住时先看它，再读
+[references/pipeline-failure-triage.md](references/pipeline-failure-triage.md)。
 
 ## 完成核验
 
@@ -192,18 +161,25 @@ python3 <PIPELINE_ROOT>/scripts/pipeline_runtime.py finish \
 
 1. `job.json.state == drafted`
 2. `stages.draft.status == completed`
-3. `draft-result.json` 账号、`action==draft`、`run_id` 一致
+3. `draft-result.json` 的账号、`action==draft`、`run_id` 一致
 4. `draft_media_id` 非空且非占位符（不得含 dummy/fake/placeholder/test/mock/sample）
 
-`draft-result.json` 只能由 `pipeline_runtime.py finish` 写入。Agent 不得手写伪造。
+`draft-result.json` 只能由 `pipeline_runtime.py finish` 写入，**agent 不得手写伪造**。
 
-最终报告：主题、是否用了用户配图、主题皮肤、正文图数、账号、`article.html` 路径、草稿 ID。不得展示密钥。
+最终报告：主题、是否用了用户配图、主题皮肤、正文图数、账号、`article.html` 路径、草稿 ID。
+**不得展示密钥。**
 
-## 与旧「自动热点」模式的关系
+## 需要时才读
 
-| 项 | 默认（当前） | 仅当显式开启 |
-|----|----------------|--------------|
-| 选题来源 | 用户 brief | `topic_discovery.enabled=true` 且用户要求 |
-| 48 小时时效 | 不适用 | 仅 auto-hotspot |
-| 无主题时 | 追问用户 | 可读归档 hotspot 文档 |
-| 换题 | 禁止（除非用户同意） | 自动路径才可换候选热点 |
+| 卡在哪 | 读什么 |
+|---|---|
+| brief 格式、缺项追问、忠实扩写边界 | [references/user-brief.md](references/user-brief.md) |
+| 结构池与近文轮换 | [references/structure-rotation.md](references/structure-rotation.md) |
+| humanize 改写尺度 | [references/humanize-pass.md](references/humanize-pass.md) |
+| 封面生图 | [references/ai-cover-generation.md](references/ai-cover-generation.md) |
+| 任何一步报错 | [references/pipeline-failure-triage.md](references/pipeline-failure-triage.md) |
+| 工作区/阶段语义（`init` 的 job_contract 没覆盖到的） | [references/artifact-contract.md](references/artifact-contract.md) |
+
+> 自动热点发现已**默认关闭**。仅当账号档案显式 `topic_discovery.enabled=true` 且用户要求
+> 自动选题时才走那条路，历史文档在 `archive/pipeline-refs-v1/hotspot-discovery.md`，
+> 不得作为日常路径。`--source auto-hotspot` 在默认模式下禁用。

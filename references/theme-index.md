@@ -1,32 +1,42 @@
-# 主题索引与选择决策表
+> **本文件仅供人阅读选主题。**主题的**单一真相源**是
+> `.agents/skills/wechat-content-pipeline/scripts/render_article.py` 的 `THEMES` 字典
+> ——色值、布局和全部组件 HTML 都在那里。脚本和本表冲突时**以脚本为准**。
+>
+> 别再解析这个文件来发现主题。要主题清单就问脚本：`render_article.py --help`
+> 里 `--theme` 的 choices 就是全集。
 
-本表是主题信息的**单一来源**。工作流第 1 步据此向用户展示选项，第 2 步据"组件库文件"列读取对应库，下划线标记时据"正文下划线 CSS"列取值。
-
-每个主题的**英文标识**（用于产物命名 `{中文名}({标识}).html`、Agent 引用）= "组件库文件"列去掉 `theme-` 前缀与 `.md` 后缀。展示给用户仍用中文名。
+# 主题索引
 
 ## 已注册主题
 
-| 主题 | 主色 | 适用场景 | 组件库文件 | 正文下划线 CSS |
-|------|------|---------|-----------|---------------|
-| 摸鱼绿 | `#059669` emerald | 教程、测评、清单、工具盘点（卡片丰富、信息密度高，默认推荐） | `references/theme-moyu-green.md` | `border-bottom:2px solid #A7F3D0;font-weight:600;` |
-| 红白色系 | `#DC2626` 正红 | 深度分析、观点、力量感话题（经典编辑风，编号章节+引言卡+签名区，红色克制点睛） | `references/theme-red-white.md` | `border-bottom:2px solid #FECACA;font-weight:600;` |
-| 摸鱼票据风 | `#059669` emerald | 测评、工具对比、创意评测（票据/门票视觉隐喻，星级评分+编号+硬阴影卡片） | `references/theme-moyu-ticket.md` | `border-bottom:2px solid #A7F3D0;font-weight:600;` |
-| 橄榄手记 | `#1e1f23` 墨黑（配橙 `#ed7b2f`） | 内刊手记、深度评测、案例复盘、系统性说明文档（编辑部内刊质感，分节形式多样，信息密度偏高） | `references/theme-olive-journal.md` | `border-bottom:2px solid #ed7b2f;font-weight:600;` |
+| 标识（`--theme` 取值） | 中文名 | 主色 | 适用场景 |
+|---|---|---|---|
+| `moyu-green` | 摸鱼绿 | `#059669` emerald | 教程、测评、清单、工具盘点、知识整理（卡片丰富、信息密度高）。**默认推荐** |
+| `red-white` | 红白色系 | `#DC2626` 正红 | 深度分析、观点、力量感话题（经典编辑风，编号章节 + 引言卡，红色克制点睛） |
+| `moyu-ticket` | 摸鱼票据 | `#059669` emerald | 工具对比、创意评测（票据/门票视觉隐喻，星级 + 编号 + 硬阴影卡片） |
+| `olive-journal` | 橄榄手记 | `#ED7B2F` 橙（配墨黑 `#23251D`） | 内刊手记、深度评测、案例复盘、系统性说明文（编辑部内刊质感） |
 
-## 选择建议
+## 怎么选
 
-- **用户选择制**：用户没指定主题时，把本表全部主题列给用户选（中文名 + 适用场景），不替用户定；最贴合题材的主题可标"（推荐）"放第一位。
-- 全自动模式（用户明说"直接排"）才自动选：默认第一行主题，题材明显契合其它主题时选契合项并在交付时说明理由。
-- 同一篇文章只用一套主题，不混搭。
+- 用户指定了 → 直接用。
+- 题材明显契合上表某行 → 用那套，交付时一句话说明理由。
+- 没有明显倾向 → 用 `moyu-green`。
+- 流水线调用 → 用 `pipeline_job.py choose-theme` 已固定的那套，**不要重新选、不要询问**。它按 `run_id` 派生：跨文章会轮换，同一个 run 重跑必然选到同一套（恢复时不会换皮）。
+- 一篇文章只用一套，不混搭。
 
-## 下划线色值的权威性
+## 加新主题
 
-正文关键词下划线一律用上表"正文下划线 CSS"列的值。组件库里可能有浅色下划线变体，那是可选样式；**正文关键词标记以本表为单一权威来源**，避免双轨。
+在 `render_article.py` 的 `THEMES` 里加一项，按需在 `render_hero` / `render_heading` / `render_toc` 等函数加 `layout` 分支，再到上表登记一行。
 
-## 新主题登记流程
+四个 `layout` 已实现：`magazine`（摸鱼绿）、`editorial`（红白，同时是未知 layout 的兜底）、`ticket`（票据）、`journal`（橄榄）。**复用现有 layout 只改色值最省事**——加一个 `THEMES` 条目即可，一行渲染代码都不用写。
 
-1. 把主题组件库写入 `references/theme-{英文标识}.md`（格式要求见 SKILL.md「添加新主题的规范」）。
-2. 在上表登记一行；首个/最常用主题放第一行作为默认推荐。
-3. 跑 `python3 scripts/component_lint.py .` 确认 0 ERROR。
+改完必须验证：
 
-> 用户想要全新风格时，可走 `references/theme-generator.md` 的自定义主题生成流程：按偏好/参考图生成区块库（预览存 `assets/theme-previews/`），确认后转标准主题库并按上面流程登记。
+```bash
+for t in moyu-green red-white moyu-ticket olive-journal <新标识>; do
+  python3 <PIPELINE>/scripts/render_article.py --article 样例.md --theme $t --output /tmp/$t.html
+  python3 scripts/validate_gzh_html.py /tmp/$t.html   # 必须 0 ERROR
+done
+```
+
+> **归档说明**：v1/v2 的 Markdown 组件库在 `archive/themes-v2/`，含 `theme-generator.md`（自定义主题生成流程）与 `common-components.md`（通用增量库）。它们只是**历史设计参考**，不再是排版依据——代码块、图片/GIF、小标签标题等通用组件已全部实现在 `render_article.py` 里。

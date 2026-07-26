@@ -22,18 +22,18 @@
 特别验证：
 
 - `running → dry-run/skip → 正式执行` 仍必须阻断，不得因中间步骤变成可重试状态；
-- `completed → dry-run/skip → 正式执行` 仍应复用完成结果，辅助验证不得覆盖 completed 指纹；
+- `completed → dry-run/skip → 正式执行` 仍应复用完成结果（同一 `run_id` 全匹配），辅助验证不得覆盖 completed 记录；
 - dry-run、skip、状态查看、确定性重建都不得把 `running`/`uncertain`/可复用 `completed` 降级为普通 `skipped` 或 `pending`；
-- 正式请求前的 running 落盘失败必须保证零请求；请求后的超时、EOF、连接重置、响应解析失败、结果文件落盘失败、最终 completed 落盘失败都只能单次，并进入 uncertain；
-- 缺少目标 AppID 摘要时也要保留 `running`、输入指纹、attempt/outcome/retry-safe 等阻断证据。
+- 正式请求前的 running 落盘失败必须保证零请求；请求后的超时、EOF、连接重置、响应解析失败、结果文件落盘失败、最终 completed 落盘失败都只能单次，并进入 uncertain。
 
 通过“completed 直接复用”单测并不够：还要在 completed 与下一次正式调用之间插入 dry-run/skip；通过“正式模式拒绝 running”单测也不够：还要检查辅助模式能否洗掉 running。
 
-## 图片与热点的负向探针
+## 图片的负向探针
 
-- 图片：除大小、路径和任意 magic bytes 外，验证扩展名/响应 MIME 与真实格式一致。不要只构造“单独文件头”这种容易通过的负例；还要构造**结构表面自洽但实际不可解码**的样本：无 IDAT 的伪 PNG、仅 SOI/EOI 的 JPEG、只有图像分隔字节与 trailer 的 GIF、空 VP8/VP8L chunk 的 WebP。四种格式都应验证必要结构，优先调用可靠解码器的 verify 路径；绿色测试不能推翻最小对抗样本已经复现的放行。
+- 正文图按**可降级契约**验证：伪扩展名按真实字节类型规范化上传；不可解码或超限的单图被跳过且其余正文继续、不阻塞草稿；0 图草稿可创建。负例不要只构造“单独文件头”，还要构造**结构表面自洽但实际不可解码**的样本（无 IDAT 的伪 PNG、仅 SOI/EOI 的 JPEG 等），验证它们被跳过而非上传。
+- 封面仍是硬门禁：必须可解码有效，失败只允许回退账号默认 `thumb_media_id`。
 - dry-run：外部图片必须在任何网络调用前拒绝，并用 mock 断言微信 API 调用数为零。
-- 热点：不要只测 topic 写入门禁；伪造或编辑已保存 job，在 prepare、独立 gate、finish 重测 sources、发布时间、分类、affected group，并验证证据随时间过期后会被阻断。尤其检查 `completed` 的快速恢复分支：它常在 `require_content`/gate 之前返回，可能让已过期热点在 finish 被直接复用。修复时应先重查热点，再复用 completed，同时保持 completed 状态不被失败的辅助检查覆盖。
+- 路径越界（绝对路径、`..`、`file:`、symlink）在任何模式下都必须拒绝。
 
 ## 输出安全
 

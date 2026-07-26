@@ -15,7 +15,7 @@ description: 使用 Agnes Image 2.1 Flash API 从已保存的提示词生成 PNG
 
 - `AGNES_IMAGE_MODEL`：默认 `agnes-image-2.1-flash`。
 - `AGNES_IMAGE_ENDPOINT`：默认官方生成端点；除非迁移服务，否则不要修改。
-- `AGNES_IMAGE_SIZE`：默认 `2K`。
+- `AGNES_IMAGE_SIZE`：脚本默认 `2K`；**建议设为 `1K`**——实测 2K 约 150 秒且长连接会被中途断开，1K 约 40 秒，公众号封面与正文图用 1K 已足够。
 
 ## 生成流程
 

@@ -27,9 +27,15 @@
 
 ## 封面
 
-- **已取消 HTML/Chrome 封面**；生图 API 写入 `cover/cover.png`（见 `ai-cover-generation.md`）。
+- **已取消 HTML/Chrome 封面**；封面写入 `cover/cover.png`（见 `ai-cover-generation.md`）。
 - `finish` 只做机械检查（存在/非空/魔数），**不做视觉校验**。
-- 生图 API/落盘失败最多重试两次；仅当有默认 `thumb_media_id` 可 `skipped`。
+- 按降级链取第一个可用后端：用户图 → 生图 API → **离线兜底渲染** → 账号默认 `thumb_media_id`。
+- **「没有生图能力」不是失败**：缺 `AGNES_API_KEY`、缺浏览器时直接跑
+  `scripts/render_cover_fallback.py`（纯 Pillow，需要一款中文字体）；
+  `check` 会把这条命令拼好放进 `hints`。
+- 兜底渲染报「找不到可渲染中文的字体」时，设置 `WECHAT_COVER_FONT=<字体文件绝对路径>` 重跑。
+- 生图 API/落盘失败最多重试两次；四档全不可用时才 `skipped`，且必须有默认 `thumb_media_id`。
+- 封面文件扩展名与真实格式不一致不算错误：发布器按魔数识别并规范化 MIME。
 - 若日志仍出现 build_cover_spec/render_cover，说明跑了旧流程。
 
 ## 草稿

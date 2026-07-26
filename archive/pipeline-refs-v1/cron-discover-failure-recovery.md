@@ -1,4 +1,8 @@
-# Cron Discover Failure Recovery (Hotspot Injection)
+# Cron Discover Failure Recovery (Hotspot Injection) · 归档
+
+> **归档文档（旧自动热点契约）。** 自动热点已默认关闭，且本文提到的 `sources.md`、`fact-check`、`image_count` 一致性、`window_hours`/`fallback_hours` 双层窗口均已从当前契约删除。仅当账号显式开启 `topic_discovery.enabled=true` 且用户要求自动选题时作历史参考；命令与门禁以当前 `SKILL.md` + `artifact-contract.md` 为准，不得按本文补旧产物。
+
+
 
 When a cron job for account b (or any with strict topic_discovery) fails at discover with message \"本轮没有可靠热点：...fallback=168h内也未找到新事件\", the worktree is left in state=failed with topic=null.
 

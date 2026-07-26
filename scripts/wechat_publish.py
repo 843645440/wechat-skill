@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """将已排版 HTML 写入指定微信公众号的草稿箱或提交发布。
 
-凭证只从环境变量读取。配置、内容图片和 access_token 都按账号隔离。
+凭证只从环境变量读取；本机缺变量时由 local_env 从 secrets/wechat.env 补齐（不覆盖已有值）。
+配置、内容图片和 access_token 都按账号隔离。
 用法见 references/multi-account-publishing.md。
 """
 
@@ -18,6 +19,9 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import warnings
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from local_env import load_local_env  # noqa: E402
 
 try:
     from PIL import Image, ImageFile
@@ -448,7 +452,8 @@ def preflight_send(account, args, html):
         parsed = urllib.parse.urlparse(args.cover)
         if parsed.scheme in ("http", "https"):
             raise PublishError(f"dry-run 不允许联网校验外部封面：{args.cover}")
-        read_image(args.cover, os.getcwd(), allow_outside=True)
+        # 封面按真实字节识别格式（如 cover.png 内含 JPEG 字节），仍必须可完整解码
+        read_image(args.cover, os.getcwd(), allow_outside=True, strict_declared=False)
     else:
         env_name = account.get("default_thumb_media_id_env")
         has_thumb = bool(
@@ -494,8 +499,10 @@ def client_for_account(config, alias, no_token_cache=False):
 
 def resolve_thumb(account, args, client):
     if args.cover:
+        # 封面与正文图同规则：以 magic bytes + 解码结果为准，
+        # 文件名会被规范化为真实格式扩展名后上传（read_image 内完成）
         filename, data, content_type = read_image(
-            args.cover, os.getcwd(), allow_outside=True
+            args.cover, os.getcwd(), allow_outside=True, strict_declared=False
         )
         return client.upload_cover(filename, data, content_type)
     env_name = account.get("default_thumb_media_id_env")
@@ -651,6 +658,7 @@ def build_parser():
 def main():
     parser = build_parser()
     args = parser.parse_args()
+    load_local_env(os.path.dirname(os.path.abspath(__file__)))
     try:
         config = load_json(args.config)
         if args.command == "accounts":

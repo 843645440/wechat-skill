@@ -11,18 +11,32 @@ python3 <PIPELINE_ROOT>/scripts/pipeline_job.py history \
   --job <WORK_DIR>/job.json --days 7 --rotation
 ```
 
-2. 写作**开始前**根据 `rotation.preferred_*` / `blocked_*` 选定本轮形状，并锁定：
+2. 写作**开始前**锁定本轮形状。默认用 `--auto`（按轮换计划自动生成合法组合，同
+   `run_id` 结果稳定，池耗尽自动放宽，永不死锁）：
+
+```bash
+python3 <PIPELINE_ROOT>/scripts/pipeline_job.py shape \
+  --job <WORK_DIR>/job.json --auto
+```
+
+⚠️ **`--auto` 只保证轮换合法，它不懂题材。** `felt_sense` 与 `tension_type` 是内容相关字段，
+自动结果可能与本篇相悖（例如给一篇讲违法解雇的稿子分到「欣慰」「振奋」）。**写作前必须复核这两项**，
+不符就在 `--auto` 上叠加覆盖，其余字段仍自动：
+
+```bash
+python3 <PIPELINE_ROOT>/scripts/pipeline_job.py shape \
+  --job <WORK_DIR>/job.json --auto \
+  --felt-sense 讽刺 --tension-type efficiency_vs_duty
+```
+
+也可完全手工指定全部字段（此时自行对照 `rotation.preferred_*` / `blocked_*`）：
 
 ```bash
 python3 <PIPELINE_ROOT>/scripts/pipeline_job.py shape \
   --job <WORK_DIR>/job.json \
-  --structure-id conflict \
-  --opening-type emotion_sting \
-  --ending-type unresolved \
-  --felt-sense 发紧 \
-  --tension-type efficiency_vs_duty \
-  --heading-count 3 \
-  --body-band mid
+  --structure-id conflict --opening-type emotion_sting --ending-type unresolved \
+  --felt-sense 发紧 --tension-type efficiency_vs_duty \
+  --heading-count 3 --body-band mid
 ```
 
 3. 再 `begin` → 按已锁定 `article_shape` 写 `article.md`。  

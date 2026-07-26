@@ -11,7 +11,7 @@ description: 从已完成写作的微信公众号文章中提取观点、对比�
 
 必须同时取得：
 
-- 最终 `article.md` 和内部 `sources.md`。
+- 最终 `article.md`。
 - 本轮已固定的主题标识。
 
 先读 [references/plan-schema.md](references/plan-schema.md) 与 [references/plan-shell-coerce.md](references/plan-shell-coerce.md)。`theme-component-map.md` 仅保留为旧组件对应关系参考，流水线不再要求 Agent 按它手工组装 HTML。
@@ -48,7 +48,7 @@ python3 <SKILL_ROOT>/scripts/validate_plan.py \
 - `insight`：2—4 个受影响对象、成本承担者或关键判断。
 - `comparison`：两个对象或阶段在同一维度下的真实差异。
 - `process`：正文明确支持的 3—5 个连续环节。
-- `metrics`：2—4 个正文和来源已经核实的数据；没有可靠数字时改用 `insight`。
+- `metrics`：2—4 个正文中已核实的数据；没有可靠数字时改用 `insight`。
 
 ### 字段名硬坑（曾整包降级）
 
@@ -66,7 +66,7 @@ python3 <SKILL_ROOT>/scripts/validate_plan.py \
 
 - 不新增事实、数字、公司表述、人物、引用、因果关系或作者经历。
 - 不把推测压缩成事实，不删除“可能”“短期内”“仍取决于”等限制条件。
-- 不直接解析或改写 `sources.md` 成正文；来源只用于回查。
+- 模块内容只能来自 `article.md` 正文已有信息，不引入正文之外的来源材料。
 - 不生成正文 PNG、SVG 文件或截图，不调用 Agnes、Baoyu 或任何图片模型。
 - 输出必须遵守根排版 Skill 的微信红线：内联样式、`<span leaf="">`、无 `class`、无 `<style>`、无 Grid 和复杂定位。
 

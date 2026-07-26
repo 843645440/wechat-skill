@@ -39,6 +39,8 @@ python3 scripts/wechat_publish.py --config wechat-accounts.json send \
 
 去掉 `--dry-run` 后，脚本会校验 HTML，上传封面和原文自带的远程图片，再创建草稿。素材属于各自账号；同一篇带原图的 HTML 发给 A/B 时也必须分别上传。
 
+可选 `--digest '一句话摘要'`（≤64 字）：设置分享卡片与部分列表页显示的摘要，建议写成补标题第二钩子的一句话；不传时微信自动截取正文开头。流水线模式下由工作区 `digest.txt` 自动传入。
+
 `wechat-content-pipeline` 的固定终点是草稿箱：
 
 ```bash

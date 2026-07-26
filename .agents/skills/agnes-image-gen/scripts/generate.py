@@ -4,6 +4,7 @@
 import argparse
 import base64
 import binascii
+import http.client
 import json
 import mimetypes
 import os
@@ -151,6 +152,12 @@ def post_json(endpoint, api_key, payload, timeout):
             last_error = AgnesError(f"无法连接 Agnes API：{exc.reason}")
             if attempt == 1:
                 raise last_error
+        except (http.client.HTTPException, OSError) as exc:
+            # 生图耗时长，链路中途被断开会抛 RemoteDisconnected / ConnectionReset，
+            # 这些不是 URLError 的子类，不接住会直接以 traceback 崩掉流水线。
+            last_error = AgnesError(f"Agnes API 连接中断：{type(exc).__name__}")
+            if attempt == 1:
+                raise last_error
         time.sleep(1.5 * (attempt + 1))
     raise last_error or AgnesError("Agnes API 请求失败")
 
@@ -160,11 +167,19 @@ def download_https(url, timeout):
     if parsed.scheme != "https" or not parsed.netloc:
         raise AgnesError("Agnes 返回了非 HTTPS 图片 URL")
     request = urllib.request.Request(url, headers={"User-Agent": "wechat-skill/agnes-image-gen"})
-    try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            data = response.read(MAX_FILE_BYTES + 1)
-    except (urllib.error.HTTPError, urllib.error.URLError) as exc:
-        raise AgnesError(f"无法下载 Agnes 生成图片：{exc}") from exc
+    last_error = None
+    for attempt in range(2):
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                data = response.read(MAX_FILE_BYTES + 1)
+            break
+        except (urllib.error.HTTPError, urllib.error.URLError) as exc:
+            last_error = AgnesError(f"无法下载 Agnes 生成图片：{exc}")
+        except (http.client.HTTPException, OSError) as exc:
+            last_error = AgnesError(f"下载 Agnes 图片时连接中断：{type(exc).__name__}")
+        if attempt == 1:
+            raise last_error
+        time.sleep(1.5 * (attempt + 1))
     if len(data) > MAX_FILE_BYTES:
         raise AgnesError("生成图片超过 64 MiB")
     return data
@@ -284,7 +299,24 @@ def run(args):
     }
 
 
+def load_project_env():
+    """本机缺 AGNES_API_KEY 时，从项目的 secrets/wechat.env 补齐（不覆盖已有值）。"""
+    here = Path(__file__).resolve()
+    for parent in here.parents:
+        candidate = parent / "scripts" / "local_env.py"
+        if candidate.is_file():
+            sys.path.insert(0, str(candidate.parent))
+            try:
+                from local_env import load_local_env
+            except ImportError:
+                return
+            load_local_env(str(candidate.parent))
+            return
+
+
 def main():
+    # 必须在 build_parser() 之前：--size 等参数的默认值直接取自环境变量。
+    load_project_env()
     args = build_parser().parse_args()
     try:
         result = run(args)

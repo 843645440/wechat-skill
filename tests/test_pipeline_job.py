@@ -61,7 +61,9 @@ class PipelineJobTests(unittest.TestCase):
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
             pipeline_job.cmd_init(pipeline_job.build_parser().parse_args(argv))
-        return Path(output.getvalue().strip())
+        # stdout 第一行永远是纯 job_path（向后兼容）；后面追加的 job_contract JSON
+        # 不影响这里只取第一行。
+        return Path(output.getvalue().splitlines()[0])
 
     def stage(self, job_path, name, status, details=()):
         if name in ("humanize", "illustrations") and status == "completed":
@@ -103,6 +105,68 @@ class PipelineJobTests(unittest.TestCase):
         self.assertNotIn("validate", second_job["stages"])
         self.assertNotIn("sources", second_job["artifacts"])
         self.assertNotIn("preview", second_job["artifacts"])
+
+    def test_init_prints_job_contract_with_absolute_paths_next_command_and_no_credentials(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "config").mkdir(exist_ok=True)
+            (root / "references").mkdir(exist_ok=True)
+            profile = {
+                "audience": "职场读者",
+                "input_mode": "open",
+                "writer_instructions": "示例声口说明：第一人称强情感",
+                "voice": {"tone": "strong-emotion-subjective", "allowed_emotions": ["烦", "发紧"]},
+                "topic_discovery": {
+                    "enabled": True, "max_age_hours": 48, "categories": ["人工智能"],
+                },
+                "theme_strategy": "random",
+                "illustrations": {
+                    "enabled": True, "skill": "baoyu-article-illustrator",
+                    "backend": "image_generate", "max_images": 3,
+                },
+                "cover": {"enabled": True, "backend": "image_generate", "aspect": "16:9"},
+                "publishing": {"target": "draft"},
+            }
+            (root / "config/wechat-content-profiles.json").write_text(json.dumps({
+                "version": 5, "profiles": {"a": profile},
+            }, ensure_ascii=False), encoding="utf-8")
+            (root / "references/theme-index.md").write_text(
+                "# 主题索引\n\n## 已注册主题\n\n"
+                "| 墨绿 | `references/theme-moyu-green.md` |\n\n"
+                "## 新主题登记流程\n",
+                encoding="utf-8",
+            )
+            argv = [
+                "init", "--project-root", str(root), "--account", "a",
+                "--topic", "AI进入真实工作流程",
+            ]
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                pipeline_job.cmd_init(pipeline_job.build_parser().parse_args(argv))
+            raw = output.getvalue()
+            lines = raw.splitlines()
+            job_path = Path(lines[0])
+            contract = json.loads("\n".join(lines[1:]))["job_contract"]
+        for key in ("work_dir", "job_path", "article_path", "digest_path", "imgs_dir", "cover_path"):
+            self.assertTrue(os.path.isabs(contract["paths"][key]), key)
+        self.assertEqual(str(job_path), contract["paths"]["job_path"])
+        self.assertEqual("a", contract["account"])
+        self.assertEqual("AI进入真实工作流程", contract["topic"])
+        self.assertEqual(len(pipeline_job.STAGES), len(contract["stages"]))
+        self.assertIn("next_command", contract)
+        self.assertIn("pipeline_job.py", contract["next_command"])
+        # init 只写下 topic 字符串，event_focus 仍为空，所以下一步必须是 topic 而不是 shape
+        # （早期实现只看 job["topic"] 有没有值，导致整个 topic 步骤被跳过、event_focus 永远为空）。
+        self.assertIn("topic", contract["next_command"])
+        self.assertIn("--source provided", contract["next_command"])
+        # brief 还没落盘时，next_command 要先提醒写 user-brief.md——这是链上没有命令的一步。
+        self.assertIn("user-brief.md", contract["next_command"])
+        self.assertFalse(contract["workspace_reset"]["rebuilt_existing_workspace"])
+        self.assertEqual("职场读者", contract["account_profile"]["audience"])
+        self.assertIn("tone", contract["account_profile"]["voice"])
+        blob = raw.lower()
+        for banned in ("secret", "appid", "app_id", "access_token", "apikey", "api_key", "password"):
+            self.assertNotIn(banned, blob)
 
     def test_profiles_user_brief_only_disables_auto_discovery(self):
         config = json.loads((ROOT / "config/wechat-content-profiles.json").read_text(encoding="utf-8"))
@@ -215,7 +279,9 @@ class PipelineJobTests(unittest.TestCase):
             args = pipeline_job.build_parser().parse_args(["history", "--job", str(job_path)])
             with contextlib.redirect_stdout(output):
                 pipeline_job.cmd_history(args)
-            entries = json.loads(output.getvalue())
+            payload = json.loads(output.getvalue())
+            entries = payload["entries"]
+            self.assertIn("next_command", payload)
             self.record_hotspot(job_path, focus="机器人走进汽车制造现场")
         self.assertEqual(["机器人进入产线"], [entry["event_focus"] for entry in entries])
 
@@ -282,6 +348,68 @@ class PipelineJobTests(unittest.TestCase):
         self.assertEqual("myth_bust", job["article_shape"]["structure_id"])
         self.assertEqual("myth_bust", history["topics"][-1]["structure_id"])
 
+    def test_shape_auto_generates_valid_shape_and_respects_overrides(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            job_path = self.init_job(tmp, topic=None)
+            now = datetime.now(timezone.utc)
+            history_path = Path(tmp) / "work/a/topic-history.json"
+            # 近 5 篇把 5 种 ending 全部用满：手工选型必死锁，--auto 必须仍能给出合法 shape
+            endings = ["duty_point", "unresolved", "actionable_question", "hook_return", "brief_approval"]
+            openings = ["emotion_sting", "contrast", "myth", "scene", "judgment_first"]
+            history_path.write_text(json.dumps({
+                "version": 2, "account": "a", "topics": [
+                    {
+                        "topic": f"t{i}", "event_focus": f"e{i}",
+                        "selected_at": (now - timedelta(hours=i + 1)).isoformat(),
+                        "structure_id": "conflict" if i < 2 else "felt_essay",
+                        "opening_type": openings[i],
+                        "ending_type": endings[i],
+                        "tension_type": "demo_vs_deploy",
+                        "heading_count": 4, "body_band": "mid",
+                    }
+                    for i in range(5)
+                ],
+            }, ensure_ascii=False), encoding="utf-8")
+            self.record_hotspot(job_path)
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                pipeline_job.cmd_shape(pipeline_job.build_parser().parse_args([
+                    "shape", "--job", str(job_path), "--auto",
+                ]))
+            shape = json.loads(out.getvalue())
+            # 同 run_id 重跑结果确定（覆盖历史条目后再跑一次仍一致）
+            out2 = io.StringIO()
+            with contextlib.redirect_stdout(out2):
+                pipeline_job.cmd_shape(pipeline_job.build_parser().parse_args([
+                    "shape", "--job", str(job_path), "--auto",
+                ]))
+            shape_again = json.loads(out2.getvalue())
+            # 显式字段覆盖自动选择
+            out3 = io.StringIO()
+            with contextlib.redirect_stdout(out3):
+                pipeline_job.cmd_shape(pipeline_job.build_parser().parse_args([
+                    "shape", "--job", str(job_path), "--auto",
+                    "--structure-id", "tech_explain",
+                ]))
+            overridden = json.loads(out3.getvalue())
+        self.assertIn(shape["structure_id"], pipeline_job.STRUCTURE_IDS)
+        self.assertIn(shape["opening_type"], pipeline_job.OPENING_TYPES)
+        self.assertIn(shape["ending_type"], pipeline_job.ENDING_TYPES)
+        self.assertIn(shape["tension_type"], pipeline_job.TENSION_TYPES)
+        self.assertIn(shape["body_band"], pipeline_job.BODY_BANDS)
+        self.assertTrue(2 <= shape["heading_count"] <= 5)
+        self.assertEqual(shape, shape_again)
+        self.assertEqual("tech_explain", overridden["structure_id"])
+
+    def test_shape_manual_missing_required_fields_gives_actionable_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            job_path = self.init_job(tmp, topic=None)
+            self.record_hotspot(job_path)
+            with self.assertRaisesRegex(pipeline_job.JobError, "structure_id"):
+                pipeline_job.cmd_shape(pipeline_job.build_parser().parse_args([
+                    "shape", "--job", str(job_path),
+                ]))
+
     def test_stage_requires_running_before_humanize_or_illustrations_complete(self):
         with tempfile.TemporaryDirectory() as tmp:
             job_path = self.init_job(tmp)
@@ -307,8 +435,30 @@ class PipelineJobTests(unittest.TestCase):
                 pipeline_job.cmd_choose_theme(args)
         self.assertEqual(running["started_at"], completed["started_at"])
         self.assertGreaterEqual(completed["duration_ms"], 0)
-        self.assertEqual("moyu-green", first.getvalue().strip())
+        # 主题的单一真相源是 render_article.py 的 THEMES，不再扫 references/theme-*.md 文件名。
+        self.assertIn(first.getvalue().strip(), pipeline_job.registered_themes())
+        # 由 run_id 派生：重复调用必然同一套（恢复时不换皮），跨 run_id 才轮换。
         self.assertEqual(first.getvalue(), second.getvalue())
+
+    def test_choose_theme_is_derived_from_run_id_not_theme_index(self):
+        themes = pipeline_job.registered_themes()
+        self.assertEqual(sorted(themes), sorted(set(themes)))
+        self.assertGreaterEqual(len(themes), 2)
+        picks = set()
+        for _ in range(24):
+            # 每轮独立工作区：init 每次生成新的随机 run_id，主题据此派生。
+            with tempfile.TemporaryDirectory() as tmp:
+                job_path = self.init_job(tmp)
+                args = pipeline_job.build_parser().parse_args(
+                    ["choose-theme", "--job", str(job_path)]
+                )
+                out = io.StringIO()
+                with contextlib.redirect_stdout(out):
+                    pipeline_job.cmd_choose_theme(args)
+                picks.add(out.getvalue().strip())
+        self.assertTrue(picks <= set(themes), picks)
+        # 24 个不同 run_id 不该全落在同一套主题上，否则「跨文章轮换」就失效了。
+        self.assertGreater(len(picks), 1, picks)
 
     def test_gate_accepts_zero_images_and_rejects_pending_images(self):
         with tempfile.TemporaryDirectory() as tmp:

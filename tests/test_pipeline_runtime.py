@@ -284,6 +284,124 @@ class PipelineRuntimeTests(unittest.TestCase):
         self.assertEqual("completed", current["stages"]["draft"]["status"])
         self.assertEqual("run-test-1", current["stages"]["draft"]["details"]["run_id"])
 
+    def test_begin_outputs_writing_contract(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            job_path = self.make_job(tmp)
+            job = pipeline_runtime.pipeline_job.load_job(job_path)
+            job["article_shape"] = {
+                "structure_id": "industry_game", "opening_type": "myth",
+                "ending_type": "actionable_question", "heading_count": 5,
+                "body_band": "long",
+            }
+            pipeline_runtime.pipeline_job.save_job(job_path, job)
+            result = pipeline_runtime.cmd_begin(self.args(job_path))
+        contract = result["writing_contract"]
+        self.assertEqual("article.md", contract["output_file"])
+        self.assertIn("32", contract["title"])
+        self.assertIn("1500", contract["body_chars"])
+        self.assertIn("2600—4000", contract["body_chars"])
+        self.assertEqual("industry_game", contract["shape"]["structure_id"])
+
+    def test_check_reports_all_problems_without_state_change(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            job_path = self.make_job(tmp)
+            (job_path.parent / "article.md").write_text(
+                "# 这个标题实在是太长了完全彻底超过了三十二个字的硬性限制肯定过不了关卡\n\n"
+                "太短。\n\n![图](../escape.png)\n![图](imgs/miss.png)\n【插入示意图】\n",
+                encoding="utf-8",
+            )
+            result = pipeline_runtime.cmd_check(self.args(job_path))
+            job_after = pipeline_runtime.pipeline_job.load_job(job_path)
+        self.assertEqual("fail", result["status"])
+        joined = "；".join(result["problems"])
+        self.assertIn("标题", joined)
+        self.assertIn("正文", joined)
+        self.assertIn("越界", joined)
+        self.assertIn("占位符", joined)
+        self.assertTrue(any("miss.png" in h for h in result["hints"]))
+        self.assertEqual("pending", job_after["stages"]["write"]["status"])
+
+    def test_check_passes_valid_article_with_digest_hint(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            job_path = self.make_job(tmp)
+            self.write_article(job_path)
+            result = pipeline_runtime.cmd_check(self.args(job_path))
+        self.assertEqual("ok", result["status"])
+        self.assertTrue(any("digest" in h for h in result["hints"]))
+
+    def test_check_hands_out_a_runnable_cover_fallback_command(self):
+        """封面是 finish 硬门禁：缺封面时必须给出可直接执行的离线兜底命令。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            job_path = self.make_job(tmp)
+            self.write_article(job_path)
+            result = pipeline_runtime.cmd_check(self.args(job_path))
+        cover_hints = [h for h in result["hints"] if "封面" in h]
+        self.assertEqual(1, len(cover_hints))
+        hint = cover_hints[0]
+        self.assertIn("render_cover_fallback.py", hint)
+        self.assertIn("--seed", hint)
+        self.assertIn("--output", hint)
+        self.assertIn("cover/cover.png", hint)
+        self.assertEqual("ok", result["status"])
+
+    def test_check_stays_silent_when_cover_is_ready(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            job_path = self.make_job(tmp)
+            self.write_article(job_path)
+            cover = job_path.parent / "cover" / "cover.png"
+            cover.parent.mkdir(parents=True, exist_ok=True)
+            cover.write_bytes(b"\x89PNG\r\n\x1a\n" + b"0" * 2048)
+            result = pipeline_runtime.cmd_check(self.args(job_path))
+        self.assertFalse([h for h in result["hints"] if "封面" in h])
+
+    def test_publish_draft_passes_optional_digest(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            job_path = self.make_job(tmp)
+            self.write_article(job_path)
+            job, artifacts = pipeline_runtime.job_paths(job_path)
+            artifacts["html"].write_text("<section>正文</section>", encoding="utf-8")
+            (job_path.parent / "digest.txt").write_text(
+                "一句话摘要钩子\n第二行会被合并  " + "长" * 80, encoding="utf-8"
+            )
+            result = {
+                "account": "a", "action": "draft", "run_id": "run-test-1",
+                "draft_media_id": "new-draft",
+            }
+            with mock.patch.object(
+                pipeline_runtime, "run_json", return_value=result
+            ) as run_json:
+                pipeline_runtime.publish_draft(
+                    self.args(job_path), job, artifacts,
+                    pipeline_runtime.command_roots(job), False,
+                    ROOT / "wechat-accounts.json",
+                )
+            command = run_json.call_args[0][0]
+        self.assertIn("--digest", command)
+        digest = command[command.index("--digest") + 1]
+        self.assertTrue(digest.startswith("一句话摘要钩子 第二行会被合并"))
+        self.assertLessEqual(len(digest), 64)
+
+    def test_publish_draft_without_digest_file_omits_flag(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            job_path = self.make_job(tmp)
+            self.write_article(job_path)
+            job, artifacts = pipeline_runtime.job_paths(job_path)
+            artifacts["html"].write_text("<section>正文</section>", encoding="utf-8")
+            result = {
+                "account": "a", "action": "draft", "run_id": "run-test-1",
+                "draft_media_id": "new-draft",
+            }
+            with mock.patch.object(
+                pipeline_runtime, "run_json", return_value=result
+            ) as run_json:
+                pipeline_runtime.publish_draft(
+                    self.args(job_path), job, artifacts,
+                    pipeline_runtime.command_roots(job), False,
+                    ROOT / "wechat-accounts.json",
+                )
+            command = run_json.call_args[0][0]
+        self.assertNotIn("--digest", command)
+
     def test_finish_file_lock_serializes_same_job(self):
         with tempfile.TemporaryDirectory() as tmp:
             job_path = self.make_job(tmp)

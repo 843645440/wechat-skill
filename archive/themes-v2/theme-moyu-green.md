@@ -417,7 +417,7 @@
 
 ### 9a. quote-box（灰色虚线引用框）
 
-所有引用、补充说明的**默认组件**（虚线框是本主题的风格特征，仅此组件与 9b 保留 dashed）：
+所有引用、补充说明的**默认组件**（虚线框是本主题的风格特征，仅此组件与 9b 保留 dashed；lint-allow: dashed）：
 
 ```html
 <section style="background:#F9FAFB;border:1px dashed #D1D5DB;border-radius:8px;padding:12px 16px;margin-bottom:24px;text-align:justify;">
@@ -795,7 +795,7 @@
 ```html
 <section style="background:radial-gradient(circle at center,#F9FAFB 0%,#FFFFFF 100%);border:1px solid #E5E7EB;border-radius:16px;padding:32px 20px;text-align:center;box-shadow:0 4px 12px rgba(0,0,0,0.03);margin:0 0 24px;">
   <p style="font-size:13px;font-weight:bold;color:#111827;margin-bottom:20px;line-height:1.6;">
-    <span leaf="">既然看到这里了，如果觉得有用，随手点个赞、在看、转发三连吧。</span>
+    <span leaf="">既然看到这里了，如果觉得有用，随手点个赞、在看、转发三连；顺手关注，下篇不错过。</span>
   </p>
   <section style="display:flex;justify-content:center;gap:24px;margin-bottom:16px;">
     <section style="text-align:center;cursor:pointer;color:#4B5563;">

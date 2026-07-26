@@ -9,9 +9,10 @@
 | `wechat-skill` | 根 Skill：已有文章排版、HTML 校验、多账号草稿上传 |
 | `wechat-tech-insight-writer` | 科技、AI、产业、企业和民生深度写作 |
 | `wechat-inline-visuals` | 从正文提取信息，由固定渲染器一次生成同主题正文与原生 HTML 模块 |
-| `wechat-html-cover` | 用编辑报刊风或动态字构风 HTML/CSS 模板生成确定性封面 PNG |
-| `wechat-content-pipeline` | 联网选热点并编排全部阶段，最终创建草稿 |
-| `baoyu-*`、`agnes-image-gen` | 可选独立图片能力；完整流水线不会调用 |
+| `wechat-html-cover` | 单独调用时用 HTML/CSS 模板生成确定性封面 PNG（流水线已改用生图 API 封面） |
+| `wechat-content-pipeline` | 按用户 brief 编排写作、humanize、配图、封面、排版并创建草稿（默认不自动选题） |
+| `humanizer-zh` | 写后去 AI 味一轮改写，保留强情感声口 |
+| `baoyu-*`、`agnes-image-gen` | 流水线的正文配图与封面生图后端；也可单独调用 |
 
 ## 2. 安装和加载
 
@@ -43,7 +44,7 @@ export WECHAT_B_APP_ID='公众号 B 的 AppID'
 export WECHAT_B_APP_SECRET='公众号 B 的 AppSecret'
 ```
 
-封面渲染器会自动查找 Chrome、Chromium 或 Playwright Chromium。只有自动发现失败时才设置：
+仅单独使用 `wechat-html-cover` 时需要浏览器（流水线封面走生图 API，不需要）。封面渲染器会自动查找 Chrome、Chromium 或 Playwright Chromium。只有自动发现失败时才设置：
 
 ```bash
 export WECHAT_COVER_BROWSER='/path/to/chrome-or-chromium'
@@ -76,29 +77,25 @@ python3 scripts/wechat_publish.py --config wechat-accounts.json send \
   --cover cover.png --action draft --dry-run
 ```
 
-## 4. 完整自动工作流
+## 4. 完整工作流（用户命题）
 
-不提供选题时，对 Agent 说：
+提供主题与思路后，对 Agent 说：
 
-> 使用 `$wechat-content-pipeline` 为 A 账号运行完整流程。联网发现最新可靠的科技热点，自动选择最佳方案，完成写作、事实核验、随机主题排版、同主题原生信息模块和封面，并自动发送到 A 账号草稿箱，不等待人工确认。
-
-提供明确选题时：
-
-> 使用 `$wechat-content-pipeline` 为 B 账号写一篇“AI 如何改变基层客服工作”的文章，完成全部流程并发送到 B 账号草稿箱。
+> 使用 `$wechat-content-pipeline` 为 B 账号写一篇“AI 如何改变基层客服工作”的文章，思路：……，完成全部流程并发送到 B 账号草稿箱。
 
 完整流程固定为：
 
-1. 使用给定选题，或由 Agent 联网比较最新热点并直接选择一个最佳结果。
-2. 写作、来源记录和事实核验。
-3. 随机选择注册主题，从正文提取 0—3 个观点、比较、流程或已核验数据。
-4. 固定渲染器一次完成正文排版和同主题信息模块；模块失败立即降级为纯正文，不重试。
-5. 自动生成合法封面规格，用固定 HTML/CSS 在 45 秒硬超时内生成唯一封面 PNG。
-6. 严格校验公众号 HTML。
-7. 自动创建指定账号草稿，到此结束。
+1. 接收用户 brief（主题 + 思路，硬门禁；缺失则追问，不联网找题）。
+2. `shape --auto` 按轮换计划自动锁定本篇结构（防同质，永不死锁；显式字段可覆盖）。
+3. `begin` 输出 `writing_contract` 硬门禁卡片 → 写作 `article.md`（第一人称强情感，忠实 brief，1500—4000 字）+ `digest.txt` 摘要 → `check` 自检到 ok。
+4. `humanizer-zh` 一轮去 AI 味改写（默认 strong）。
+5. 正文配图 0—3 张（用户已给图优先；生图失败可无图继续）。
+6. 封面按降级链取第一个可用的写入 `cover/cover.png`：用户图 → 生图 API → 离线兜底渲染（`render_cover_fallback.py`，纯 Python，无需 Key 与浏览器）→ 账号默认封面素材。
+7. `prepare` 轻量门禁（标题、字数、图数、路径安全）+ 固定随机主题；`finish` 完成排版并创建指定账号草稿，到此结束。
 
-云端 Agent 必须使用固定入口：`pipeline_job.py init/topic/show` 和 `pipeline_runtime.py begin/prepare/finish`。不得为某篇文章临时写排版脚本、封面 JSON 或视觉检测循环。`finish` 默认创建草稿；只有开发验证时才使用 `--dry-run`。
+云端 Agent 必须使用固定入口：`pipeline_job.py init/topic/history/shape/stage/show` 和 `pipeline_runtime.py begin/check/prepare/finish`。不得为某篇文章临时写排版脚本或视觉检测循环。`finish` 默认创建草稿；只有开发验证时才使用 `--dry-run`。
 
-正文阶段不创建 PNG、SVG 或截图，不调用生图 API，不做 AI 视觉检测，也不上传正文视觉素材。流水线不会公开发布；人工审核发生在微信公众号草稿箱。
+流水线不会公开发布；人工审核发生在微信公众号草稿箱。自动热点发现已默认关闭，仅当账号档案显式开启且用户要求时才可用。
 
 ## 5. 命题生产（推荐用法）
 
@@ -144,17 +141,27 @@ work/a/current/
 work/b/current/
 ```
 
-产物包括 `article.md`、`sources.md`、`inline-visuals.json`、`article.html`、`article_preview.html`、`cover/cover.spec.json`、`cover/cover.html`、`cover/cover.png` 和 `draft-result.json`。新任务覆盖同账号上一轮临时产物；微信草稿箱不受影响。
+产物包括 `article.md`、`imgs/`、`prompts/`、`cover/cover.png`、`article.html` 和 `draft-result.json`。每次 `init` 生成新的 `run_id`；同账号同日可多篇。微信草稿箱不受影响。
 
 ## 8. 常见阻塞
 
-- **没有可靠热点**：本轮停止，不使用旧闻或传闻凑稿。
-- **原生模块计划校验失败**：自动降级为空计划并保留纯正文，不重试、不补造事实。
-- **找不到浏览器**：安装 Chrome/Chromium，或设置 `WECHAT_COVER_BROWSER`；只影响封面。
-- **封面生成失败或超过 45 秒**：终止浏览器；同一命令最多技术性重试一次，有永久封面则降级使用，没有封面则不创建草稿。
+- **缺主题或思路**：流水线停止并追问，不联网找题凑稿。
+- **字数不在 1500—4000**：`prepare` 拒绝；补真实内容或删冗余，禁止注水。
+- **正文图失败**：单图重试一次，仍失败则跳过；全部失败按无图文章继续，不阻塞草稿。
+- **没有生图 API / 没有浏览器**：不是阻塞。跑离线兜底封面：
+
+  ```bash
+  python3 .agents/skills/wechat-content-pipeline/scripts/render_cover_fallback.py \
+    --title '封面文案|第二行' --highlight '关键数字' --kicker '账号名' \
+    --seed "$RUN_ID" --output work/a/current/cover/cover.png
+  ```
+
+  需要一款中文字体；都找不到时设置 `WECHAT_COVER_FONT=<字体文件绝对路径>`。
+- **封面生成失败**：四档后端全不可用时，只有配置了账号默认 `thumb_media_id` 才能继续。
 - **公众号接口报错**：检查接口权限、IP 白名单、AppID/AppSecret 和账号别名。
-- **HTML 校验失败**：运行 `python3 scripts/validate_gzh_html.py article.html`，修到 ERROR 和 WARNING 都为零。
+- **草稿结果不确定（timeout/EOF）**：标记 `uncertain`，人工核对草稿箱，不自动重发。
 - **出现作者占位符**：流水线会阻止上传；填写真实作者或删除署名组件。
+- **单独排版任务 HTML 校验失败**：运行 `python3 scripts/validate_gzh_html.py article.html`，修到 ERROR 和 WARNING 都为零（此校验用于根 Skill 手动排版；流水线内为轻量检查）。
 
 开发或修改 Skill 后运行：
 

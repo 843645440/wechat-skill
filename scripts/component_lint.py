@@ -37,7 +37,12 @@ CHECKS = [
 
 # 四周虚线框：border: ... dashed（不含方向，如 border-left dashed 不算）
 FOURSIDE_DASHED = re.compile(r"border\s*:\s*[^;{}]*dashed", re.I)
-CENTERED = re.compile(r"text-align\s*:\s*center", re.I)
+# 居中：text-align:center 或 flex 主/交叉轴居中（占位/素材类组件的常见写法）
+CENTERED = re.compile(
+    r"text-align\s*:\s*center|justify-content\s*:\s*center|align-items\s*:\s*center", re.I)
+# 主题库可在组件块前的说明文字里写 `lint-allow: dashed`，
+# 声明该组件的虚线框是主题风格特征（如摸鱼绿 quote-box），豁免 WARN
+ALLOW_DASHED = re.compile(r"lint-allow\s*[:：]\s*dashed", re.I)
 
 
 def lint_file(path):
@@ -56,10 +61,13 @@ def lint_file(path):
         for rx, level, msg in CHECKS:
             if rx.search(html):
                 add(level, msg)
-        # 四周虚线框：正文强调勿用；居中块视为"占位/素材"组件，豁免
-        if FOURSIDE_DASHED.search(html) and not CENTERED.search(html):
+        # 四周虚线框：正文强调勿用；居中块视为"占位/素材"组件，豁免；
+        # 组件块前 300 字符内声明 lint-allow: dashed（主题风格特征）也豁免
+        context_before = text[max(0, m.start() - 300):m.start()]
+        if (FOURSIDE_DASHED.search(html) and not CENTERED.search(html)
+                and not ALLOW_DASHED.search(context_before)):
             add("WARN", "四周虚线框 border:…dashed（正文强调请用左竖条；"
-                        "仅居中的素材占位块可用 dashed）")
+                        "仅居中的素材占位块或主题库声明 lint-allow: dashed 的风格组件可用）")
     return name, found
 
 

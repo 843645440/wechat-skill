@@ -25,6 +25,9 @@ node_modules/
 .env.*
 !.env.example
 
+# 本地凭证目录：AppSecret、生图 Key、素材 ID，绝不入库
+/secrets/
+
 # 预览图托管在 GitHub Release，不入库
 docs/screenshots/
 *.png

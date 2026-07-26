@@ -17,7 +17,9 @@ git pull --ff-only
 git stash pop
 ```
 
-## 标题与封面规格
+## 标题与封面规格（历史：仅单独用 wechat-html-cover 时相关）
+
+> 流水线封面已改生图 API（见 `ai-cover-generation.md`），本节与下面的 Chromium/Playwright 小节只在单独调用 `wechat-html-cover` 时适用。
 
 在正文 HTML 生成前运行 `build_cover_spec.py --article ...`，自动验证最终标题：
 
@@ -62,8 +64,8 @@ Agent 不手写分行或高亮。若标题超过 32 字，只修改一次 `artic
 
 - 正文原生 HTML 模块：只生成一次计划。校验或插入失败时立即覆盖为当前主题空计划，以纯正文继续；不修字段、不再生成、不重试。
 - 封面：生图 API 产物；不调用 AI 视觉检测，不做审美重绘；HTML 封面已停用。
-- 浏览器渲染：单次硬超时 45 秒；超时或技术故障时原命令最多重试一次，随后使用默认封面或由门禁停止。
-- 微信草稿 API：瞬时 TLS EOF、连接重置、超时或 5xx 最多重试一次；成功后立刻停止。
+- 封面生图：失败最多重试两次；仍失败仅当有默认 `thumb_media_id` 可 `skipped` 继续。
+- 微信草稿 API（`draft/add`，非幂等）：**timeout、EOF、连接重置或响应不完整一律不自动重试**，标记 `outcome=uncertain` 并停止，人工核对草稿箱（见 `draft-idempotency-and-path-safety.md`）。只有能证明请求尚未发出的 preflight 错误才可修复后在同一 `run_id` 重试。
 - 每个阶段只有产物真实存在且机械校验通过后，才能标记 `completed`。
 
 ## 最终一致性检查

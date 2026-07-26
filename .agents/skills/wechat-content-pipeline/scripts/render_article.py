@@ -26,20 +26,6 @@ THEMES = {
         "underline": "border-bottom:2px solid #FECACA;font-weight:600;",
         "radius": "10px", "shadow": "0 4px 18px rgba(220,38,38,0.10)",
     },
-    "graphite-minimal": {
-        "layout": "graphite", "name": "石墨极简", "paper": "#FFFFFF",
-        "ink": "#27272A", "body": "#52525B", "muted": "#A1A1AA",
-        "accent": "#52525B", "soft": "#FAFAFA", "line": "#E4E4E7",
-        "underline": "border-bottom:2px solid #52525B;font-weight:600;",
-        "radius": "0", "shadow": "none",
-    },
-    "zen-whitespace": {
-        "layout": "zen", "name": "留白禅意", "paper": "#FFFFFF",
-        "ink": "#2B2B2B", "body": "#525252", "muted": "#A3A3A3",
-        "accent": "#4A5D52", "soft": "#FAFCFA", "line": "#E8E8E8",
-        "underline": "border-bottom:1.5px solid #B5C8BC;font-weight:500;",
-        "radius": "0", "shadow": "none",
-    },
     "moyu-ticket": {
         "layout": "ticket", "name": "摸鱼票据", "paper": "#FFFFFF",
         "ink": "#1A1A1A", "body": "#555555", "muted": "#888888",
@@ -89,6 +75,24 @@ def plain_text(value):
 def leaf(value, style=""):
     style_attr = f' style="{style}"' if style else ""
     return f'<span leaf=""{style_attr}>{html.escape(str(value), quote=True)}</span>'
+
+
+def code_leaf(value):
+    """Escape one code line and lock in significant whitespace as &nbsp;.
+
+    WeChat's paste pipeline collapses runs of literal spaces, which would
+    destroy indentation and column alignment in code blocks. Leading spaces
+    and any interior run of 2+ spaces are converted to non-breaking spaces
+    (real, non-collapsible characters) after escaping so entities like
+    ``&nbsp;`` are not themselves re-escaped. Single interior spaces are left
+    alone so long lines can still wrap at a word boundary.
+    """
+    escaped = html.escape(str(value), quote=True)
+    escaped = re.sub(r"^ +", lambda match: "&nbsp;" * len(match.group(0)), escaped)
+    escaped = re.sub(r"  +", lambda match: "&nbsp;" * len(match.group(0)), escaped)
+    if not escaped:
+        escaped = "&nbsp;"
+    return f'<span leaf="">{escaped}</span>'
 
 
 def render_inline(value, theme):
@@ -211,6 +215,24 @@ def parse_article(source):
                 "raw_rows": rows_raw,
             })
             continue
+        elif line.startswith("```"):
+            flush_paragraph()
+            flush_bullets()
+            lang = line[3:].strip()
+            index += 1
+            code_lines = []
+            while index < len(lines) and lines[index].strip() != "```":
+                code_lines.append(lines[index])
+                index += 1
+            if index < len(lines):
+                index += 1  # skip the closing fence
+            # Unclosed fence: falls through with index == len(lines), i.e. the
+            # rest of the file is treated as the code block's content — no
+            # exception, no infinite loop.
+            sections[-1]["blocks"].append({
+                "kind": "code", "lang": lang, "code": "\n".join(code_lines),
+            })
+            continue
         elif image := IMAGE_RE.match(line):
             flush_paragraph()
             flush_bullets()
@@ -308,21 +330,11 @@ def render_hero(title, intro, theme):
             f'<p style="font-size:13px;color:#65675E;margin:0;line-height:1.8;">{intro_html}</p></section>'
             f'<section style="background:#1E1F23;padding:10px 22px;"><p style="margin:0;font-size:11px;color:#FFFFFF;font-weight:600;">{leaf("技术进步，最终要落到真实工作与生活")}</p></section></section>'
         )
-    if layout == "editorial":
-        return (
-            '<section style="margin:10px 10px 34px;background:#FFFFFF;border-radius:12px;box-shadow:0 4px 24px -4px rgba(220,38,38,0.15);padding:26px 22px;">'
-            f'<p style="font-size:42px;color:#DC2626;font-weight:900;margin:0;line-height:0.65;">{leaf("“")}</p>'
-            f'<p style="font-size:16px;font-weight:750;color:#1C1917;margin:12px 0 0;line-height:1.8;">{intro_html}</p></section>'
-        )
-    if layout == "graphite":
-        return (
-            '<section style="margin:10px 10px 40px;padding:30px 22px 24px;border-top:1px solid #E4E4E7;border-bottom:1px solid #E4E4E7;background:#FFFFFF;">'
-            f'<p style="font-size:10px;color:#A1A1AA;letter-spacing:3px;margin:0 0 16px;">{leaf("QUOTE")}</p>'
-            f'<p style="font-size:18px;font-weight:700;color:#27272A;margin:0;line-height:1.75;">{intro_html}</p></section>'
-        )
+    # editorial（也是未知 layout 的防御性兜底；argparse 已限定 THEMES 内取值）
     return (
-        '<section style="margin:32px 16px 48px;padding:38px 22px;border-top:1px solid #E8E8E8;border-bottom:1px solid #E8E8E8;text-align:center;">'
-        f'<p style="font-family:Georgia,\'Times New Roman\',serif;font-size:19px;font-weight:600;color:#2B2B2B;margin:0;line-height:1.9;letter-spacing:0.8px;">{intro_html}</p></section>'
+        '<section style="margin:10px 10px 34px;background:#FFFFFF;border-radius:12px;box-shadow:0 4px 24px -4px rgba(220,38,38,0.15);padding:26px 22px;">'
+        f'<p style="font-size:42px;color:#DC2626;font-weight:900;margin:0;line-height:0.65;">{leaf("“")}</p>'
+        f'<p style="font-size:16px;font-weight:750;color:#1C1917;margin:12px 0 0;line-height:1.8;">{intro_html}</p></section>'
     )
 
 
@@ -331,7 +343,7 @@ def render_toc(headings, theme):
     if len(items) < 2:
         return ""
     layout = theme["layout"]
-    label = "本文脉络" if layout == "zen" else "本文看点"
+    label = "本文看点"
     cards = []
     for index, heading in enumerate(items, 1):
         if layout == "editorial":
@@ -339,12 +351,6 @@ def render_toc(headings, theme):
                 f'<section style="flex:1;background:#FEF2F2;border:1px solid #FEE2E2;border-radius:9px;padding:14px 10px;text-align:center;">'
                 f'<p style="display:inline-block;background:#DC2626;color:#FFFFFF;font-size:11px;font-weight:800;padding:2px 9px;border-radius:4px;margin:0 0 7px;">{leaf(f"{index:02d}")}</p>'
                 f'<p style="font-size:12px;font-weight:700;color:#1C1917;margin:0;line-height:1.5;">{leaf(heading)}</p></section>'
-            )
-        elif layout in {"graphite", "zen"}:
-            card = (
-                f'<section style="flex:1;background:{theme["soft"]};border-top:1px solid {theme["line"]};padding:16px 10px;">'
-                f'<p style="font-size:10px;color:{theme["accent"]};font-weight:600;margin:0 0 7px;letter-spacing:1px;">{leaf(f"{index:02d}")}</p>'
-                f'<p style="font-size:12px;font-weight:650;color:{theme["ink"]};margin:0;line-height:1.5;">{leaf(heading)}</p></section>'
             )
         else:
             card = (
@@ -369,20 +375,6 @@ def render_heading(heading, index, total, theme):
             f'<p style="background:#DC2626;color:#FFFFFF;font-size:17px;font-weight:900;padding:4px 13px;border-radius:6px;margin:0 13px 0 0;">{leaf(number)}</p>'
             f'<section><p style="font-size:9px;color:#DC2626;font-weight:700;letter-spacing:3px;margin:0 0 2px;">{leaf(tag)}</p>'
             f'<p style="font-size:18px;font-weight:800;color:#1C1917;margin:0;line-height:1.45;">{leaf(heading)}</p></section></section>'
-        )
-    if layout == "graphite":
-        return (
-            '<section style="margin:54px 10px 25px;padding-bottom:18px;border-bottom:1px solid #E4E4E7;">'
-            f'<p style="font-size:42px;font-weight:900;color:#E4E4E7;margin:0;line-height:0.9;letter-spacing:-2px;">{leaf(number)}</p>'
-            f'<p style="font-size:9px;color:#A1A1AA;letter-spacing:3px;margin:10px 0 4px;">{leaf(tag)}</p>'
-            f'<p style="font-size:19px;font-weight:800;color:#27272A;margin:0;line-height:1.45;">{leaf(heading)}</p></section>'
-        )
-    if layout == "zen":
-        return (
-            '<section style="margin:60px 16px 30px;">'
-            f'<p style="font-size:9px;color:#4A5D52;font-weight:600;letter-spacing:4px;margin:0 0 10px;">{leaf(f"{number} · {tag}")}</p>'
-            f'<p style="font-family:Georgia,\'Times New Roman\',serif;font-size:22px;font-weight:700;color:#2B2B2B;margin:0 0 15px;line-height:1.45;">{leaf(heading)}</p>'
-            f'<section style="width:40px;height:2px;background:#4A5D52;">{leaf(" ")}</section></section>'
         )
     if layout == "ticket":
         return (
@@ -494,10 +486,48 @@ def render_table(block, theme):
     )
 
 
+def render_code(block, theme):
+    """Fenced code block (```lang ... ```) → WeChat-safe literal rendering.
+
+    Constraints that shape this markup (visual spec originally from
+    archive/themes-v2/common-components.md §1, adapted here to use theme colors
+    instead of the doc's hardcoded palette; this function is now authoritative):
+    - WeChat strips <pre>/class, so everything is inline style on <section>.
+    - white-space:pre is unreliable after paste, so each source line becomes
+      its own block-level <p style="margin:0">, not one <pre> blob.
+    - Leading/aligning spaces are converted to &nbsp; by code_leaf() because
+      plain spaces collapse in the editor.
+    - No inline markdown parsing runs over code content — lines go through
+      code_leaf() (escape + whitespace lock) only, so **/==/`` etc. stay
+      literal.
+    """
+    mono = "'SF Mono',Consolas,Monaco,monospace"
+    lang = (block.get("lang") or "").strip()
+    lines = block["code"].split("\n")
+    header = ""
+    if lang:
+        header = (
+            f'<section style="padding:9px 14px;border-bottom:1px solid {theme["line"]};">'
+            f'<span style="font-size:12px;color:{theme["muted"]};font-family:{mono};'
+            f'letter-spacing:1px;">{leaf(lang)}</span></section>'
+        )
+    body = "".join(
+        f'<p style="margin:0;font-family:{mono};font-size:13px;line-height:1.6;'
+        f'color:{theme["ink"]};">{code_leaf(raw.expandtabs(4))}</p>'
+        for raw in lines
+    )
+    return (
+        f'<section style="margin:24px 12px;border-radius:{theme["radius"]};overflow:hidden;'
+        f'background:{theme["soft"]};border:1px solid {theme["line"]};'
+        f'border-left:3px solid {theme["accent"]};">'
+        f'{header}<section style="padding:11px 14px;">{body}</section></section>'
+    )
+
+
 def render_block(block, theme):
     kind = block["kind"]
     if kind == "paragraph":
-        side = "16px" if theme["layout"] == "zen" else "14px"
+        side = "14px"
         size = "14px" if theme["layout"] in {"magazine", "ticket"} else "15px"
         return (
             f'<p style="margin:0 {side} 21px;font-size:{size};line-height:1.9;letter-spacing:0.15px;text-align:justify;color:{theme["body"]};">'
@@ -529,6 +559,8 @@ def render_block(block, theme):
         )
     if kind == "table":
         return render_table(block, theme)
+    if kind == "code":
+        return render_code(block, theme)
     if kind == "image":
         src = html.escape(block["src"], quote=True)
         alt = html.escape(block["alt"], quote=True)
@@ -559,6 +591,8 @@ def module_map(plan, sections):
                     haystack = normalized(" ".join(values))
                 elif block["kind"] == "list":
                     haystack = normalized(" ".join(block["items"]))
+                elif block["kind"] == "code":
+                    haystack = normalized(block["code"])
                 else:
                     haystack = normalized(block["text"])
                 if anchor in haystack:
@@ -570,6 +604,40 @@ def module_map(plan, sections):
             raise RenderError("两个信息模块不能使用同一插入位置")
         anchors[match] = module
     return anchors
+
+
+def render_follow_cta(theme):
+    """文末留存钩子：完读肯定 + 在看/转发 + 关注。所有主题共用文案，按主题取色。"""
+    layout = theme["layout"]
+    accent = theme["accent"]
+    if layout == "journal":
+        container = (f'margin:44px 8px 0;background:{theme["ink"]};'
+                     f'border-radius:{theme["radius"]};padding:18px 20px;')
+        label_color, text_color, lead_color = theme["line"], "#EDEEE8", "#FFFFFF"
+    elif layout == "ticket":
+        container = (f'margin:44px 12px 0;background:{theme["soft"]};'
+                     f'border:2px solid {theme["ink"]};padding:16px 18px;')
+        label_color, text_color, lead_color = accent, theme["body"], theme["ink"]
+    else:
+        container = (f'margin:44px 12px 0;background:{theme["soft"]};'
+                     f'border-radius:{theme["radius"]};border-left:4px solid {accent};'
+                     f'padding:18px 18px;')
+        label_color, text_color, lead_color = accent, theme["body"], theme["ink"]
+    emphasis = f'font-weight:800;color:{accent};'
+    return (
+        f'<section style="{container}">'
+        f'<p style="margin:0 0 10px;font-size:11px;font-weight:800;letter-spacing:3px;'
+        f'color:{label_color};">{leaf("写在最后")}</p>'
+        f'<p style="margin:0 0 8px;font-size:14px;line-height:1.85;color:{text_color};">'
+        f'{leaf("看到这儿，说明你把它读完了。这类文章能走多远，只取决于两件事：你的")}'
+        f'<span style="{emphasis}">{leaf("在看")}</span>{leaf("和")}'
+        f'<span style="{emphasis}">{leaf("转发")}</span>{leaf("。")}</p>'
+        f'<p style="margin:0;font-size:14px;line-height:1.85;font-weight:700;'
+        f'color:{lead_color};">{leaf("顺手")}'
+        f'<span style="{emphasis}">{leaf("关注")}</span>'
+        f'{leaf("并设为星标，下一篇更新第一时间见。")}</p>'
+        f'</section>'
+    )
 
 
 def render_end(theme):
@@ -620,6 +688,7 @@ def render_document(title, sections, plan_or_theme, theme=None):
             module = anchors.get((section_index, block_index))
             if module:
                 output.append(render_module(module, theme))
+    output.append(render_follow_cta(theme))
     output.append(render_end(theme))
     output.append("</section>")
     return "".join(output)

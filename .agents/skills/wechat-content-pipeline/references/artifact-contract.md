@@ -8,11 +8,10 @@
 work/<account>/current/
 ├── job.json
 ├── article.md
+├── digest.txt        # 可选：≤50 字摘要（分享卡副标题）；缺失时微信自动截正文
 ├── imgs/
 ├── prompts/
 ├── cover/
-│   ├── cover.spec.json
-│   ├── cover.html
 │   └── cover.png
 ├── article.html
 └── draft-result.json
@@ -29,7 +28,7 @@ work/<account>/current/
 3. `humanize`：用 `humanizer-zh` 一轮改写，默认 strong；保留强情感与结构差异。
 4. `format`：固定随机主题并生成 `article.html`（由 finish 执行）。
 5. `illustrations`：0—3 张正文图；失败可 `skipped`。
-6. `cover`：**生图 API** 写入 `cover/cover.png`（不再 HTML 截图）；失败且无默认 thumb 则失败。
+6. `cover`：写入 `cover/cover.png`（不再 HTML 截图）；按降级链 用户图 → 生图 API → `render_cover_fallback.py` 离线渲染 → 账号默认 thumb，全不可用才失败。
 7. `draft`：创建指定账号草稿。
 
 状态只使用 `pending`、`running`、`completed`、`failed`、`skipped`。`humanize` 和 `illustrations` 完成前必须先标记 `running`。每个阶段记录真实 `started_at`、`completed_at` 和 `duration_ms`。
@@ -50,4 +49,4 @@ work/<account>/current/
 
 正文允许 0—3 张图。缺失或损坏图片可删除对应引用/HTML 标签后继续；路径越界、微信认证失败、有效图片上传失败仍是硬错误。图片上传时以真实文件字节和解码结果决定 MIME 与文件名，不依赖扩展名。
 
-封面不使用正文图降级规则：显式封面必须是可解码且声明格式一致的有效图片；封面生成失败时只允许回退到当前账号已配置的默认 `thumb_media_id`。
+封面同样按真实字节识别格式（`cover.png` 内含 JPEG/WebP 字节合法，上传时自动规范化扩展名与 MIME），但必须可完整解码；与正文图的区别在于**不可跳过**——封面生成失败时只允许回退到当前账号已配置的默认 `thumb_media_id`。

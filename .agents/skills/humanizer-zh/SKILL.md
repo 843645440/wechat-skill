@@ -5,14 +5,6 @@ description: |
   基于维基百科的"AI 写作特征"综合指南。检测并修复以下模式：夸大的象征意义、
   宣传性语言、以 -ing 结尾的肤浅分析、模糊的归因、破折号过度使用、三段式法则、
   AI 词汇、否定式排比、过多的连接性短语。
-allowed-tools:
-  - Read
-  - Write
-  - Edit
-  - AskUserQuestion
-metadata:
-  trigger: 编辑或审阅文本，去除 AI 写作痕迹
-  source: 翻译自 blader/humanizer，参考 hardikpandya/stop-slop
 ---
 
 # Humanizer-zh: 去除 AI 写作痕迹
@@ -490,11 +482,12 @@ metadata:
 被公众号流水线调用时：
 
 1. 输入输出都是任务目录里的 `article.md`（就地覆盖）。
-2. 只改写一轮；不改 `sources.md`。
+2. 只改写一轮；不改 `article.md` 之外的任何产物。
 3. 遵守 `references/wechat-pipeline-constraints.md` 与流水线 `humanize-pass.md`：事实不新增；字数 1500—4000；保留标题层级。
 4. **目标声口 = 懂行者第一人称 + 强情感**（烦/发紧/兴奋/无力/讽刺），情绪钉在机制上；消灭汇报体与中立简报腔。
 5. 允许加强「我很烦/我发紧/说真的」；禁止虚构亲历与伪访谈。
-6. 不要把改写说明写进 `article.md`。
+6. 「删除金句」只删空洞排比与海报腔；**钉在机制/数据上的锋利判断句是文章的可转发资产，保留并可打磨，不得抹平**；各小节结尾的留人勾子（未解问题/后文才给的答案）同样保留。
+7. 不要把改写说明写进 `article.md`。
 
 
 ---
@@ -502,7 +495,8 @@ metadata:
 ## 在 wechat-skill monorepo 中的位置
 
 - 本目录为 `op7418/Humanizer-zh` 的 vendored 副本，随 wechat-skill 一并分发。
-- 上游：https://github.com/op7418/Humanizer-zh
+- 上游：https://github.com/op7418/Humanizer-zh（源头翻译自 blader/humanizer，参考 hardikpandya/stop-slop）
+- 触发场景：编辑或审阅文本，去除 AI 写作痕迹。
 - 被 `wechat-content-pipeline` 在写后、`prepare` 前调用；默认 **intensity=strong**，声口为强情感主观，见 `../wechat-content-pipeline/references/humanize-pass.md`。
 - 更新策略：同步上游时保留「不编造经历」；**不要**把声口退回中立 briefing。
 

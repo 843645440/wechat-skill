@@ -529,7 +529,9 @@
   <p style="margin-bottom:20px;font-size:15px;line-height:1.8;text-align:justify;">
     <span leaf="">如果你觉得今天这篇有收获，欢迎</span>
     <strong style="color:#DC2626;"><span leaf="">点赞、在看、转发</span></strong>
-    <span leaf="">三连，我们下篇见。</span>
+    <span leaf="">三连；顺手</span>
+    <strong style="color:#DC2626;"><span leaf="">关注</span></strong>
+    <span leaf="">，下篇更新第一时间见。</span>
   </p>
 </section>
 ```

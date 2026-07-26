@@ -65,7 +65,9 @@ class SimplifiedPipelineTests(unittest.TestCase):
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
             pipeline_job.cmd_init(pipeline_job.build_parser().parse_args(argv))
-        return Path(output.getvalue().strip())
+        # stdout 第一行永远是纯 job_path（向后兼容）；后面追加的 job_contract JSON
+        # 不影响这里只取第一行。
+        return Path(output.getvalue().splitlines()[0])
 
     def record_hotspot(self, job_path, published_at, focus, value="机器人进入汽车工厂"):
         args = pipeline_job.build_parser().parse_args([
@@ -135,7 +137,7 @@ class SimplifiedPipelineTests(unittest.TestCase):
             ])
             with contextlib.redirect_stdout(output):
                 pipeline_job.cmd_history(args)
-            history = json.loads(output.getvalue())
+            history = json.loads(output.getvalue())["entries"]
             self.assertEqual("WAIC机器人进入汽车产线", history[0]["event_focus"])
             self.record_hotspot(
                 second, now, "WAIC机器人进入汽车制造流程", "WAIC机器人走进制造现场"

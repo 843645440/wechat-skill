@@ -1,6 +1,8 @@
-# Tavily 热点发现（流水线 discover）
+# Tavily 热点发现（流水线 discover）· 仅例外路径
 
-本机默认网页后端可为 Tavily（见 Hermes `web.backend` / `.env` 的 `TAVILY_API_KEY`）。公众号无主题日更时按此用。
+> 自动热点已**默认关闭**（主路径为用户 brief）。仅当账号档案 `topic_discovery.enabled=true` 且用户明确要求自动选题时才可用本文；`sources.md` 已从契约删除，来源核对在写作时依据真实联网资料完成，不再落盘。
+
+本机默认网页后端可为 Tavily（见 Hermes `web.backend` / `.env` 的 `TAVILY_API_KEY`）。
 
 ## 何时用
 
@@ -30,7 +32,7 @@
 对 1–3 个候选 URL `web_extract`：
 
 - 只采用正文中的数字、日期、职务与引述
-- 界面新闻等转载页若带广告免责，仍以文中普华永道等机构表述为准，并在 `sources.md` 标明转述来源与日期
+- 界面新闻等转载页若带广告免责，仍以文中普华永道等机构表述为准，写作时注明转述来源与日期
 - 素材不够 1500 字可核验信息 → 换题，不注水
 
 ## 双 key（运维）

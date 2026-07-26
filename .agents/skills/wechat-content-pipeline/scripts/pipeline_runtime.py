@@ -14,6 +14,7 @@ import io
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -241,13 +242,151 @@ def resolve_config(value, project_root):
     return path.resolve()
 
 
+BAND_CHAR_HINTS = {
+    "short": "约 1500—1900 字",
+    "mid": "约 1900—2600 字",
+    "long": "约 2600—4000 字",
+}
+
+
+def writing_contract(job):
+    """把写作硬门禁压缩成一张机器可读的卡片，弱模型照抄执行，不必翻文档。"""
+    shape = job.get("article_shape", {})
+    band = shape.get("body_band")
+    return {
+        "output_file": "article.md",
+        "title": "唯一一级标题 # ，≤32 字；刺点放前 16 字；禁周报体/通稿体",
+        "body_chars": f"可读字符 {MIN_BODY_CHARS}—{MAX_BODY_CHARS}"
+        + (f"（本篇目标 {BAND_CHAR_HINTS[band]}）" if band in BAND_CHAR_HINTS else ""),
+        "voice": "第一人称「我」+ 强情感；情绪钉在机制/事实上；禁编造亲历、人物、数据",
+        "faithful": "忠实用户 brief：不换题、不反转结论、must_avoid 禁区不碰、关键数字全保留",
+        "shape": shape,
+        "shape_note": "shape 只保证轮换合法，不懂题材。felt_sense / tension_type 与本题"
+        "明显相悖时（判决、事故写成「振奋」这类），先跑 "
+        "pipeline_job.py shape --auto --felt-sense <情绪> --tension-type <矛盾> 覆盖再写",
+        "sections": f"用 {shape.get('heading_count', '3—5')} 个 ## 小节；"
+        "每节结尾留一个未解勾子；全文至少 1 句可转发的判断句",
+        "images": "正文图 0—3 张，路径必须在工作区内（imgs/xx）；有说明才写 alt",
+        "digest": "另写一句 ≤50 字摘要到 digest.txt（分享卡副标题，补标题第二钩子，不复述标题）",
+        "after_write": [
+            "pipeline_runtime.py check --job <job.json>  # 写完先自检，错误按提示改",
+            "pipeline_job.py stage --name humanize --status running → 一轮 strong 去 AI 味改写 → --status completed --detail intensity=strong",
+            "配图/封面就位后：pipeline_runtime.py prepare → finish",
+        ],
+    }
+
+
 def cmd_begin(args):
     job, _ = job_paths(args.job)
     if job["stages"]["discover"]["status"] != "completed":
         raise RuntimeFailure("必须先确定并记录选题")
     if job["stages"]["write"]["status"] not in ("running", "completed"):
         mark(args.job, "write", "running", "开始写作")
-    return {"status": "ok", "next": "write-content", "job": str(args.job)}
+    return {
+        "status": "ok",
+        "next": "write-content",
+        "job": str(args.job),
+        "writing_contract": writing_contract(job),
+    }
+
+
+DEFAULT_PROFILES = "config/wechat-content-profiles.json"
+
+
+def account_label(job):
+    """账号显示名，用于封面眉标；读不到就退回账号别名。"""
+    try:
+        roots = command_roots(job)
+        _, profiles = pipeline_job.load_profiles(str(roots["project"]), DEFAULT_PROFILES)
+        label = (profiles.get(job["account"]) or {}).get("label")
+    except Exception:
+        label = None
+    return label or job["account"]
+
+
+def cover_fallback_command(job, artifacts, titles):
+    """离线封面兜底的可执行命令行：弱模型照抄即可，不需要判断后端。"""
+    roots = command_roots(job)
+    script = roots["pipeline"] / "scripts" / "render_cover_fallback.py"
+    title = " ".join(titles[0].split()) if titles else (job.get("topic") or {}).get("value", "")
+    return " ".join([
+        "python3", shlex.quote(str(script)),
+        "--title", shlex.quote(title or "本期文章"),
+        "--kicker", shlex.quote(account_label(job)),
+        "--seed", shlex.quote(job["run_id"]),
+        "--output", shlex.quote(str(artifacts["cover"])),
+    ])
+
+
+def cmd_check(args):
+    """写作后自检：一次列出全部问题与修法，不改任何状态（弱模型的早失败护栏）。"""
+    job, artifacts = job_paths(args.job)
+    problems = []
+    hints = []
+    article_path = artifacts["article"]
+    if not article_path.is_file():
+        return {
+            "status": "fail",
+            "problems": ["缺少 article.md：先按 begin 输出的 writing_contract 写正文"],
+        }
+    article = article_path.read_text(encoding="utf-8")
+    titles = TITLE_RE.findall(article)
+    if len(titles) != 1:
+        problems.append(
+            f"一级标题数量为 {len(titles)}，必须恰好 1 个（`# 标题` 开头，其余用 ##）"
+        )
+    else:
+        title = " ".join(titles[0].split())
+        if len(title) > 32:
+            problems.append(
+                f"标题 {len(title)} 字超过 32：压缩到 32 字内，保留前 16 字的刺点"
+            )
+    body_chars = count_body_chars(article)
+    if body_chars < MIN_BODY_CHARS:
+        problems.append(
+            f"正文 {body_chars} 字 < {MIN_BODY_CHARS}：补真实机制/人群/成本细节，禁止注水"
+        )
+    elif body_chars > MAX_BODY_CHARS:
+        problems.append(f"正文 {body_chars} 字 > {MAX_BODY_CHARS}：删冗余段落")
+    refs = MARKDOWN_IMAGE_RE.findall(article)
+    if len(refs) > 3:
+        problems.append(f"正文图 {len(refs)} 张 > 3：删到 3 张以内")
+    job_dir = article_path.parent.resolve()
+    for ref in refs:
+        image_path = (job_dir / ref).resolve()
+        if image_path != job_dir and job_dir not in image_path.parents:
+            problems.append(f"图片路径越界：{ref}（必须在工作区内，如 imgs/01.jpg）")
+        elif not image_path.is_file():
+            hints.append(f"图片引用未落盘：{ref}（prepare 会自动删除该引用）")
+    placeholder = pipeline_job.PLACEHOLDER_RE.search(article)
+    if placeholder:
+        problems.append(f"存在未替换占位符：{placeholder.group(0)}")
+    digest_path = article_path.parent / "digest.txt"
+    if not digest_path.is_file():
+        hints.append("建议补 digest.txt（一句 ≤50 字摘要，分享卡副标题）")
+    else:
+        digest = " ".join(digest_path.read_text(encoding="utf-8").split())
+        if len(digest) > 64:
+            hints.append(f"digest.txt {len(digest)} 字过长，将被截断到 64 字")
+    if job["stages"]["humanize"]["status"] != "completed":
+        hints.append(
+            "humanize 未完成：改写前后用 stage --name humanize --status running/completed 记账"
+        )
+    if not _cover_file_usable(artifacts["cover"]):
+        hints.append(
+            "封面尚未就位（finish 硬门禁）。有生图能力就按 ai-cover-generation.md 生成；"
+            "没有生图 API 也没有浏览器时，直接跑这条离线兜底："
+            + cover_fallback_command(job, artifacts, titles)
+        )
+    return {
+        "status": "fail" if problems else "ok",
+        "body_chars": body_chars,
+        "image_refs": len(refs),
+        "problems": problems,
+        "hints": hints,
+        "next": "修复 problems 后重跑 check；全部通过后走 humanize → prepare → finish"
+        if problems else "humanize（若未做）→ prepare → finish",
+    }
 
 
 def cmd_prepare(args):
@@ -276,7 +415,9 @@ def _cmd_prepare(args):
     return {
         "status": "ok", "next": "finish", "title": title,
         "theme": theme,
-        "cover_backend": "image_generate",
+        "cover_backend": (job["stages"]["cover"].get("details") or {}).get(
+            "backend", "image_generate"
+        ),
         "image_count": image_count,
         "body_chars": count_body_chars(artifacts["article"].read_text(encoding="utf-8")),
     }
@@ -381,6 +522,19 @@ def lightweight_gate(job_path):
         pipeline_job.cmd_gate(gate_args)
 
 
+def read_digest(artifacts):
+    """可选摘要：工作区 digest.txt 的第一段非空文本，截断到微信上限 64 字。
+
+    摘要显示在分享卡片与部分列表页，是标题之外的第二打开钩子；
+    缺失时微信自动截取正文开头，允许无摘要继续，不作门禁。
+    """
+    digest_path = artifacts["article"].parent / "digest.txt"
+    if not digest_path.is_file():
+        return ""
+    text = " ".join(digest_path.read_text(encoding="utf-8").split())
+    return text[:64]
+
+
 def publish_draft(args, job, artifacts, roots, generated_cover, config_path):
     command = [
         sys.executable,
@@ -393,6 +547,9 @@ def publish_draft(args, job, artifacts, roots, generated_cover, config_path):
         "--run-id", job["run_id"],
         "--result-file", str(artifacts["draft_result"]),
     ]
+    digest = read_digest(artifacts)
+    if digest:
+        command.extend(("--digest", digest))
     if generated_cover:
         command.extend(("--cover", str(artifacts["cover"])))
     if args.dry_run:
@@ -536,8 +693,10 @@ def build_parser():
         description="公众号流水线固定运行器；禁止用临时脚本替代"
     )
     sub = parser.add_subparsers(dest="command", required=True)
-    begin = sub.add_parser("begin", help="在 Agent 写作前启动计时")
+    begin = sub.add_parser("begin", help="在 Agent 写作前启动计时并输出写作契约卡")
     begin.add_argument("--job", required=True)
+    check = sub.add_parser("check", help="写作后自检：列出全部问题与修法，不改状态")
+    check.add_argument("--job", required=True)
     prepare = sub.add_parser("prepare", help="核验正文、固定主题并等待唯一信息计划")
     prepare.add_argument("--job", required=True)
     finish = sub.add_parser("finish", help="一次完成排版、验收生图封面、校验和草稿")
@@ -558,6 +717,7 @@ def main():
     try:
         result = {
             "begin": cmd_begin,
+            "check": cmd_check,
             "prepare": cmd_prepare,
             "finish": cmd_finish,
         }[args.command](args)

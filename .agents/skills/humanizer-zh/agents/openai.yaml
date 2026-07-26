@@ -1,0 +1,4 @@
+interface:
+  display_name: "中文去 AI 写作痕迹"
+  short_description: "去除文本中的 AI 生成痕迹，保留强情感声口"
+  default_prompt: "使用 $humanizer-zh 就地改写 article.md 一轮：去除 AI 套话与报告腔，保留并加强第一人称与具体情绪，不新增事实、亲历或数据，字数保持 1500—4000。"

@@ -1,12 +1,40 @@
-# 生图 API 封面（品牌可识别 · 无完整商标图）
+# 封面（品牌可识别 · 无完整商标图）
 
-流水线**不再调用** `wechat-html-cover` / Chrome 截图。封面由 Agent 在 `prepare` 前用**当前环境生图能力**生成，写入：
+流水线**不再调用** `wechat-html-cover` / Chrome 截图。封面由 Agent 在 `prepare` 前写入：
 
 ```text
 work/<account>/current/cover/cover.png
 ```
 
 （可为 PNG/JPEG/WebP 字节；扩展名可仍用 `cover.png`，finish 按魔数识别。）
+
+## 后端降级链（按顺序取第一个可用的，不要卡住）
+
+| 顺序 | 后端 | 前置条件 | 记账 detail |
+|---|---|---|---|
+| 1 | 用户提供的封面图 | brief 给了封面路径 | `backend=user_provided` |
+| 2 | 生图 API（Agnes / 当前 runtime 的 image_generate） | 有 `AGNES_API_KEY` 或 runtime 自带生图 | `backend=image_generate` |
+| 3 | **离线兜底渲染**（本仓库自带，纯 Pillow） | 有 Python + 一款中文字体 | `backend=offline_render` |
+| 4 | 账号默认 `thumb_media_id` | 配了 `WECHAT_<X>_THUMB_MEDIA_ID` | `backend=account_default` |
+
+**没有生图能力不是阻塞理由。** 运行环境没有 `AGNES_API_KEY`、也没有可用浏览器时，直接走第 3 档：
+
+```bash
+python3 <PIPELINE_ROOT>/scripts/render_cover_fallback.py \
+  --title "<封面文案，可比标题更短；`|` 强制换行>" \
+  --highlight "<要用强调色的片段，如 26万>" \
+  --subtitle "<可选，一句副标>" \
+  --kicker "<账号名>" \
+  --seed "<run_id>" \
+  --output <WORK_DIR>/cover/cover.png
+```
+
+- 输出 1440×810 PNG，配色由 `--seed` 确定（同 run_id 可复跑、连续多篇不撞色）。
+- 字体自动查找 PingFang / 冬青黑 / 华文黑体 / Noto CJK；都没有时报错并提示设置 `WECHAT_COVER_FONT`。
+- `--dry-run` 只检查字体与参数，不写文件。
+- 它遵守同一条品牌规则：**只排文字与色块，不画任何商标图形**。
+
+`pipeline_runtime.py check` 在封面缺失时会直接把这条命令拼好放进 `hints`，照抄执行即可。
 
 ## 在流水线中的位置
 
@@ -18,12 +46,11 @@ write → humanize → illustrations(baoyu分析+自有后端出图) → cover(�
 python3 <PIPELINE_ROOT>/scripts/pipeline_job.py stage \
   --job <WORK_DIR>/job.json --name cover --status running
 
-# 生图后端：当前 runtime 可用的 image_generate / Imagine / Agnes 等
-# 提示词写入 prompts/cover.txt；输出 cover/cover.png
+# 走降级链取第一个可用后端；生图时提示词写入 prompts/cover.txt，输出 cover/cover.png
 
 python3 <PIPELINE_ROOT>/scripts/pipeline_job.py stage \
   --job <WORK_DIR>/job.json --name cover --status completed \
-  --detail 'backend=image_generate;brand=<主体名>;visual_check=none'
+  --detail 'backend=<image_generate|offline_render|user_provided>;brand=<主体名>;visual_check=none'
 ```
 
 ## 不做视觉校验（硬）

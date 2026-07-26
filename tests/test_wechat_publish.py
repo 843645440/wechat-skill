@@ -176,13 +176,33 @@ class PublishTests(unittest.TestCase):
         self.assertEqual("mismatch.png", filename)
         self.assertEqual("image/png", content_type)
 
-    def test_cover_image_still_rejects_mismatched_extension(self):
+    def test_read_image_default_strict_still_rejects_mismatched_extension(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = os.path.join(tmp, "mismatch.jpg")
             with open(path, "wb") as f:
                 f.write(self.PNG_1X1)
             with self.assertRaisesRegex(wp.PublishError, "格式.*不一致"):
                 wp.read_image(path, tmp, allow_outside=True)
+
+    def test_cover_accepts_real_bytes_with_wrong_extension(self):
+        """cover.png 内含 PNG 之外的合法字节时按真实格式规范化上传（对齐 ai-cover-generation 契约）。"""
+
+        class CoverClient(FakeClient):
+            def upload_cover(self, filename, data, content_type):
+                self.uploads.append((filename, data, content_type))
+                return "thumb-media-id"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "cover.jpg")  # 扩展名 jpg，内容 PNG
+            with open(path, "wb") as f:
+                f.write(self.PNG_1X1)
+            client = CoverClient()
+            args = Namespace(cover=path)
+            thumb = wp.resolve_thumb({}, args, client)
+        self.assertEqual("thumb-media-id", thumb)
+        filename, _, content_type = client.uploads[0]
+        self.assertEqual("cover.png", filename)
+        self.assertEqual("image/png", content_type)
 
     def test_bad_content_image_is_removed_but_good_image_uploads(self):
         with tempfile.TemporaryDirectory() as tmp:

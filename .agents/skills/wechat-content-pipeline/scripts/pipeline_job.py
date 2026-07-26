@@ -3,14 +3,22 @@
 
 import argparse
 import datetime as dt
+import hashlib
 import json
 import os
+import random
 import re
 import secrets
+import shlex
 import shutil
 import sys
 from urllib.parse import urlparse
 
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+# Skill 根目录（scripts/ 的上一级），与 pipeline_runtime.py 的 command_roots()["pipeline"] 一致；
+# 用绝对路径拼后续命令，弱模型不必自己算「向上三级」。
+PIPELINE_ROOT = os.path.dirname(SCRIPT_DIR)
 
 STAGES = (
     "discover",
@@ -23,10 +31,6 @@ STAGES = (
 )
 STATUSES = ("pending", "running", "completed", "failed", "skipped")
 ACCOUNT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$")
-THEME_RE = re.compile(r"references/theme-([a-z0-9][a-z0-9-]*)\.md")
-THEME_SECTION_RE = re.compile(
-    r"^## 已注册主题\s*$\n(?P<body>.*?)(?=^## |\Z)", re.MULTILINE | re.DOTALL
-)
 PLACEHOLDER_RE = re.compile(r"\{\{[^{}]+\}\}|【(?:插入|待补|待填写)[^】]*】")
 TOPIC_HISTORY_VERSION = 2
 TOPIC_HISTORY_MAX_ENTRIES = 100
@@ -82,6 +86,30 @@ SHAPE_KEYS = (
     "tension_type",
     "heading_count",
     "body_band",
+)
+
+# 谁负责把这个阶段往前推：agent 手动 stage 记账，还是 pipeline_runtime.py 自动设置。
+# 供 init/topic/shape/stage/show 的 job_contract 直接展示，弱模型不必去 artifact-contract.md 查表。
+STAGE_OWNERS = {
+    "discover": "agent：topic 命令写入选题",
+    "write": "pipeline_runtime.py begin（标记 running）/ prepare（标记 completed）",
+    "humanize": "agent：stage --name humanize --status running → 改写 → --status completed",
+    "illustrations": "agent：配图或用户图就绪后 stage --name illustrations --status completed/skipped",
+    "format": "pipeline_runtime.py finish 自动固定主题并排版",
+    "cover": "agent 生成/放置 cover/cover.png，pipeline_runtime.py finish 验收",
+    "draft": "pipeline_runtime.py finish 自动创建公众号草稿",
+}
+
+# 写作正文字数硬门禁的展示副本；唯一数字来源是 pipeline_runtime.py 的 MIN/MAX_BODY_CHARS，
+# 这里只用于 job_contract 里给账号档案摘要提供参考区间，两边改动需同步。
+JOB_MIN_BODY_CHARS = 1500
+JOB_MAX_BODY_CHARS = 4000
+
+# 防御性脱敏：账号内容档案本不应包含凭证（AppID/AppSecret/token 存在 wechat-accounts.json，
+# 且只存环境变量名），但仍递归剔除任何形似凭证的字段名，防止未来误加字段后被 init 打到 stdout。
+CREDENTIAL_KEY_RE = re.compile(
+    r"secret|token|app[_-]?id|access[_-]?token|api[_-]?key|apikey|password|passwd|media_id",
+    re.IGNORECASE,
 )
 
 
@@ -222,12 +250,25 @@ def compute_rotation_plan(entries):
         sid for sid, count in structure_counts.items() if count >= 2
     )
     recent_structures = [e.get("structure_id") for e in last3 if e.get("structure_id")]
-    blocked_openings = sorted({
-        e.get("opening_type") for e in last5 if e.get("opening_type")
-    })
-    blocked_endings = sorted({
-        e.get("ending_type") for e in last5 if e.get("ending_type")
-    })
+    def rotation_block(values_5, values_3, pool):
+        """近5篇不重复；若把整个池都堵死（如 ending 池恰好 5 种、近 5 篇各用一种），
+        自动收缩到近3篇窗口，保证永远至少有一个合法选项，避免生产死锁。"""
+        blocked = sorted({v for v in values_5 if v})
+        if all(option in blocked for option in pool):
+            blocked = sorted({v for v in values_3 if v})
+        return blocked
+
+    # opening 的可用池不含 date_announce（不推荐）：非 date 选项全被堵死时即视为耗尽
+    blocked_openings = rotation_block(
+        [e.get("opening_type") for e in last5],
+        [e.get("opening_type") for e in last3],
+        [o for o in OPENING_TYPES if o != "date_announce"],
+    )
+    blocked_endings = rotation_block(
+        [e.get("ending_type") for e in last5],
+        [e.get("ending_type") for e in last3],
+        ENDING_TYPES,
+    )
     tension_counts = {}
     for entry in last5:
         tid = entry.get("tension_type")
@@ -245,7 +286,11 @@ def compute_rotation_plan(entries):
         preferred_structures = [
             sid for sid in STRUCTURE_IDS if sid not in blocked_structures
         ]
-    preferred_openings = [o for o in OPENING_TYPES if o not in blocked_openings and o != "date_announce"]
+    preferred_openings = [
+        o for o in OPENING_TYPES if o not in blocked_openings and o != "date_announce"
+    ]
+    if not preferred_openings:
+        preferred_openings = ["date_announce"]
     preferred_endings = [e for e in ENDING_TYPES if e not in blocked_endings]
     return {
         "window": {
@@ -255,8 +300,8 @@ def compute_rotation_plan(entries):
         },
         "rules": {
             "structure_id": "近7篇同一 structure_id 最多2次；且尽量避开近3篇已用",
-            "opening_type": "近5篇 opening_type 不得重复；慎用 date_announce",
-            "ending_type": "近5篇 ending_type 不得重复",
+            "opening_type": "近5篇 opening_type 不得重复（池将耗尽时自动放宽为近3篇）；慎用 date_announce",
+            "ending_type": "近5篇 ending_type 不得重复（池将耗尽时自动放宽为近3篇）",
             "tension_type": "近5篇同一 tension_type 最多2次",
             "felt_sense": "近3篇主情绪尽量不雷同",
             "heading_count": "2–5 轮换，禁止连三篇相同个数",
@@ -326,6 +371,61 @@ def validate_shape_against_history(entries, shape, *, enforce=True):
     if enforce and errors:
         raise JobError("；".join(errors))
     return errors
+
+
+# --auto 的候选主情绪池（与账号 allowed_emotions 气质兼容的通用短词）
+FELT_SENSE_POOL = ("烦", "发紧", "不安", "无力", "讽刺", "谨慎的兴奋", "振奋", "欣慰")
+
+
+def auto_shape_from_history(entries, run_id, overrides=None):
+    """按轮换计划确定性生成一个合法 shape（弱模型免选型）。
+
+    同一 run_id 结果稳定可复跑；显式传入的字段优先于自动选择。
+    所有选择都来自 preferred/allowed 列表，构造即合法。
+    """
+    plan = compute_rotation_plan(entries)
+    rng = random.Random(str(run_id))
+    overrides = {k: v for k, v in (overrides or {}).items() if v}
+
+    structures = plan["preferred_structures"] or [
+        s for s in STRUCTURE_IDS if s not in plan["blocked_structures"]
+    ] or list(STRUCTURE_IDS)
+    openings = plan["preferred_openings"] or ["date_announce"]
+    endings = plan["preferred_endings"] or list(ENDING_TYPES)
+    tensions = [
+        t for t in TENSION_TYPES if t not in plan["blocked_tensions"]
+    ] or list(TENSION_TYPES)
+    felts = [f for f in FELT_SENSE_POOL if f not in plan["recent_felt_senses"]] \
+        or list(FELT_SENSE_POOL)
+
+    timed = sorted(
+        (e for e in entries if isinstance(e, dict)),
+        key=lambda e: e.get("selected_at") or "",
+        reverse=True,
+    )
+    last_heads = [
+        e.get("heading_count") for e in timed[:2]
+        if e.get("heading_count") is not None
+    ]
+    heads = [h for h in (3, 4, 5) if not (
+        len(last_heads) >= 2 and last_heads[0] == last_heads[1] == h
+    )]
+    last_band = next(
+        (e.get("body_band") for e in timed if e.get("body_band")), None
+    )
+    bands = [b for b in BODY_BANDS if b != last_band] or list(BODY_BANDS)
+
+    shape = {
+        "structure_id": rng.choice(structures),
+        "opening_type": rng.choice(openings),
+        "ending_type": rng.choice(endings),
+        "felt_sense": rng.choice(felts),
+        "tension_type": rng.choice(tensions),
+        "heading_count": rng.choice(heads),
+        "body_band": rng.choice(bands),
+    }
+    shape.update(overrides)
+    return shape
 
 
 def parse_shape_from_args(args):
@@ -469,6 +569,224 @@ def load_profiles(project_root, value):
     return os.path.abspath(path), profiles
 
 
+def _scrub_credentials(value):
+    """递归剔除任何形似凭证的字段，值一律替换为 ***redacted***，键名不变。"""
+    if isinstance(value, dict):
+        return {
+            key: ("***redacted***" if isinstance(key, str) and CREDENTIAL_KEY_RE.search(key)
+                  else _scrub_credentials(item))
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_scrub_credentials(item) for item in value]
+    return value
+
+
+def safe_profile_summary(profile):
+    """账号内容偏好摘要：只白名单摘录内容类字段（声口/受众/配图封面偏好），
+    供 init 直接打印，agent 不必再读 references/account-profiles.md。
+
+    账号内容档案（config/wechat-content-profiles.json）本身按约定不存凭证——
+    AppID/AppSecret/token 只存在 wechat-accounts.json 且只存环境变量名——
+    这里仍白名单 + 二次脱敏，防止未来误加字段。字段缺失时静默跳过，不抛异常。
+    """
+    profile = profile or {}
+    illustrations = profile.get("illustrations") or {}
+    cover = profile.get("cover") or {}
+    topic_discovery = profile.get("topic_discovery") or {}
+    voice = profile.get("voice") or {}
+    voice_summary = {
+        key: voice[key]
+        for key in (
+            "tone", "emotion_level", "narrator", "title_style",
+            "allowed_emotions", "banned_title_patterns", "signature_moves",
+        )
+        if key in voice
+    }
+    summary = {
+        "label": profile.get("label") or "",
+        "audience": profile.get("audience") or "",
+        "input_mode": profile.get("input_mode") or "",
+        "writer_instructions": profile.get("writer_instructions") or "",
+        "voice": voice_summary,
+        "body_chars_range": f"{JOB_MIN_BODY_CHARS}-{JOB_MAX_BODY_CHARS}",
+        "illustrations": {
+            "enabled": illustrations.get("enabled", False),
+            "backend": illustrations.get("backend", ""),
+            "max_images": illustrations.get("max_images", 0),
+        },
+        "cover": {
+            "backend": cover.get("backend", ""),
+            "aspect": cover.get("aspect", ""),
+        },
+        "auto_topic_discovery_enabled": topic_discovery.get("enabled", False),
+        "publishing_target": (profile.get("publishing") or {}).get("target", ""),
+    }
+    if not summary["writer_instructions"]:
+        summary["hint"] = "账号档案缺少 writer_instructions；写作前仍需人工确认声口偏好"
+    if not voice_summary:
+        summary.setdefault("hint", "账号档案缺少 voice 细则；按 writer_instructions 与安全默认声口写作")
+    return _scrub_credentials(summary)
+
+
+def _script_command(job_path, script_name, subcommand, *extra):
+    """拼出可直接复制执行的固定入口命令，job_path 用绝对路径，弱模型不必自己拼路径。"""
+    parts = [
+        "python3",
+        shlex.quote(os.path.join(PIPELINE_ROOT, "scripts", script_name)),
+        subcommand,
+        "--job",
+        shlex.quote(os.path.abspath(str(job_path))),
+    ]
+    parts.extend(shlex.quote(str(item)) for item in extra)
+    return " ".join(parts)
+
+
+def job_script_command(job_path, subcommand, *extra):
+    return _script_command(job_path, "pipeline_job.py", subcommand, *extra)
+
+
+def inline_images_command(job):
+    """正文配图的唯一入口：一条命令跑完「用户图优先 → 生图 → 生不出就不配图」。
+
+    退出码恒为 0，stdout 一行 JSON 给出 status/backend，agent 照它记账即可，
+    不需要自己分析文章、挑插图位或构造 prompt。
+    """
+    # 注意键名是 job_dir，不是 work_dir——后者只是 job_contract 对外展示时用的名字。
+    job_dir = os.path.abspath(job["job_dir"])
+    artifacts = job.get("artifacts", {})
+    return " ".join([
+        "python3",
+        shlex.quote(os.path.join(PIPELINE_ROOT, "scripts", "gen_inline_images.py")),
+        "--article",
+        shlex.quote(os.path.join(job_dir, artifacts.get("article", "article.md"))),
+        "--imgs-dir",
+        shlex.quote(os.path.join(job_dir, artifacts.get("illustrations", "imgs"))),
+        "--seed", shlex.quote(str(job.get("run_id", ""))),
+    ])
+
+
+def runtime_script_command(job_path, subcommand, *extra):
+    return _script_command(job_path, "pipeline_runtime.py", subcommand, *extra)
+
+
+def suggest_next_command(job, job_path):
+    """给出下一条该跑的完整命令：init 之后每个子命令的 stdout 都靠它形成不读文档的命令链。
+
+    只依据 job.json 已记录的状态推断，和 pipeline_runtime.py 里 begin → check → humanize
+    → illustrations → prepare → finish 的固定顺序一致；agent 手动记账的阶段只有
+    humanize 和 illustrations，其余阶段由 pipeline_runtime.py 自动设置（见 STAGE_OWNERS）。
+    """
+    stages = job["stages"]
+    draft = stages["draft"]
+    if draft["status"] == "completed":
+        return "本轮已完成：draft 已 completed，用 show 核对 draft-result.json 后结束本轮"
+    if draft["status"] == "failed":
+        if draft.get("details", {}).get("outcome") == "uncertain":
+            return (
+                "draft 结果不确定：先人工核对微信公众号草稿箱，确认后把 draft 阶段"
+                "重置为 pending，再重跑 finish；禁止自动重发"
+            )
+        return runtime_script_command(job_path, "finish") + "  # 上次 finish 失败，处理报错原因后重试"
+    # init 已经把 --topic 写进 job["topic"]，所以不能只看 topic 有没有值，否则整个
+    # topic 步骤会被跳过、event_focus 永远为空。以 event_focus 是否落定为准。
+    if not job.get("event_focus"):
+        brief_path = os.path.join(os.path.abspath(job["job_dir"]), "user-brief.md")
+        prefix = ""
+        if not os.path.exists(brief_path):
+            prefix = (
+                f"先把用户 brief 落盘到 {brief_path}"
+                "（主题 + 大致思路，格式见 references/user-brief.md），再跑："
+            )
+        return prefix + job_script_command(
+            job_path, "topic",
+            "--value", str(job.get("topic") or "<用户主题，原样填入>"),
+            "--source", "provided",
+            "--event-focus", "<一句话核心，从 brief 提炼>",
+        )
+    if not job.get("article_shape"):
+        return job_script_command(job_path, "shape", "--auto")
+    write_status = stages["write"]["status"]
+    if write_status == "pending":
+        return runtime_script_command(job_path, "begin")
+    if write_status == "completed":
+        return runtime_script_command(job_path, "finish")
+    # write == running：按 humanize → illustrations → prepare 的固定顺序推进
+    if stages["humanize"]["status"] == "pending":
+        return (
+            runtime_script_command(job_path, "check")
+            + "  # 写完先自检；通过后 stage --name humanize --status running"
+        )
+    if stages["humanize"]["status"] == "running":
+        return job_script_command(
+            job_path, "stage", "--name", "humanize", "--status", "completed",
+            "--detail", "intensity=strong",
+        )
+    if stages["illustrations"]["status"] == "pending":
+        return (
+            inline_images_command(job)
+            + "  # 退出码恒为 0；照它输出的 JSON 记账："
+            + "status=completed 时 stage --name illustrations --status completed"
+            + " --detail backend=<user_provided|image_generate>，"
+            + "status=skipped 时 --status skipped --detail reason=<JSON 里的 reason>"
+        )
+    if stages["illustrations"]["status"] == "running":
+        return job_script_command(
+            job_path, "stage", "--name", "illustrations", "--status", "completed",
+            "--detail", "backend=<user_provided|image_generate>",
+        )
+    return runtime_script_command(job_path, "prepare")
+
+
+def build_job_contract(job, job_path, profile, rebuilt_existing):
+    """把 init 之后 agent 原本要读 artifact-contract.md + account-profiles.md 才知道的
+    结构性事实压成一张机器可读卡片：绝对路径、阶段清单、账号偏好、下一条命令。
+    风格与 pipeline_runtime.py 的 writing_contract 一致：字段值本身就是可执行指令或说明。
+    """
+    job_dir = job["job_dir"]
+    artifacts = job["artifacts"]
+
+    def _p(rel):
+        return os.path.join(job_dir, rel)
+
+    stage_roster = [
+        {
+            "stage": name,
+            "status": job["stages"][name]["status"],
+            "advanced_by": STAGE_OWNERS.get(name, "agent"),
+        }
+        for name in STAGES
+    ]
+    return {
+        "run_id": job["run_id"],
+        "account": job["account"],
+        "topic": job.get("topic"),
+        "state": job["state"],
+        "paths": {
+            "work_dir": job_dir,
+            "job_path": os.path.abspath(str(job_path)),
+            "article_path": _p(artifacts.get("article", "article.md")),
+            "digest_path": _p("digest.txt"),
+            "imgs_dir": _p(artifacts.get("illustrations", "imgs")),
+            "cover_path": _p(artifacts.get("cover", "cover/cover.png")),
+            "html_path": _p(artifacts.get("html", "article.html")),
+            "draft_result_path": _p(artifacts.get("draft_result", "draft-result.json")),
+        },
+        "stages": stage_roster,
+        "account_profile": safe_profile_summary(profile),
+        "workspace_reset": {
+            "rebuilt_existing_workspace": rebuilt_existing,
+            "warning": "本次 init 已清空重建 work/<account>/current/；若工作区此前已存在，"
+            "其正文、配图、封面均已被清空，不会残留误用。",
+        },
+        "user_brief_order_warning": (
+            "user-brief.md 必须在本次 init 之后写入 " + _p("user-brief.md")
+            + "；写在 init 之前会被本次清空重建覆盖掉（已知陷阱，顺序反了会丢文件）。"
+        ),
+        "next_command": suggest_next_command(job, job_path),
+    }
+
+
 def cmd_init(args):
     if not ACCOUNT_RE.fullmatch(args.account):
         raise JobError("账号别名只能包含字母、数字、下划线和连字符")
@@ -482,7 +800,11 @@ def cmd_init(args):
     if (
         profile.get("theme_strategy") != "random"
         or illustrations.get("enabled") is not True
-        or illustrations.get("skill") != "baoyu-article-illustrator"
+        # 正文配图已收敛为 gen_inline_images.py 一条命令；旧档案里的
+        # baoyu-article-illustrator 仍然接受（已归档到 archive/），避免存量账号 init 失败。
+        or illustrations.get("skill") not in (
+            "gen_inline_images", "baoyu-article-illustrator"
+        )
         or illustrations.get("backend") != "image_generate"
         or type(illustrations.get("max_images")) is not int
         or not 1 <= illustrations["max_images"] <= 3
@@ -500,6 +822,7 @@ def cmd_init(args):
             "并以草稿箱为终点"
         )
     job_dir = resolve_work_dir(project_root, args.work_dir, args.account)
+    existed_before = os.path.isdir(job_dir)
     if os.path.isdir(job_dir):
         current_job_path = os.path.join(job_dir, "job.json")
         if not args.force_new:
@@ -563,7 +886,13 @@ def cmd_init(args):
     job["state"] = summarize_state(job)
     job_path = os.path.join(job_dir, "job.json")
     atomic_write(job_path, job)
+    # 第一行永远是纯 job_path（向后兼容：既有消费者只取这一行）；
+    # 随后追加 job_contract——机器可读 JSON，弱模型照它走完全程不必读文档。
     print(job_path)
+    print(json.dumps(
+        {"job_contract": build_job_contract(job, job_path, profile, existed_before)},
+        ensure_ascii=False, indent=2,
+    ))
 
 
 def artifact_path(job_path, value):
@@ -713,7 +1042,16 @@ def cmd_topic(args):
             "reader_stakes": details.get("reader_stakes"),
         },
     )
-    print(value)
+    print(json.dumps(
+        {
+            "topic": value,
+            "source": args.source,
+            "event_focus": event_focus,
+            "state": job["state"],
+            "next_command": suggest_next_command(job, args.job),
+        },
+        ensure_ascii=False, indent=2,
+    ))
 
 
 def cmd_history(args):
@@ -729,34 +1067,74 @@ def cmd_history(args):
             and parse_iso(entry.get("selected_at"))
             and parse_iso(entry["selected_at"]).astimezone(dt.timezone.utc) >= cutoff
         ]
+    payload = {"entries": entries}
     if getattr(args, "rotation", False):
-        payload = {
-            "entries": entries,
-            "rotation": compute_rotation_plan(entries),
-        }
-        print(json.dumps(payload, ensure_ascii=False, indent=2))
-    else:
-        print(json.dumps(entries, ensure_ascii=False, indent=2))
+        # 轮换窗口与 cmd_shape 一致：排除本 run 已写入但尚未带 shape 的占位条目，
+        # 否则 preview 推荐的 opening/ending 会在 shape 校验时被拒（窗口错位）。
+        rotation_entries = [
+            entry for entry in entries
+            if not (job.get("run_id") and entry.get("run_id") == job.get("run_id"))
+        ]
+        payload["rotation"] = compute_rotation_plan(rotation_entries)
+    payload["next_command"] = suggest_next_command(job, args.job)
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
 
 
 def cmd_shape(args):
-    """锁定本轮文章结构形状，并写入 job + topic-history（防同质轮换）。"""
+    """锁定本轮文章结构形状，并写入 job + topic-history（防同质轮换）。
+
+    --auto：按轮换计划自动生成合法 shape，显式字段可局部覆盖；
+    弱模型/自动化路径推荐 --auto，免去阅读轮换 JSON 手工选型。
+    """
     job = load_job(args.job)
     if not job.get("topic"):
         raise JobError("请先完成选题再锁定文章结构 shape")
-    shape = parse_shape_from_args(args)
     history = load_topic_history(job)
     # 校验时排除本 run 已写入但尚未带 shape 的占位，以及本 run 旧 shape
     entries = [
         entry for entry in recent_topic_entries(history)
         if not (job.get("run_id") and entry.get("run_id") == job.get("run_id"))
     ]
+    if getattr(args, "auto", False):
+        overrides = {
+            "structure_id": (args.structure_id or "").strip(),
+            "opening_type": (args.opening_type or "").strip(),
+            "ending_type": (args.ending_type or "").strip(),
+            "felt_sense": (getattr(args, "felt_sense", None) or "").strip(),
+            "tension_type": (getattr(args, "tension_type", None) or "").strip(),
+            "body_band": (getattr(args, "body_band", None) or "").strip(),
+        }
+        if getattr(args, "heading_count", None) is not None:
+            overrides["heading_count"] = int(args.heading_count)
+        shape = auto_shape_from_history(entries, job.get("run_id"), overrides)
+    else:
+        shape = parse_shape_from_args(args)
     enforce = not getattr(args, "force", False)
     validate_shape_against_history(entries, shape, enforce=enforce)
     job["article_shape"] = shape
     save_job(args.job, job)
     merge_shape_into_history(job, shape)
-    print(json.dumps(shape, ensure_ascii=False, indent=2))
+    # 打印用的是 shape 的浅拷贝：next_command 只进 stdout，不得混进持久化的
+    # job.article_shape / topic-history 条目。
+    output = dict(shape)
+    output["next_command"] = suggest_next_command(job, args.job)
+    print(json.dumps(output, ensure_ascii=False, indent=2))
+
+
+def registered_themes():
+    """已注册主题的**单一真相源**：render_article.py 的 THEMES。
+
+    历史实现靠扫描 `references/theme-*.md` 的文件名来发现主题，于是主题在
+    Markdown 组件库和渲染脚本里各存一份，两边会漂（曾出现脚本里有 6 套、
+    索引里只登记 4 套）。组件库已归档到 archive/themes-v2/，现在只认脚本。
+    """
+    if SCRIPT_DIR not in sys.path:
+        sys.path.insert(0, SCRIPT_DIR)
+    try:
+        from render_article import THEMES
+    except ImportError as exc:  # pragma: no cover - 安装损坏才会发生
+        raise JobError(f"无法从 render_article.py 读取主题表：{exc}") from exc
+    return list(THEMES)
 
 
 def cmd_choose_theme(args):
@@ -765,29 +1143,20 @@ def cmd_choose_theme(args):
     if current:
         print(current)
         return
-    index_value = args.theme_index or os.path.join(
-        job["project_root"], "references", "theme-index.md"
-    )
-    index_path = index_value if os.path.isabs(index_value) else os.path.join(
-        job["project_root"], index_value
-    )
-    try:
-        with open(index_path, encoding="utf-8") as f:
-            index_text = f.read()
-    except OSError as exc:
-        raise JobError(f"无法读取主题索引 {index_path}: {exc}") from exc
-    section = THEME_SECTION_RE.search(index_text)
-    if not section:
-        raise JobError("主题索引缺少“已注册主题”章节")
-    registered = list(dict.fromkeys(THEME_RE.findall(section.group("body"))))
+    registered = registered_themes()
     if not registered:
-        raise JobError("主题索引中没有已注册主题")
+        raise JobError("render_article.py 的 THEMES 为空，没有可用主题")
     requested = list(dict.fromkeys(item.strip() for item in args.theme if item.strip()))
     unknown = sorted(set(requested) - set(registered))
     if unknown:
-        raise JobError(f"主题未在索引中注册：{', '.join(unknown)}")
+        raise JobError(
+            f"主题未注册：{', '.join(unknown)}；可用：{', '.join(registered)}"
+        )
     themes = requested or registered
-    selected = secrets.choice(themes)
+    # 由 run_id 派生，而非 secrets.choice：跨文章仍然轮换（run_id 每次都不同），
+    # 但同一个 run 重跑必然选到同一套主题，恢复场景下不会换皮。
+    digest = hashlib.sha256(str(job.get("run_id", "")).encode("utf-8")).digest()
+    selected = themes[int.from_bytes(digest[:8], "big") % len(themes)]
     stage = job["stages"]["format"]
     stage.setdefault("details", {})["theme"] = selected
     stage["updated_at"] = now_iso()
@@ -845,7 +1214,13 @@ def cmd_stage(args):
     )
     job["state"] = summarize_state(job)
     save_job(args.job, job)
-    print(json.dumps({"stage": args.name, "status": args.status, "state": job["state"]}, ensure_ascii=False))
+    print(json.dumps(
+        {
+            "stage": args.name, "status": args.status, "state": job["state"],
+            "next_command": suggest_next_command(job, args.job),
+        },
+        ensure_ascii=False,
+    ))
 
 
 def validate_ready_html(job_path, job):
@@ -886,7 +1261,11 @@ def cmd_gate(args):
 
 
 def cmd_show(args):
-    print(json.dumps(load_job(args.job), ensure_ascii=False, indent=2))
+    job = load_job(args.job)
+    # 只加进这次打印的副本；cmd_show 从不写回 job.json，next_command 不会被持久化。
+    output = dict(job)
+    output["next_command"] = suggest_next_command(job, args.job)
+    print(json.dumps(output, ensure_ascii=False, indent=2))
 
 
 def build_parser():
@@ -933,9 +1312,14 @@ def build_parser():
         help="锁定本轮文章结构形状并写入历史（structure/opening/ending 轮换）",
     )
     shape.add_argument("--job", required=True)
-    shape.add_argument("--structure-id", required=True, dest="structure_id")
-    shape.add_argument("--opening-type", required=True, dest="opening_type")
-    shape.add_argument("--ending-type", required=True, dest="ending_type")
+    shape.add_argument(
+        "--auto",
+        action="store_true",
+        help="按轮换计划自动生成合法 shape（推荐；显式字段可局部覆盖）",
+    )
+    shape.add_argument("--structure-id", dest="structure_id")
+    shape.add_argument("--opening-type", dest="opening_type")
+    shape.add_argument("--ending-type", dest="ending_type")
     shape.add_argument("--felt-sense", dest="felt_sense")
     shape.add_argument("--tension-type", dest="tension_type")
     shape.add_argument("--heading-count", type=int, dest="heading_count")
@@ -946,10 +1330,15 @@ def build_parser():
         help="跳过轮换硬校验（仅人工排障时使用）",
     )
 
-    choose = sub.add_parser("choose-theme", help="从已注册主题中随机选择并固定本轮主题")
+    choose = sub.add_parser(
+        "choose-theme", help="从 render_article.py 的 THEMES 中按 run_id 派生并固定本轮主题"
+    )
     choose.add_argument("--job", required=True)
     choose.add_argument("--theme", action="append", default=[])
-    choose.add_argument("--theme-index")
+    choose.add_argument(
+        "--theme-index",
+        help="已废弃：主题现由 render_article.py 的 THEMES 决定，此参数被忽略",
+    )
 
     stage = sub.add_parser("stage", help="更新阶段状态和产物")
     stage.add_argument("--job", required=True)
