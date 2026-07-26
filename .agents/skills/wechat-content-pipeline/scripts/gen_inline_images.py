@@ -26,6 +26,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _stage_record  # noqa: E402 - 同目录内部模块，必须在 sys.path 之后导入
+
 SCRIPT_DIR = Path(__file__).resolve().parent
 # agnes-image-gen 是本仓库统一的生图后端；本脚本只负责选位置、写 prompt、
 # 插回 Markdown，绝不自己拼 HTTP 请求。
@@ -350,16 +353,28 @@ def build_parser():
     parser.add_argument("--job", default="", help="job.json 路径，缺省 seed 时用它兜底")
     parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT,
                         help="单张生图超时秒数")
+    parser.add_argument(
+        "--record-stage", action="store_true",
+        help="连同 illustrations 阶段一起记账（running → completed/skipped），"
+             "需要 --job；用了它就不必再手动跑 pipeline_job.py stage",
+    )
     return parser
 
 
 def main(argv=None):
     args = build_parser().parse_args(argv)
-    try:
-        result = run(args)
-    except Exception as exc:  # noqa: BLE001 - 这一步绝不能把流水线拖垮
-        result = {"status": "skipped", "backend": "none", "inserted": 0,
-                  "reason": f"{type(exc).__name__}: {exc}"}
+
+    def produce():
+        try:
+            return run(args)
+        except Exception as exc:  # noqa: BLE001 - 这一步绝不能把流水线拖垮
+            return {"status": "skipped", "backend": "none", "inserted": 0,
+                    "reason": f"{type(exc).__name__}: {exc}"}
+
+    if args.record_stage and args.job:
+        result = _stage_record.record_around(args.job, "illustrations", produce)
+    else:
+        result = produce()
     print(json.dumps(result, ensure_ascii=False))
     return 0
 

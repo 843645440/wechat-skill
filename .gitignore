@@ -31,3 +31,6 @@ node_modules/
 # 预览图托管在 GitHub Release，不入库
 docs/screenshots/
 *.png
+
+# Claude Code 本地权限配置（含机器相关路径，不入库）
+.claude/settings.local.json

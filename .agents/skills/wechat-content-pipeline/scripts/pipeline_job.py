@@ -646,11 +646,13 @@ def job_script_command(job_path, subcommand, *extra):
     return _script_command(job_path, "pipeline_job.py", subcommand, *extra)
 
 
-def inline_images_command(job):
-    """正文配图的唯一入口：一条命令跑完「用户图优先 → 生图 → 生不出就不配图」。
+def inline_images_command(job, job_path):
+    """正文配图的唯一入口：一条命令跑完「用户图优先 → 生图 → 生不出就不配图」，
+    并顺手把 illustrations 阶段记账完（running → completed/skipped）。
 
-    退出码恒为 0，stdout 一行 JSON 给出 status/backend，agent 照它记账即可，
-    不需要自己分析文章、挑插图位或构造 prompt。
+    退出码恒为 0，stdout 一行 JSON 给出 status/backend。agent 不需要自己分析文章、
+    挑插图位、构造 prompt，也不需要再补 stage 命令——漏标 running 曾是这一环最常
+    见的失败方式。
     """
     # 注意键名是 job_dir，不是 work_dir——后者只是 job_contract 对外展示时用的名字。
     job_dir = os.path.abspath(job["job_dir"])
@@ -663,6 +665,22 @@ def inline_images_command(job):
         "--imgs-dir",
         shlex.quote(os.path.join(job_dir, artifacts.get("illustrations", "imgs"))),
         "--seed", shlex.quote(str(job.get("run_id", ""))),
+        "--job", shlex.quote(os.path.abspath(str(job_path))),
+        "--record-stage",
+    ])
+
+
+def cover_command(job, job_path):
+    """封面的唯一入口：用户图优先 → 生图 → 离线兜底，并记账 cover 阶段。
+
+    封面是 finish 的硬门禁（正文图可以没有，封面不能），所以这条命令的降级链
+    一直走到能出图为止，不给 agent 留「这一步能不能跳过」的判断空间。
+    """
+    return " ".join([
+        "python3",
+        shlex.quote(os.path.join(PIPELINE_ROOT, "scripts", "gen_cover_image.py")),
+        "--job", shlex.quote(os.path.abspath(str(job_path))),
+        "--record-stage",
     ])
 
 
@@ -724,16 +742,21 @@ def suggest_next_command(job, job_path):
         )
     if stages["illustrations"]["status"] == "pending":
         return (
-            inline_images_command(job)
-            + "  # 退出码恒为 0；照它输出的 JSON 记账："
-            + "status=completed 时 stage --name illustrations --status completed"
-            + " --detail backend=<user_provided|image_generate>，"
-            + "status=skipped 时 --status skipped --detail reason=<JSON 里的 reason>"
+            inline_images_command(job, job_path)
+            + "  # 退出码恒为 0，自己记账 running→completed/skipped，跑完直接看下一条 next_command"
         )
     if stages["illustrations"]["status"] == "running":
+        # 只有手工标过 running 才会走到这里；--record-stage 路径不经过这一支。
         return job_script_command(
             job_path, "stage", "--name", "illustrations", "--status", "completed",
             "--detail", "backend=<user_provided|image_generate>",
+        )
+    # 封面是 finish 的硬门禁，必须排在 prepare 之前显式给出——漏掉这一步会一路
+    # 走到 finish 才因为「封面缺失」失败，那时再回头补是最贵的。
+    if stages["cover"]["status"] in ("pending", "running"):
+        return (
+            cover_command(job, job_path)
+            + "  # 退出码恒为 0，自己记账；用户图优先→生图→离线兜底，保证有封面"
         )
     return runtime_script_command(job_path, "prepare")
 
@@ -886,9 +909,13 @@ def cmd_init(args):
     job["state"] = summarize_state(job)
     job_path = os.path.join(job_dir, "job.json")
     atomic_write(job_path, job)
-    # 第一行永远是纯 job_path（向后兼容：既有消费者只取这一行）；
-    # 随后追加 job_contract——机器可读 JSON，弱模型照它走完全程不必读文档。
-    print(job_path)
+    # stdout 只放合法 JSON，和 topic/shape/stage 等所有其他子命令保持一致，
+    # 这样 `... init ... | jq` 或 json.load(stdin) 都能直接用。
+    # 早先这里会先打一行纯 job_path 做「向后兼容」，代价是整段 stdout 不是合法
+    # JSON——解析器一上来就报 Expecting value，而 job_path 本来就在
+    # job_contract.paths.job_path 里，那一行没有信息增量。路径改走 stderr，
+    # 人肉 cat 时照样看得见，管道解析不受影响。
+    print(job_path, file=sys.stderr)
     print(json.dumps(
         {"job_contract": build_job_contract(job, job_path, profile, existed_before)},
         ensure_ascii=False, indent=2,

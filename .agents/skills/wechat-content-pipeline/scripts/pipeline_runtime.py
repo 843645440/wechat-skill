@@ -43,6 +43,46 @@ class RuntimeFailure(RuntimeError):
     pass
 
 
+# wechat_publish.py 在失败时会往 stderr 打一行结论：draft_may_exist=true|false。
+# false 表示远端一定没有草稿（取 token 被拒、图片上传失败、服务端对 draft/add
+# 明确返回 errcode……），重跑安全；true 只出现在 draft/add 已发出但结果读不到
+# 的情况（连接重置/超时/响应无法解析）。
+DRAFT_MAY_EXIST_RE = re.compile(r"^draft_may_exist=(true|false)$", re.MULTILINE)
+
+# 兜底：万一发布器是不带上述标记的旧版本，仍按这些本地配置错误判定可安全重跑。
+# 新代码不应该继续往这里加错误码——语义判断属于 wechat_publish.py。
+LEGACY_PREFLIGHT_RE = re.compile(
+    r"未设置 App(?:ID|Secret) 环境变量"
+    r"|配置中没有账号"
+    r"|账号 .+ 缺少 (?:appid_env|secret_env)"
+)
+
+
+# 只在「远端可能已经有草稿」时出现。这段话是给人看的操作指引，不要精简成
+# 一句「结果不确定」——真踩到的人需要知道下一步具体做什么。
+UNCERTAIN_DRAFT_MESSAGE = (
+    "上次 draft/add 结果不确定：请求已发出但没读到响应，微信侧可能已经建了草稿。\n"
+    "  自动重发会产生双草稿，所以这里必须人工核对：\n"
+    "  1. 打开公众号后台草稿箱，确认这篇是否已经存在。\n"
+    "  2a. 已存在 → 不要重跑，直接以后台那篇为准；本次任务到此为止。\n"
+    "  2b. 不存在 → 重置后重跑尾段（正文不用改）：\n"
+    "      pipeline_job.py stage --job {job} --name draft --status pending\n"
+    "      pipeline_runtime.py finish --job {job} --config <wechat-accounts.json>"
+)
+
+
+def draft_failure_is_retry_safe(message):
+    """这次 draft 失败之后，能不能直接重跑而不会产生双草稿？
+
+    优先读发布器给的结论标记；标记缺失时退回旧正则；两者都没有就保守判为
+    「不确定」（False），让人先去草稿箱核对。
+    """
+    match = DRAFT_MAY_EXIST_RE.search(message or "")
+    if match:
+        return match.group(1) == "false"
+    return bool(LEGACY_PREFLIGHT_RE.search(message or ""))
+
+
 def load_json(path, label):
     try:
         return json.loads(Path(path).read_text(encoding="utf-8"))
@@ -305,16 +345,18 @@ def account_label(job):
 
 
 def cover_fallback_command(job, artifacts, titles):
-    """离线封面兜底的可执行命令行：弱模型照抄即可，不需要判断后端。"""
+    """封面的推荐命令：一条命令跑完「用户图 → 生图 → 离线兜底」并自动记账。
+
+    以前这里只给离线兜底那一档，等于默认「生图这条路 agent 自己想办法」——
+    结果就是每次都要临场拼 prompt、调后端、再手动记账。现在整条降级链下沉到
+    gen_cover_image.py，这里只负责把命令拼出来。
+    """
     roots = command_roots(job)
-    script = roots["pipeline"] / "scripts" / "render_cover_fallback.py"
-    title = " ".join(titles[0].split()) if titles else (job.get("topic") or {}).get("value", "")
+    script = roots["pipeline"] / "scripts" / "gen_cover_image.py"
     return " ".join([
         "python3", shlex.quote(str(script)),
-        "--title", shlex.quote(title or "本期文章"),
-        "--kicker", shlex.quote(account_label(job)),
-        "--seed", shlex.quote(job["run_id"]),
-        "--output", shlex.quote(str(artifacts["cover"])),
+        "--job", shlex.quote(str(Path(job["job_dir"]) / "job.json")),
+        "--record-stage",
     ])
 
 
@@ -374,8 +416,8 @@ def cmd_check(args):
         )
     if not _cover_file_usable(artifacts["cover"]):
         hints.append(
-            "封面尚未就位（finish 硬门禁）。有生图能力就按 ai-cover-generation.md 生成；"
-            "没有生图 API 也没有浏览器时，直接跑这条离线兜底："
+            "封面尚未就位（finish 硬门禁）。跑这一条就够了，它自己走"
+            "「用户图 → 生图 → 离线兜底」并记账，无网络/无 API key 也能出图："
             + cover_fallback_command(job, artifacts, titles)
         )
     return {
@@ -569,23 +611,12 @@ def publish_draft(args, job, artifacts, roots, generated_cover, config_path):
     try:
         result = run_json(command)
     except RuntimeFailure as exc:
-        deterministic_preflight = bool(re.search(
-            r"未设置 App(?:ID|Secret) 环境变量"
-            r"|配置中没有账号"
-            r"|账号 .+ 缺少 (?:appid_env|secret_env)",
-            str(exc),
-        ))
+        safe_to_retry = draft_failure_is_retry_safe(str(exc)) or args.dry_run
         details = {
             "attempts": "1",
             "run_id": job["run_id"],
-            "outcome": (
-                "preflight-failed"
-                if args.dry_run or deterministic_preflight
-                else "uncertain"
-            ),
-            "retry_safe": (
-                "true" if args.dry_run or deterministic_preflight else "false"
-            ),
+            "outcome": "preflight-failed" if safe_to_retry else "uncertain",
+            "retry_safe": "true" if safe_to_retry else "false",
         }
         mark(args.job, "draft", "failed", str(exc)[:180], details)
         raise
@@ -612,7 +643,13 @@ def publish_draft(args, job, artifacts, roots, generated_cover, config_path):
             raise RuntimeFailure("草稿结果未通过账号、动作或 media_id 校验")
         mark(
             args.job, "draft", "completed", "公众号草稿创建成功",
-            {"attempts": "1", "run_id": job["run_id"]},
+            # outcome/retry_safe 必须显式覆盖：mark 是合并写入，不覆盖的话
+            # running 阶段留下的 outcome=pending / retry_safe=false 会一直挂在
+            # 一个已经成功的任务上，事后排查时看起来像是失败过。
+            {
+                "attempts": "1", "run_id": job["run_id"],
+                "outcome": "succeeded", "retry_safe": "n/a",
+            },
             {"draft_result": artifacts["draft_result"]},
         )
     return result
@@ -642,16 +679,12 @@ def _cmd_finish(args):
             args.job, "draft", "failed",
             "draft/add 进程中断，远端结果不确定", interrupted_details,
         )
-        raise RuntimeFailure(
-            "上次 draft/add 结果不确定；请先人工核对微信草稿箱，再将 draft 阶段重置为 pending"
-        )
+        raise RuntimeFailure(UNCERTAIN_DRAFT_MESSAGE.format(job=args.job))
     if (
         draft_stage["status"] == "failed"
         and draft_details.get("outcome") == "uncertain"
     ):
-        raise RuntimeFailure(
-            "上次 draft/add 结果不确定；请先人工核对微信草稿箱，再将 draft 阶段重置为 pending"
-        )
+        raise RuntimeFailure(UNCERTAIN_DRAFT_MESSAGE.format(job=args.job))
     existing_draft = verified_draft_result(job, artifacts)
     if existing_draft:
         return draft_resume_response(job, existing_draft)

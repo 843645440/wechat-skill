@@ -65,9 +65,9 @@ class SimplifiedPipelineTests(unittest.TestCase):
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
             pipeline_job.cmd_init(pipeline_job.build_parser().parse_args(argv))
-        # stdout 第一行永远是纯 job_path（向后兼容）；后面追加的 job_contract JSON
-        # 不影响这里只取第一行。
-        return Path(output.getvalue().splitlines()[0])
+        # stdout 是纯 JSON（和其他子命令一致），job_path 从 job_contract 里读。
+        contract = json.loads(output.getvalue())["job_contract"]
+        return Path(contract["paths"]["job_path"])
 
     def record_hotspot(self, job_path, published_at, focus, value="机器人进入汽车工厂"):
         args = pipeline_job.build_parser().parse_args([

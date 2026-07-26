@@ -58,13 +58,16 @@ python3 <PIPELINE>/scripts/pipeline_job.py stage --job <job.json> --name humaniz
 #    不新增事实，不删 brief 要求保留的时间线与结论，不把字数改到 1500 以下。
 python3 <PIPELINE>/scripts/pipeline_job.py stage --job <job.json> --name humanize --status completed --detail intensity=strong
 
-# 8. 正文配图（一条命令，退出码恒为 0）
-python3 <PIPELINE>/scripts/gen_inline_images.py --article <article.md> --imgs-dir <imgs/> --seed <run_id>
-#    照它 stdout 的 JSON 记账：
-python3 <PIPELINE>/scripts/pipeline_job.py stage --job <job.json> --name illustrations --status <completed|skipped> --detail <backend=…|reason=…>
+# 8. 正文配图（一条命令，退出码恒为 0，自己记账）
+python3 <PIPELINE>/scripts/gen_inline_images.py --article <article.md> --imgs-dir <imgs/> --seed <run_id> \
+        --job <job.json> --record-stage
+#    --record-stage 会自动完成 running → completed/skipped 记账，**跑完不要再补 stage 命令**。
+#    （漏标 running 会被 stage 门禁直接拒绝，这是这一环最常见的失败方式。）
 
-# 9. 封面（按降级链取第一个可用的，见下节）—— 只要把图放到 job_contract.paths.cover_path，
-#    **不需要** stage --name cover；cover 和 format 两个阶段由 finish 自动推进。
+# 9. 封面（一条命令，退出码恒为 0，自己记账）
+python3 <PIPELINE>/scripts/gen_cover_image.py --job <job.json> --record-stage
+#    它内部走完整降级链：用户图 → 生图 → 离线兜底，保证有封面（封面是 finish 硬门禁）。
+#    无网络/无 API key 也能出图；要跳过生图直接兜底加 --skip-generate。
 
 # 10. Prepare（校验标题、字数、humanize、图片数与路径安全，固定主题）
 python3 <PIPELINE>/scripts/pipeline_runtime.py prepare --job <job.json>
@@ -99,21 +102,24 @@ python3 <PIPELINE>/scripts/pipeline_runtime.py finish --job <job.json> --config 
 **生不出图就不配图，这是正常结果，不是失败。**脚本退出码恒为 0，article.md 保持原样，
 绝不会留下指向不存在文件的 `![]()`。不要自己分析文章挑插图位，不要视觉审图。
 
-**封面**（`finish` 的硬门禁，取第一个可用的）：
+**封面**（`finish` 的硬门禁）——同样是**一条命令**，`gen_cover_image.py` 内部走完整降级链：
 
-1. 用户已给封面 → 写入 `cover/cover.png`，`backend=user_provided`
-2. 有生图能力 → 按 [references/ai-cover-generation.md](references/ai-cover-generation.md) 生图，`backend=image_generate`
-3. 都没有 → 离线兜底渲染，`backend=offline_render`：
+| 情况 | backend | status |
+|---|---|---|
+| `cover/cover.png` 已存在（用户给的） | `user_provided` | `completed`（原样保留，绝不覆盖） |
+| 无用户图，生图成功 | `image_generate` | `completed` |
+| 无用户图，生图失败/无 key/无后端 → 自动离线兜底 | `offline_render` | `completed` |
+| 生图和兜底都失败 | `none` | `failed` |
 
 ```bash
-python3 <PIPELINE>/scripts/render_cover_fallback.py \
-  --title "<封面文案，`|` 强制换行>" --highlight "<强调片段>" \
-  --kicker "<账号名>" --seed "<run_id>" --output <WORK_DIR>/cover/cover.png
+python3 <PIPELINE>/scripts/gen_cover_image.py --job <job.json> --record-stage
 ```
 
-4. 仍失败 → 只有配了账号默认 `thumb_media_id` 才能继续。
+**正文图可以没有，封面不能没有**——所以这条链一直走到出图为止，不需要你判断走到第几档。
+只有第 4 行那种极端情况才会 `failed`，此时只有账号配了默认 `thumb_media_id` 才能继续。
 
-`check` 在封面缺失时会把第 3 档的完整命令拼好放进 `hints`。**禁止 HTML 封面与视觉审图。**
+`check` 在封面缺失时会把这条命令拼好放进 `hints`。**禁止 HTML 封面与视觉审图。**
+标题取 `article.md` 的一级标题，眉标取账号 label，都不需要你传参。
 
 ### 3. 写作契约
 
@@ -146,9 +152,16 @@ python3 <PIPELINE>/scripts/render_cover_fallback.py \
 
 - 同一 `run_id` 已成功：账号、动作、`run_id`、`draft_media_id` 全匹配时直接返回原结果。
 - 新 `run_id`：允许同账号当天继续新草稿。**不得**因为今天已有 `drafted` 就退出。
-- timeout / EOF / 连接重置 / 响应不完整 → `outcome=uncertain`，**禁止自动重发**，先人工核对草稿箱。
-- 凭证或账号配置错误发生在请求前 → `preflight-failed`，`retry_safe=true`。
-- IP 白名单错误（40164）→ 报告出口 IP，等用户加白后**只重跑 finish**，不重写正文。
+判定标准只有一条，**不是错误码枚举**：这次失败之后，远端草稿箱里有没有可能已经躺着一篇草稿？
+
+- **`draft/add` 已发出但没读到响应**（timeout / EOF / 连接重置 / 响应无法解析）→ `outcome=uncertain`，
+  `retry_safe=false`，**禁止自动重发**，先人工核对草稿箱。这是唯一会走到这一档的情况。
+- **其余全部失败**（取 token 被拒、正文图/封面上传失败、服务端对 `draft/add` 明确返回 errcode）
+  → `preflight-failed`，`retry_safe=true`。草稿一定没建，**直接重跑 `finish` 即可，不必手工重置 draft 阶段**。
+- IP 白名单错误（40164）属于上面第二档：**要加白的 IP 就在错误信息里**（微信实际看到的直连出口）。
+  ⚠️ 不要用 `curl ifconfig.me` 取 IP——发布器强制直连 `api.weixin.qq.com`（忽略 `HTTP(S)_PROXY`），
+  而 curl 走本机代理，有分流规则时两者不是同一个出口，加白 curl 给的那个不会生效。
+  加白后只重跑 `finish`，不重写正文。
 - `state=failed` 且 draft 曾 running/uncertain → 重置 format/draft 为 pending，确认 `article.md` 契约后 prepare → finish。继续现有工作区，**禁止无故 init 新 job**。
 - write 未完成就中断 → 有 brief 则照 brief 写完；**禁止**改为自动热点选题。
 

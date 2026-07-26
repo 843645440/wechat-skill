@@ -329,8 +329,13 @@ class PipelineRuntimeTests(unittest.TestCase):
         self.assertEqual("ok", result["status"])
         self.assertTrue(any("digest" in h for h in result["hints"]))
 
-    def test_check_hands_out_a_runnable_cover_fallback_command(self):
-        """封面是 finish 硬门禁：缺封面时必须给出可直接执行的离线兜底命令。"""
+    def test_check_hands_out_a_runnable_cover_command(self):
+        """封面是 finish 硬门禁：缺封面时必须给出一条可直接执行的命令。
+
+        这条命令要覆盖整条降级链（用户图 → 生图 → 离线兜底）并自己记账。早期版本
+        只给离线兜底那一档，等于把「生图怎么调」留给 agent 临场发挥——那是本次
+        端到端跑通时实际卡住的一步。
+        """
         with tempfile.TemporaryDirectory() as tmp:
             job_path = self.make_job(tmp)
             self.write_article(job_path)
@@ -338,10 +343,11 @@ class PipelineRuntimeTests(unittest.TestCase):
         cover_hints = [h for h in result["hints"] if "封面" in h]
         self.assertEqual(1, len(cover_hints))
         hint = cover_hints[0]
-        self.assertIn("render_cover_fallback.py", hint)
-        self.assertIn("--seed", hint)
-        self.assertIn("--output", hint)
-        self.assertIn("cover/cover.png", hint)
+        self.assertIn("gen_cover_image.py", hint)
+        self.assertIn("--job", hint)
+        self.assertIn("--record-stage", hint)
+        # 不再要求 agent 自己判断该走哪一档
+        self.assertNotIn("render_cover_fallback.py", hint)
         self.assertEqual("ok", result["status"])
 
     def test_check_stays_silent_when_cover_is_ready(self):

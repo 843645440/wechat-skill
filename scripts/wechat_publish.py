@@ -51,7 +51,70 @@ def _urlopen_direct(request, timeout=30):
 
 
 class PublishError(RuntimeError):
-    pass
+    """发布失败。
+
+    `draft_may_exist` 回答的是一个结构性问题，不是错误码问题：**这次失败之后，
+    远端草稿箱里有没有可能已经躺着一篇草稿？**
+
+    只有 `draft/add` 这个请求本身发出去、却没能读到明确响应（连接重置、超时、
+    响应无法解析）时，答案才是「可能有」。其余所有失败——取 access_token 被拒
+    （IP 白名单 40164、凭证错误）、正文图或封面上传失败、服务端对 draft/add
+    明确返回 errcode——都发生在草稿落库之前或被服务端明确拒绝，远端一定没有草稿，
+    上层可以安全重跑而不会产生双草稿。
+
+    这个判断留在最懂微信语义的这一层，上层（pipeline_runtime.py）只读结论，
+    不要去正则匹配错误文本猜语义。
+    """
+
+    def __init__(self, message, *, draft_may_exist=False):
+        super().__init__(message)
+        self.draft_may_exist = draft_may_exist
+
+
+def errcode_remediation(errcode, errmsg=""):
+    """把微信错误码翻成「下一步该做什么」，直接拼在错误文本后面。
+
+    目的是让调用方（尤其是弱模型）不需要去查文档或猜测：错误信息本身就说清了
+    该改哪个文件、该找谁、以及要不要重写正文。返回值带前导换行，空串表示没有
+    专门的指引。
+    """
+    hints = {
+        40164: (
+            "IP 不在公众号白名单。\n"
+            "  → 要加白的 IP 就是上面这条错误信息里回显的那个"
+            "（微信实际看到的直连出口）。\n"
+            "  → 不要用 `curl ifconfig.me` 取 IP：本脚本强制直连 api.weixin.qq.com"
+            "（忽略 HTTP(S)_PROXY），\n"
+            "     而 curl 会走本机代理；有分流规则时两者是不同的出口，加白 curl "
+            "给的那个不会生效。\n"
+            "  → 加白位置：公众号后台 → 设置与开发 → 基本配置 → IP 白名单。\n"
+            "  → 加白后只需重跑尾段，正文不用改：stage --name draft --status pending"
+            " → prepare → finish。"
+        ),
+        40001: (
+            "AppID 或 AppSecret 不正确（本脚本已自动重试过一次 token 刷新）。\n"
+            "  → 检查 secrets/wechat.env 里的 WECHAT_<账号>_APP_ID / _APP_SECRET。"
+        ),
+        40013: "AppID 无效。→ 核对 secrets/wechat.env 里的 WECHAT_<账号>_APP_ID。",
+        40125: (
+            "AppSecret 无效。\n"
+            "  → 核对 secrets/wechat.env 里的 WECHAT_<账号>_APP_SECRET；"
+            "后台重置过密钥就要同步更新。"
+        ),
+        48001: (
+            "接口未授权：这个公众号类型/认证状态没有草稿箱接口权限。\n"
+            "  → 需要已认证的服务号或订阅号；个人号拿不到该权限，换账号或先完成认证。"
+        ),
+        45009: (
+            "接口调用频次超限。\n"
+            "  → 等配额恢复（通常次日 0 点）后重跑尾段，不要反复重试放大占用。"
+        ),
+        40007: "media_id 无效或已过期。→ 重新生成封面并重跑 prepare → finish。",
+        53404: "账号已封禁。→ 联系微信平台处理，流水线侧无法绕过。",
+        53500: "账号处于冻结状态。→ 联系微信平台处理，流水线侧无法绕过。",
+    }
+    hint = hints.get(errcode)
+    return f"\n  {hint}" if hint else ""
 
 
 def load_json(path):
@@ -151,7 +214,13 @@ class WeChatClient:
         return token
 
     def _request(self, method, path, payload=None, headers=None, authenticated=True,
-                 retry_token=True):
+                 retry_token=True, may_mutate=False):
+        """may_mutate=True 只给 draft/add 这类「一旦发出就可能落库」的请求。
+
+        它唯一的作用是：传输层失败时把 draft_may_exist 传上去，让上层知道远端
+        状态不可知、不能自动重发。服务端明确返回 errcode 的路径不受它影响——
+        那是明确拒绝，草稿一定没建。
+        """
         if authenticated:
             separator = "&" if "?" in path else "?"
             path += separator + urllib.parse.urlencode({"access_token": self.access_token()})
@@ -169,19 +238,28 @@ class WeChatClient:
             with _urlopen_direct(request, timeout=30) as response:
                 raw = response.read()
         except (urllib.error.URLError, TimeoutError) as exc:
-            raise PublishError(f"微信 API 请求失败：{exc}") from exc
+            # 请求已发出但没读到响应：只有 draft/add 这类写请求的结果才不可知。
+            raise PublishError(
+                f"微信 API 请求失败：{exc}", draft_may_exist=may_mutate
+            ) from exc
         try:
             result = json.loads(raw.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise PublishError("微信 API 返回了无法解析的响应") from exc
+            raise PublishError(
+                "微信 API 返回了无法解析的响应", draft_may_exist=may_mutate
+            ) from exc
         errcode = result.get("errcode", 0)
         if authenticated and retry_token and errcode in TOKEN_ERRORS:
             self.access_token(refresh=True)
             clean_path = re.sub(r"([?&])access_token=[^&]*&?", r"\1", path).rstrip("?&")
-            return self._request(method, clean_path, payload, headers, True, False)
+            return self._request(
+                method, clean_path, payload, headers, True, False, may_mutate
+            )
         if errcode:
+            # 服务端明确回了 errcode = 明确拒绝，草稿一定没建，可安全重跑。
             raise PublishError(
                 f"微信 API 错误 {errcode}: {result.get('errmsg', 'unknown error')}"
+                + errcode_remediation(errcode, result.get("errmsg", ""))
             )
         return result
 
@@ -206,7 +284,10 @@ class WeChatClient:
         return result["media_id"]
 
     def add_draft(self, article):
-        result = self._request("POST", "/cgi-bin/draft/add", {"articles": [article]})
+        # 唯一的写请求：传输层失败时远端结果不可知，必须标 may_mutate。
+        result = self._request(
+            "POST", "/cgi-bin/draft/add", {"articles": [article]}, may_mutate=True
+        )
         if not result.get("media_id"):
             raise PublishError(f"创建草稿失败：{result}")
         return result["media_id"]
@@ -669,6 +750,13 @@ def main():
             cmd_publish(config, args)
     except PublishError as exc:
         print(f"✗ {exc}", file=sys.stderr)
+        # 机器可读的结论行，给 pipeline_runtime.py 读。
+        # 上层据此决定「能不能安全重跑」，不必去正则匹配上面那行人类可读文本。
+        print(
+            "draft_may_exist="
+            + ("true" if getattr(exc, "draft_may_exist", False) else "false"),
+            file=sys.stderr,
+        )
         return 1
     return 0
 

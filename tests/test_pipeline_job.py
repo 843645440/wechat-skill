@@ -61,9 +61,10 @@ class PipelineJobTests(unittest.TestCase):
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
             pipeline_job.cmd_init(pipeline_job.build_parser().parse_args(argv))
-        # stdout 第一行永远是纯 job_path（向后兼容）；后面追加的 job_contract JSON
-        # 不影响这里只取第一行。
-        return Path(output.getvalue().splitlines()[0])
+        # stdout 是纯 JSON（和其他子命令一致），job_path 从 job_contract 里读。
+        # 不要退回「取第一行」——那依赖 stdout 混入非 JSON 文本。
+        contract = json.loads(output.getvalue())["job_contract"]
+        return Path(contract["paths"]["job_path"])
 
     def stage(self, job_path, name, status, details=()):
         if name in ("humanize", "illustrations") and status == "completed":
@@ -143,10 +144,11 @@ class PipelineJobTests(unittest.TestCase):
             output = io.StringIO()
             with contextlib.redirect_stdout(output):
                 pipeline_job.cmd_init(pipeline_job.build_parser().parse_args(argv))
+            # stdout 必须是完整合法 JSON —— 这条断言本身就是对「stdout 不混
+            # 非 JSON 文本」的回归保护。
             raw = output.getvalue()
-            lines = raw.splitlines()
-            job_path = Path(lines[0])
-            contract = json.loads("\n".join(lines[1:]))["job_contract"]
+            contract = json.loads(raw)["job_contract"]
+            job_path = Path(contract["paths"]["job_path"])
         for key in ("work_dir", "job_path", "article_path", "digest_path", "imgs_dir", "cover_path"):
             self.assertTrue(os.path.isabs(contract["paths"][key]), key)
         self.assertEqual(str(job_path), contract["paths"]["job_path"])
