@@ -207,6 +207,25 @@ python3 <SKILL>/scripts/hot_radar.py --force --markdown  # 试一次，不改配
 3. **开关是真的开关**：雷达在配置关闭时必须一次网络请求都不发（用 mock 断言）。
 4. **降级**：单个榜单失败不能拖垮整轮，退出码恒为 0。
 
+### 真实命令链跑过一遍（不是只跑单测）
+
+在一个临时工作区里跑了 `init → topic → shape → begin → check`：
+
+- `begin` 的 `writing_contract` 确实带出了 `readability_gates`（8 项）和 `length_plan`。
+- 放进一篇好稿：`status: ok`，`writing.score = 100.0 (A)`，`problems: []`。
+- 换成一篇「新闻汇报腔」：`status: fail`，`score 41.0 (E)`，**5 条阻塞项**，
+  每条都带行号和修法：
+
+  ```
+  ✗ [写作·hook]           第 3 行：前 150 字里没有任何具体信息，全是铺垫
+  ✗ [写作·value_density]  第 3 行：连续 1665 字没有具体信息（阈值 300 字）
+  ✗ [写作·reader_benefit] 第 3 行：全文没有任何读者可以带走的东西
+  ✗ [写作·readability]    第 3 行：有 1 个段落超过 260 字（最长 1665 字）
+  ✗ [写作·retention]      第 3 行：连续 1665 字平铺直叙，没有转折/悬念/提问
+  ```
+
+  摘要复述标题、摘要过短也同时被点名。
+
 ### 自测循环发现的真问题
 
 按新 checklist 盲写一篇稿，**第一版 94 分但卡在字数 1177 < 1500**。
