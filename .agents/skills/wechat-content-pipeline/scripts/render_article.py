@@ -11,6 +11,17 @@ import time
 from pathlib import Path
 
 
+DEFAULT_FONT = (
+    "-apple-system,BlinkMacSystemFont,Segoe UI,PingFang SC,"
+    "Hiragino Sans GB,Microsoft YaHei,sans-serif"
+)
+SERIF_FONT = "Songti SC,SimSun,Georgia,Times New Roman,serif"
+MONO_FONT = "SF Mono,Consolas,Monaco,monospace"
+
+# 主题字典是**主题的唯一真相源**（Markdown 组件库已归档到 archive/themes-v2/）。
+# 必需键：layout / name / paper / ink / body / muted / accent / soft / line /
+#         underline / radius / shadow。可选键：font（默认无衬线）、以及各
+#         layout 自己用的附加色（dark / darkink / block / blockink / num）。
 THEMES = {
     "moyu-green": {
         "layout": "magazine", "name": "摸鱼绿", "paper": "#FFFFFF",
@@ -28,7 +39,8 @@ THEMES = {
     },
     "moyu-ticket": {
         "layout": "ticket", "name": "摸鱼票据", "paper": "#FFFFFF",
-        "ink": "#1A1A1A", "body": "#555555", "muted": "#888888",
+        # muted 原为 #888888，对白底只有 3.54:1，小字号标签不达标，提到 4.81:1。
+        "ink": "#1A1A1A", "body": "#555555", "muted": "#727272",
         "accent": "#059669", "soft": "#FFFEF8", "line": "#A7F3D0",
         "underline": "border-bottom:2px solid #A7F3D0;font-weight:600;",
         "radius": "0", "shadow": "4px 4px 0 #1A1A1A",
@@ -39,6 +51,46 @@ THEMES = {
         "accent": "#ED7B2F", "soft": "#EEEFE9", "line": "#BFC1B7",
         "underline": "border-bottom:2px solid #ED7B2F;font-weight:600;",
         "radius": "6px", "shadow": "0 5px 18px rgba(35,37,29,0.09)",
+    },
+    # ── 以下 4 套为「低噪音 / 强母题」组，装饰集中在 hero、章节标题和目录，
+    #    正文区一律浅底 + 高行高，长文不累眼。────────────────────────────
+    "plain-white": {
+        "layout": "plain", "name": "素白", "paper": "#FFFFFF",
+        # muted 是 plain 布局里 hero 引言的正文色，必须过 4.5:1，
+        # 不能为了「更淡」压到 #9A9A9A 那种 2.8:1 的水平。
+        "ink": "#1A1A1A", "body": "#3D3D3D", "muted": "#7D746B",
+        "accent": "#8C8378", "soft": "#FAFAF9", "line": "#EAEAE8",
+        "underline": "border-bottom:2px solid #D8D4CE;font-weight:600;",
+        "radius": "0", "shadow": "none",
+        "num": "#E8E6E3",          # 章节大号数字的浅色
+    },
+    "ink-rule": {
+        "layout": "serif-rule", "name": "墨线", "paper": "#FFFFFF",
+        "ink": "#111111", "body": "#333333", "muted": "#767676",
+        "accent": "#111111", "soft": "#F6F6F6", "line": "#CFCFCF",
+        "underline": "border-bottom:1.5px solid #111111;font-weight:600;",
+        "radius": "0", "shadow": "none",
+        "font": SERIF_FONT,
+        "rule": "#111111",         # 分节黑线；line 留给表格等通用边框
+    },
+    "deep-pool": {
+        "layout": "darkhero", "name": "深潭", "paper": "#FFFFFF",
+        "ink": "#16202B", "body": "#3C4A57", "muted": "#66747F",
+        "accent": "#2E7D8C", "soft": "#F2F6F7", "line": "#DDE6E9",
+        "underline": "border-bottom:2px solid #A8CDD4;font-weight:600;",
+        "radius": "8px", "shadow": "0 4px 16px rgba(22,32,43,0.08)",
+        # onDark 是深色 hero 上的强调色：accent 本身压在 dark 上只有 3.47:1，
+        # 10px 的 kicker 不够用，所以另备一个提亮版。
+        "dark": "#16202B", "darkink": "#F2F6F7", "darkbody": "#9FB2BF",
+        "ondark": "#6FBCC9",
+    },
+    "color-block": {
+        "layout": "colorblock", "name": "色块", "paper": "#FFFFFF",
+        "ink": "#14283C", "body": "#3D4E5E", "muted": "#66747F",
+        "accent": "#1B5E8C", "soft": "#EDF3F8", "line": "#D3E0EA",
+        "underline": "border-bottom:2px solid #A9CBE2;font-weight:600;",
+        "radius": "0", "shadow": "none",
+        "block": "#1B5E8C", "blockink": "#FFFFFF",
     },
 }
 
@@ -330,6 +382,48 @@ def render_hero(title, intro, theme):
             f'<p style="font-size:13px;color:#65675E;margin:0;line-height:1.8;">{intro_html}</p></section>'
             f'<section style="background:#1E1F23;padding:10px 22px;"><p style="margin:0;font-size:11px;color:#FFFFFF;font-weight:600;">{leaf("技术进步，最终要落到真实工作与生活")}</p></section></section>'
         )
+    if layout == "plain":
+        # 素白：唯一装饰是一条极浅分隔线，靠字号与留白分层。
+        return (
+            f'<section style="margin:0 14px 34px;padding-bottom:22px;border-bottom:1px solid {theme["line"]};">'
+            f'<p style="margin:0 0 14px;font-size:23px;font-weight:700;line-height:1.42;'
+            f'color:{theme["ink"]};letter-spacing:-0.2px;">{title_html}</p>'
+            f'<p style="margin:0;font-size:14px;line-height:1.9;color:{theme["muted"]};">{intro_html}</p></section>'
+        )
+    if layout == "serif-rule":
+        # 墨线：上下两根黑线夹住标题，像纸质书内页。
+        rule = theme.get("rule", theme["ink"])
+        return (
+            f'<section style="margin:0 14px 36px;">'
+            f'<section style="height:2px;background:{rule};line-height:0;margin-bottom:20px;">{leaf(" ")}</section>'
+            f'<p style="margin:0 0 16px;font-size:25px;font-weight:700;line-height:1.4;color:{theme["ink"]};">{title_html}</p>'
+            f'<p style="margin:0 0 18px;font-size:14px;line-height:1.95;color:{theme["body"]};">{intro_html}</p>'
+            f'<section style="height:1px;background:{theme["line"]};line-height:0;">{leaf(" ")}</section></section>'
+        )
+    if layout == "darkhero":
+        # 深潭：深色卡片只用在开头，正文回浅底，整篇不压。
+        dark, darkink = theme.get("dark", theme["ink"]), theme.get("darkink", "#FFFFFF")
+        return (
+            f'<section style="margin:0 0 34px;padding:32px 22px 28px;background:{dark};">'
+            f'<p style="margin:0 0 15px;font-size:10px;font-weight:700;letter-spacing:3px;'
+            f'color:{theme.get("ondark", theme["accent"])};">{leaf("DEEP DIVE")}</p>'
+            f'<p style="margin:0 0 15px;font-size:24px;font-weight:750;line-height:1.45;color:{darkink};">{title_html}</p>'
+            f'<p style="margin:0;font-size:14px;line-height:1.95;'
+            f'color:{theme.get("darkbody", theme["muted"])};">{intro_html}</p></section>'
+        )
+    if layout == "colorblock":
+        # 色块：整块主色反白，底部一道压深的窄条收口。
+        block, blockink = theme.get("block", theme["accent"]), theme.get("blockink", "#FFFFFF")
+        return (
+            f'<section style="margin:0 0 30px;background:{block};padding:34px 22px 0;">'
+            f'<p style="margin:0 0 16px;font-size:10px;font-weight:800;letter-spacing:3.5px;'
+            f'color:#FFFFFFB3;">{leaf("DEEP DIVE")}</p>'
+            f'<p style="margin:0 0 16px;font-size:25px;font-weight:800;line-height:1.42;'
+            f'color:{blockink};letter-spacing:-0.3px;">{title_html}</p>'
+            f'<p style="margin:0 0 26px;font-size:14px;line-height:1.95;color:#FFFFFFD9;">{intro_html}</p>'
+            f'<section style="height:10px;background:#00000026;margin:0 -22px;line-height:0;">{leaf(" ")}</section>'
+            f'</section>'
+        )
     # editorial（也是未知 layout 的防御性兜底；argparse 已限定 THEMES 内取值）
     return (
         '<section style="margin:10px 10px 34px;background:#FFFFFF;border-radius:12px;box-shadow:0 4px 24px -4px rgba(220,38,38,0.15);padding:26px 22px;">'
@@ -344,6 +438,37 @@ def render_toc(headings, theme):
         return ""
     layout = theme["layout"]
     label = "本文看点"
+    if layout in {"plain", "serif-rule"}:
+        # 极简两套不用卡片：编号 + 标题竖排成一份目录，靠细线分隔。
+        rows = "".join(
+            f'<section style="padding:9px 0;border-bottom:1px solid {theme["line"]};">'
+            f'<span style="font-size:11px;font-weight:800;color:{theme["accent"]};'
+            f'letter-spacing:1px;margin-right:10px;">{leaf(f"{index:02d}")}</span>'
+            f'<span style="font-size:13.5px;font-weight:600;color:{theme["ink"]};">{leaf(heading)}</span>'
+            f'</section>'
+            for index, heading in enumerate(items, 1)
+        )
+        return (
+            f'<section style="margin:0 14px 36px;">'
+            f'<p style="font-size:11px;color:{theme["muted"]};margin:0 0 6px;letter-spacing:2px;">{leaf(label)}</p>'
+            f'<section style="border-top:1px solid {theme["line"]};">{rows}</section></section>'
+        )
+    if layout == "colorblock":
+        # 色块：目录做成一列浅底条，左侧一道主色粗边，与章节色条呼应。
+        rows = "".join(
+            f'<section style="background:{theme["soft"]};border-left:5px solid {theme.get("block", theme["accent"])};'
+            f'padding:10px 12px;margin-bottom:6px;">'
+            f'<span style="font-size:11px;font-weight:800;color:{theme.get("block", theme["accent"])};'
+            f'margin-right:9px;">{leaf(f"{index:02d}")}</span>'
+            f'<span style="font-size:13px;font-weight:700;color:{theme["ink"]};">{leaf(heading)}</span>'
+            f'</section>'
+            for index, heading in enumerate(items, 1)
+        )
+        return (
+            f'<section style="margin:0 14px 36px;">'
+            f'<p style="font-size:11px;color:{theme["muted"]};margin:0 0 10px;letter-spacing:2px;">{leaf(label)}</p>'
+            f'{rows}</section>'
+        )
     cards = []
     for index, heading in enumerate(items, 1):
         if layout == "editorial":
@@ -375,6 +500,47 @@ def render_heading(heading, index, total, theme):
             f'<p style="background:#DC2626;color:#FFFFFF;font-size:17px;font-weight:900;padding:4px 13px;border-radius:6px;margin:0 13px 0 0;">{leaf(number)}</p>'
             f'<section><p style="font-size:9px;color:#DC2626;font-weight:700;letter-spacing:3px;margin:0 0 2px;">{leaf(tag)}</p>'
             f'<p style="font-size:18px;font-weight:800;color:#1C1917;margin:0;line-height:1.45;">{leaf(heading)}</p></section></section>'
+        )
+    if layout == "plain":
+        # 素白：大号浅色数字压在标题上方，是全篇唯一的「大」元素。
+        return (
+            f'<section style="margin:44px 14px 20px;">'
+            f'<p style="margin:0 0 2px;font-size:34px;font-weight:800;line-height:1;'
+            f'color:{theme.get("num", theme["line"])};letter-spacing:-1px;">{leaf(number)}</p>'
+            f'<p style="margin:0;font-size:18px;font-weight:700;line-height:1.5;color:{theme["ink"]};">{leaf(heading)}</p></section>'
+        )
+    if layout == "serif-rule":
+        # 墨线：实心黑方块编号 + 标题 + 细线收尾。
+        rule = theme.get("rule", theme["ink"])
+        return (
+            f'<section style="margin:46px 14px 20px;">'
+            f'<section style="margin-bottom:12px;">'
+            f'<span style="display:inline-block;padding:5px 9px;background:{rule};color:#FFFFFF;'
+            f'font-size:12px;font-weight:700;letter-spacing:1px;">{leaf(number)}</span></section>'
+            f'<p style="margin:0 0 10px;font-size:19px;font-weight:700;line-height:1.5;color:{theme["ink"]};">{leaf(heading)}</p>'
+            f'<section style="height:1px;background:{theme["line"]};line-height:0;">{leaf(" ")}</section></section>'
+        )
+    if layout == "darkhero":
+        # 深潭：小方块编号（取 hero 的深色）+ 一道横线延伸到右边。
+        dark = theme.get("dark", theme["ink"])
+        return (
+            f'<section style="margin:44px 14px 20px;">'
+            f'<section style="display:flex;align-items:center;margin-bottom:10px;">'
+            f'<span style="display:inline-block;width:22px;height:22px;background:{dark};color:#FFFFFF;'
+            f'font-size:11px;font-weight:800;text-align:center;line-height:22px;">{leaf(number)}</span>'
+            f'<span style="flex:1;height:1px;background:{theme["line"]};margin-left:10px;">{leaf(" ")}</span></section>'
+            f'<p style="margin:0;font-size:18px;font-weight:750;line-height:1.5;color:{theme["ink"]};">{leaf(heading)}</p></section>'
+        )
+    if layout == "colorblock":
+        # 色块：标题整条反白压在主色上，通栏出血，是这套的核心识别点。
+        block, blockink = theme.get("block", theme["accent"]), theme.get("blockink", "#FFFFFF")
+        return (
+            f'<section style="margin:44px 0 22px;background:{block};padding:11px 18px;">'
+            f'<section style="display:flex;align-items:center;">'
+            f'<span style="display:inline-block;background:#FFFFFF;color:{block};font-size:12px;'
+            f'font-weight:800;padding:3px 9px;margin-right:11px;">{leaf(number)}</span>'
+            f'<span style="font-size:17px;font-weight:800;color:{blockink};line-height:1.4;">{leaf(heading)}</span>'
+            f'</section></section>'
         )
     if layout == "ticket":
         return (
@@ -610,6 +776,7 @@ def render_follow_cta(theme):
     """文末留存钩子：完读肯定 + 在看/转发 + 关注。所有主题共用文案，按主题取色。"""
     layout = theme["layout"]
     accent = theme["accent"]
+    emphasis_color = accent      # 各 layout 可覆盖（深底上必须换成浅色）
     if layout == "journal":
         container = (f'margin:44px 8px 0;background:{theme["ink"]};'
                      f'border-radius:{theme["radius"]};padding:18px 20px;')
@@ -618,12 +785,24 @@ def render_follow_cta(theme):
         container = (f'margin:44px 12px 0;background:{theme["soft"]};'
                      f'border:2px solid {theme["ink"]};padding:16px 18px;')
         label_color, text_color, lead_color = accent, theme["body"], theme["ink"]
+    elif layout == "colorblock":
+        # 与 hero、章节色条统一：CTA 也做成通栏色块反白。
+        # 注意强调色必须改成白：accent 本身就是这块底色，压上去会看不见。
+        block = theme.get("block", accent)
+        container = f'margin:44px 0 0;background:{block};padding:18px 18px;'
+        label_color, text_color, lead_color = "#FFFFFFB3", "#FFFFFFD9", theme.get("blockink", "#FFFFFF")
+        emphasis_color = "#FFFFFF"
+    elif layout in {"plain", "serif-rule"}:
+        # 极简两套不用色块，只用一根上边线把 CTA 与正文分开。
+        rule = theme.get("rule", theme["line"])
+        container = f'margin:44px 14px 0;border-top:1px solid {rule};padding:18px 0 0;'
+        label_color, text_color, lead_color = theme["muted"], theme["body"], theme["ink"]
     else:
         container = (f'margin:44px 12px 0;background:{theme["soft"]};'
                      f'border-radius:{theme["radius"]};border-left:4px solid {accent};'
                      f'padding:18px 18px;')
         label_color, text_color, lead_color = accent, theme["body"], theme["ink"]
-    emphasis = f'font-weight:800;color:{accent};'
+    emphasis = f'font-weight:800;color:{emphasis_color};'
     return (
         f'<section style="{container}">'
         f'<p style="margin:0 0 10px;font-size:11px;font-weight:800;letter-spacing:3px;'
@@ -666,7 +845,8 @@ def render_document(title, sections, plan_or_theme, theme=None):
         anchors = {}
     else:
         anchors = module_map(plan_or_theme, sections)
-    font = "-apple-system,BlinkMacSystemFont,Segoe UI,PingFang SC,Hiragino Sans GB,Microsoft YaHei,sans-serif"
+    # 字体可由主题覆盖（墨线用衬线）；未声明的主题沿用原来的无衬线栈。
+    font = theme.get("font", DEFAULT_FONT)
     output = [
         f'<section style="box-sizing:border-box;max-width:677px;margin:0 auto;padding:8px 0 30px;background:{theme["paper"]};color:{theme["body"]};font-family:{font};overflow-x:hidden;">'
     ]
