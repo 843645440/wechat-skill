@@ -334,7 +334,9 @@ def writing_contract(job):
     band = shape.get("body_band")
     return {
         "output_file": "article.md",
-        "title": "唯一一级标题 # ，≤32 字；刺点放前 16 字；禁周报体/通稿体。"
+        "title": "唯一一级标题 # ，≤32 字。**必须回答「谁 + 干了什么」**——"
+        "读者在推荐页只看得到标题，说不出这写的是谁、哪件事就不会点，"
+        "这比没有刺点更致命。在有主体的前提下把刺点放前 16 字；禁周报体/通稿体。"
         "先写 3 个不同刺点的候选（数字/反差/损失），用 "
         "wechat-viral-writer/scripts/score_draft.py --titles A B C 排序再定",
         "body_chars": f"可读字符 {MIN_BODY_CHARS}—{MAX_BODY_CHARS}"

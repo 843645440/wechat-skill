@@ -161,6 +161,34 @@ class TitleRankingTests(unittest.TestCase):
         self.assertFalse(item["stings"])
         self.assertTrue(any("后半截" in n for n in item["notes"]))
 
+    def test_title_without_a_subject_is_penalised(self):
+        """刺点解决「想不想点」，主体解决「知不知道这是什么」。
+
+        「省下的 90% 成本没有消失，它原来是某个人的工资」有数字、有断言，
+        早期版本给它满分——但读者在推荐页说不出这写的是谁、哪件事，不会点。
+        """
+        [item] = self.rank("省下的90%成本没有消失，它原来是某个人的工资")["ranked"]
+        self.assertFalse(item["has_subject"])
+        self.assertLess(item["score"], 80)
+        self.assertTrue(any("主体" in n for n in item["notes"]))
+
+    def test_concrete_subject_is_recognised(self):
+        for title in ("AI短剧播放破2亿，横店13万群演抢800个通告",
+                      "《被裁掉的女孩》火了，真人演员在改行",
+                      "13万群演抢800个通告，这行还能干吗"):
+            with self.subTest(title=title):
+                [item] = self.rank(title)["ranked"]
+                self.assertTrue(item["has_subject"], title)
+
+    def test_vague_referent_without_subject_is_hit_harder(self):
+        vague = self.rank("它没有消失，只是换了个地方")["ranked"][0]["score"]
+        plain = self.rank("成本没有消失，只是换了个地方")["ranked"][0]["score"]
+        self.assertLess(vague, plain)
+
+    def test_advice_when_no_candidate_has_a_subject(self):
+        result = self.rank("成本降了九成", "效率提升了十倍", "这笔账该谁付")
+        self.assertTrue(any("可指认的主体" in a for a in result["advice"]))
+
     def test_same_sting_kind_across_candidates_is_called_out(self):
         result = self.rank("3 个理由", "5 分钟搞定", "10 倍效率")
         self.assertTrue(any("同一类刺点" in a for a in result["advice"]))

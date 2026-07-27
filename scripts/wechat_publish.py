@@ -292,6 +292,29 @@ class WeChatClient:
             raise PublishError(f"创建草稿失败：{result}")
         return result["media_id"]
 
+    def update_draft(self, media_id, article, index=0):
+        """就地改写已有草稿的第 index 篇。
+
+        为什么需要它：改一个标题不该在草稿箱里多留一篇。没有这条路的时候，
+        「标题写得不好」的唯一修法是重新 add 一篇，然后人工去后台删旧的——
+        改得越多，草稿箱里的垃圾越多，而且两篇长得一模一样，很容易删错。
+
+        注意微信这个接口的 `articles` 是**单个对象**，不是 add 那样的数组。
+
+        may_mutate=True 的理由和 add_draft 一样：请求发出去之后读不到响应时，
+        远端可能已经改了。不同的是 update 天然幂等（同样的 media_id + index +
+        内容，重放结果一致），所以重试是安全的——这一点写在这里，免得日后
+        有人照抄 add_draft 的「禁止自动重发」结论。
+        """
+        result = self._request(
+            "POST", "/cgi-bin/draft/update",
+            {"media_id": media_id, "index": int(index), "articles": article},
+            may_mutate=True,
+        )
+        if result.get("errcode") not in (0, None):
+            raise PublishError(f"更新草稿失败：{result}")
+        return {"media_id": media_id, "index": int(index)}
+
     def publish(self, media_id):
         result = self._request(
             "POST", "/cgi-bin/freepublish/submit", {"media_id": media_id}
@@ -620,6 +643,66 @@ def nonnegative_int(value):
     return number
 
 
+def build_article(account, client, args, html):
+    """把 HTML 和命令行参数拼成微信要的 article 结构。
+
+    send 和 update 必须走同一条拼装路径——否则「更新后的草稿和新建的草稿字段
+    不一致」这种问题会以最难查的方式出现（比如更新时漏掉 need_open_comment，
+    评论区就悄悄关了）。
+    """
+    html, images, skipped_images = upload_html_images(
+        html, os.path.abspath(args.html), client
+    )
+    article = {
+        "title": args.title,
+        "author": args.author if args.author is not None else account.get("default_author", ""),
+        "digest": args.digest if args.digest is not None else account.get("default_digest", ""),
+        "content": html,
+        "content_source_url": (
+            args.source_url if args.source_url is not None
+            else account.get("default_source_url", "")
+        ),
+        "thumb_media_id": resolve_thumb(account, args, client),
+        "need_open_comment": int(account.get("need_open_comment", 0)),
+        "only_fans_can_comment": int(account.get("only_fans_can_comment", 0)),
+    }
+    return article, images, skipped_images
+
+
+def cmd_update(config, args):
+    """就地改写已有草稿，不新建。改标题、改正文、改封面都走这条。"""
+    try:
+        with open(args.html, encoding="utf-8") as f:
+            html = f.read().strip()
+    except OSError as exc:
+        raise PublishError(f"无法读取 HTML：{exc}") from exc
+    validate_html(html, args.strict)
+    validate_publish_ready(html)
+    if args.dry_run:
+        checked_images, skipped_images = preflight_send(
+            get_account(config, args.account), args, html
+        )
+        write_result({
+            "dry_run": True, "account": args.account, "action": "update",
+            "draft_media_id": args.media_id, "index": args.index,
+            "title": args.title, "checked_local_images": checked_images,
+            "skipped_content_images": skipped_images,
+        }, args.result_file)
+        return
+    account, client = client_for_account(config, args.account, args.no_token_cache)
+    article, images, skipped_images = build_article(account, client, args, html)
+    client.update_draft(args.media_id, article, args.index)
+    write_result({
+        "account": args.account,
+        "action": "update",
+        "run_id": getattr(args, "run_id", None),
+        "draft_media_id": args.media_id,
+        "index": args.index,
+        "uploaded_content_images": len(images),
+        "skipped_content_images": skipped_images,
+    }, args.result_file)
+
+
 def cmd_send(config, args):
     account = get_account(config, args.account)
     try:
@@ -647,23 +730,7 @@ def cmd_send(config, args):
         return
 
     account, client = client_for_account(config, args.account, args.no_token_cache)
-    html, images, skipped_images = upload_html_images(
-        html, os.path.abspath(args.html), client
-    )
-    thumb_media_id = resolve_thumb(account, args, client)
-    article = {
-        "title": args.title,
-        "author": args.author if args.author is not None else account.get("default_author", ""),
-        "digest": args.digest if args.digest is not None else account.get("default_digest", ""),
-        "content": html,
-        "content_source_url": (
-            args.source_url if args.source_url is not None
-            else account.get("default_source_url", "")
-        ),
-        "thumb_media_id": thumb_media_id,
-        "need_open_comment": int(account.get("need_open_comment", 0)),
-        "only_fans_can_comment": int(account.get("only_fans_can_comment", 0)),
-    }
+    article, images, skipped_images = build_article(account, client, args, html)
     draft_media_id = client.add_draft(article)
     result = {
         "account": args.account,
@@ -724,6 +791,21 @@ def build_parser():
     send.add_argument("--dry-run", action="store_true", help="只校验输入，不调用微信 API")
     send.add_argument("--no-token-cache", action="store_true")
     send.add_argument("--result-file", help="同时把 JSON 结果原子写入指定文件")
+    update = sub.add_parser("update", help="就地改写已有草稿（改标题/正文/封面，不新建）")
+    update.add_argument("--account", required=True, help="配置中的账号别名")
+    update.add_argument("--media-id", required=True, help="要改写的草稿 media_id")
+    update.add_argument("--index", type=nonnegative_int, default=0, help="草稿内第几篇")
+    update.add_argument("--html", required=True, help="已通过校验的正文 HTML")
+    update.add_argument("--title", required=True)
+    update.add_argument("--author")
+    update.add_argument("--digest")
+    update.add_argument("--source-url")
+    update.add_argument("--cover", help="封面图片路径或 URL")
+    update.add_argument("--run-id", help="调用方生成的本次运行 ID")
+    update.add_argument("--strict", action="store_true", help="HTML warning 也视为失败")
+    update.add_argument("--dry-run", action="store_true", help="只校验输入，不调用微信 API")
+    update.add_argument("--no-token-cache", action="store_true")
+    update.add_argument("--result-file", help="同时把 JSON 结果原子写入指定文件")
     publish = sub.add_parser("publish", help="发布已经审核过的现有草稿")
     publish.add_argument("--account", required=True, help="配置中的账号别名")
     publish.add_argument("--media-id", required=True, help="已有草稿的 media_id")
@@ -746,6 +828,8 @@ def main():
             cmd_accounts(config)
         elif args.command == "send":
             cmd_send(config, args)
+        elif args.command == "update":
+            cmd_update(config, args)
         else:
             cmd_publish(config, args)
     except PublishError as exc:

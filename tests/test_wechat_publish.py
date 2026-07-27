@@ -320,3 +320,73 @@ class PublishTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DraftUpdateTests(unittest.TestCase):
+    """就地改写草稿：改一个标题不该在草稿箱里多留一篇。
+
+    这里锁两件容易搞错的事：
+    1. 微信 `draft/update` 的 articles 是**单个对象**，不是 add 那样的数组。传错
+       不会报语法错，会静默改坏内容。
+    2. send 和 update 必须共用同一条 article 拼装路径。分叉过一次就会出现
+       「更新后评论区悄悄关了」这类只有事后才发现的问题。
+    """
+
+    def make_client(self, response=None):
+        client = wp.WeChatClient("id", "secret")
+        calls = []
+
+        def fake_request(method, path, payload=None, headers=None,
+                         authenticated=True, may_mutate=False):
+            calls.append({"method": method, "path": path, "payload": payload,
+                          "may_mutate": may_mutate})
+            return response if response is not None else {"errcode": 0}
+
+        client._request = fake_request
+        return client, calls
+
+    def test_update_posts_a_single_article_object(self):
+        client, calls = self.make_client()
+        result = client.update_draft("MID", {"title": "新标题"}, index=0)
+        self.assertEqual(result, {"media_id": "MID", "index": 0})
+        self.assertEqual(len(calls), 1)
+        call = calls[0]
+        self.assertEqual(call["path"], "/cgi-bin/draft/update")
+        self.assertEqual(call["payload"]["media_id"], "MID")
+        self.assertEqual(call["payload"]["index"], 0)
+        self.assertIsInstance(call["payload"]["articles"], dict)
+        self.assertTrue(call["may_mutate"])
+
+    def test_update_raises_on_errcode(self):
+        client, _ = self.make_client({"errcode": 40007, "errmsg": "invalid media_id"})
+        with self.assertRaises(wp.PublishError):
+            client.update_draft("MID", {"title": "x"})
+
+    def test_send_and_update_build_identical_articles(self):
+        account = {
+            "default_author": "作者", "default_digest": "默认摘要",
+            "default_source_url": "https://example.com",
+            "need_open_comment": 1, "only_fans_can_comment": 0,
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            html_path = os.path.join(tmp, "article.html")
+            with open(html_path, "w", encoding="utf-8") as f:
+                f.write("<section><p>正文</p></section>")
+            args = Namespace(html=html_path, title="标题", author=None, digest=None,
+                             source_url=None, cover=None)
+            client = FakeClient()
+            with mock.patch.object(wp, "resolve_thumb", return_value="THUMB"):
+                article, _, _ = wp.build_article(
+                    account, client, args, "<section><p>正文</p></section>")
+        self.assertEqual(article["author"], "作者")
+        self.assertEqual(article["digest"], "默认摘要")
+        self.assertEqual(article["thumb_media_id"], "THUMB")
+        self.assertEqual(article["need_open_comment"], 1)
+
+    def test_update_subcommand_is_wired(self):
+        args = wp.build_parser().parse_args([
+            "update", "--account", "a", "--media-id", "MID",
+            "--html", "x.html", "--title", "T",
+        ])
+        self.assertEqual(args.command, "update")
+        self.assertEqual(args.index, 0)
