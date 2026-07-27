@@ -68,16 +68,19 @@ python3 <PIPELINE>/scripts/pipeline_job.py stage --job <job.json> --name humaniz
 #    不新增事实，不删 brief 要求保留的时间线与结论，不把字数改到 1500 以下。
 python3 <PIPELINE>/scripts/pipeline_job.py stage --job <job.json> --name humanize --status completed --detail intensity=strong
 
-# 8. 正文配图（一条命令，退出码恒为 0，自己记账）
-python3 <PIPELINE>/scripts/gen_inline_images.py --article <article.md> --imgs-dir <imgs/> --seed <run_id> \
-        --job <job.json> --record-stage
-#    --record-stage 会自动完成 running → completed/skipped 记账，**跑完不要再补 stage 命令**。
-#    （漏标 running 会被 stage 门禁直接拒绝，这是这一环最常见的失败方式。）
+# 8. 正文配图（Agent 用 image_generate 生图，不走脚本）
+#    ⚠️ 不要跑 gen_inline_images.py（它依赖 agnes，环境里没有）。
+#    Agent 自己分析文章、挑 0-3 个插图位、用 image_generate 工具生图、插回 article.md。
+#    生不出来就跳过（status=skipped），不阻塞流水线。
+#    记账：
+python3 <PIPELINE>/scripts/pipeline_job.py stage --job <job.json> --name illustrations --status completed --detail "backend=image_generate;count=N"
 
-# 9. 封面（一条命令，退出码恒为 0，自己记账）
-python3 <PIPELINE>/scripts/gen_cover_image.py --job <job.json> --record-stage
-#    它内部走完整降级链：用户图 → 生图 → 离线兜底，保证有封面（封面是 finish 硬门禁）。
-#    无网络/无 API key 也能出图；要跳过生图直接兜底加 --skip-generate。
+# 9. 封面（Agent 用 image_generate 生图，不走脚本）
+#    ⚠️ 不要跑 gen_cover_image.py（它依赖 agnes，环境里没有）。
+#    Agent 用 image_generate 生成封面，输出到 cover/cover.png。
+#    生不出来走离线兜底：python3 <PIPELINE>/scripts/render_cover_fallback.py ...
+#    记账：
+python3 <PIPELINE>/scripts/pipeline_job.py stage --job <job.json> --name cover --status completed --detail "backend=image_generate"
 
 # 10. Prepare（校验标题、字数、humanize、图片数与路径安全，固定主题）
 python3 <PIPELINE>/scripts/pipeline_runtime.py prepare --job <job.json>

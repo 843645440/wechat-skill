@@ -13,11 +13,13 @@ work/<account>/current/cover/cover.png
 | 顺序 | 后端 | 前置条件 | 记账 detail |
 |---|---|---|---|
 | 1 | 用户提供的封面图 | brief 给了封面路径 | `backend=user_provided` |
-| 2 | 生图 API（Agnes / 当前 runtime 的 image_generate） | 有 `AGNES_API_KEY` 或 runtime 自带生图 | `backend=image_generate` |
+| 2 | **image_generate 工具**（Agent 直接调用） | Hermes 环境自带 | `backend=image_generate` |
 | 3 | **离线兜底渲染**（本仓库自带，纯 Pillow） | 有 Python + 一款中文字体 | `backend=offline_render` |
 | 4 | 账号默认 `thumb_media_id` | 配了 `WECHAT_<X>_THUMB_MEDIA_ID` | `backend=account_default` |
 
-**没有生图能力不是阻塞理由。** 运行环境没有 `AGNES_API_KEY`、也没有可用浏览器时，直接走第 3 档：
+**不要用 agnes，直接用 image_generate。** Agent 在流水线里直接调用 `image_generate` 工具生成封面，输出到 `cover/cover.png`。
+
+**没有生图能力不是阻塞理由。** 如果 image_generate 失败，直接走第 3 档离线兜底：
 
 ```bash
 python3 <PIPELINE_ROOT>/scripts/render_cover_fallback.py \
