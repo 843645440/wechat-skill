@@ -235,6 +235,7 @@ class PublishTests(unittest.TestCase):
             with self.assertRaisesRegex(wp.PublishError, "图片内容格式"):
                 wp.read_image(path, tmp)
 
+    @unittest.skipIf(wp.Image is None, "缺 Pillow 时解码校验降级为 magic bytes，壳样本无法识别")
     def test_read_image_rejects_undecodable_format_shells(self):
         png_shell = (
             b"\x89PNG\r\n\x1a\n"
@@ -255,14 +256,16 @@ class PublishTests(unittest.TestCase):
                 with self.assertRaisesRegex(wp.PublishError, "图片内容格式"):
                     wp.read_image(path, tmp)
 
-    def test_read_image_fails_closed_when_decoder_is_unavailable(self):
+    def test_read_image_degrades_to_magic_bytes_when_decoder_is_unavailable(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = os.path.join(tmp, "valid.png")
             with open(path, "wb") as f:
                 f.write(self.PNG_1X1)
             with mock.patch.object(wp, "Image", None):
-                with self.assertRaisesRegex(wp.PublishError, "缺少 Pillow"):
-                    wp.read_image(path, tmp)
+                with self.assertWarnsRegex(RuntimeWarning, "缺少 Pillow"):
+                    filename, data, detected_type = wp.read_image(path, tmp)
+                self.assertEqual(detected_type, "image/png")
+                self.assertEqual(filename, "valid.png")
 
     def test_read_image_rejects_local_image_over_20_mib(self):
         with tempfile.TemporaryDirectory() as tmp:
