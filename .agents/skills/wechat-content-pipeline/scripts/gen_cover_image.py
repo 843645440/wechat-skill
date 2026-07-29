@@ -171,9 +171,14 @@ def run(args):
     kicker = account_label(job)
     seed = str(job.get("run_id", "") or "seed")
 
-    # 2. 生图
-    generate_reason = "按 --skip-generate 跳过"
-    if not args.skip_generate:
+    # 2. 生图（image_policy.cover_backend=offline_render 或 --skip-generate 时跳过）
+    policy = job.get("image_policy") or {}
+    skip_generate = args.skip_generate or policy.get("cover_backend") == "offline_render"
+    if policy.get("cover_backend") == "offline_render":
+        generate_reason = "按账号策略 cover_backend=offline_render 跳过"
+    else:
+        generate_reason = "按 --skip-generate 跳过"
+    if not skip_generate:
         prompt_text = PROMPT_TEMPLATE.format(
             title=title, topic=job.get("event_focus") or job.get("topic") or title
         )

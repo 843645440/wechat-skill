@@ -86,6 +86,8 @@ python3 <PIPELINE>/scripts/pipeline_job.py stage --job <job.json> --name cover -
 python3 <PIPELINE>/scripts/pipeline_runtime.py prepare --job <job.json>
 
 # 11. Finish（验收封面，写草稿箱，文件锁防双草稿）
+#    ℹ️ 图片解码校验依赖 Pillow（可选）：缺 Pillow 只记 warning 并按 magic bytes 放行，不阻塞；
+#    需要完整解码校验时，用装了 Pillow 的解释器跑本条。
 python3 <PIPELINE>/scripts/pipeline_runtime.py finish --job <job.json> --config <ROOT>/wechat-accounts.json
 ```
 
@@ -102,6 +104,13 @@ python3 <PIPELINE>/scripts/pipeline_runtime.py finish --job <job.json> --config 
 ⚠️ `user-brief.md` 必须写在 `init` **之后**。`init` 会清空重建工作区，在它之前落盘会被清掉。
 
 ### 2. 图片降级链
+
+**默认策略（账号档案决定）**：`illustrations.enabled=false` 时**正文默认不配图**——不要主动跑
+`gen_inline_images.py`，直接把 illustrations 阶段记为 `skipped`；`cover.backend=offline_render`
+时封面**直接走离线兜底**（`gen_cover_image.py` 会读 job.json 里的 `image_policy` 自动跳过生图，
+无需传 `--skip-generate`）。**例外**：用户给了图或明确要求配图时，照常跑两条命令，用户图仍按
+`user_provided` 最高优先级处理。**开工前用户没提配图方式时，先问一次**（不配图 / 用户供图 / 生图），
+不要自行决定。
 
 **正文配图**——全部交给 `gen_inline_images.py` 一条命令，它内部就是这条链：
 

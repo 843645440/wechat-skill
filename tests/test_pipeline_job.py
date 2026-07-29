@@ -31,7 +31,7 @@ class PipelineJobTests(unittest.TestCase):
             },
             "theme_strategy": "random",
             "illustrations": {
-                "enabled": True,
+                "enabled": overrides.get("illustrations_enabled", True),
                 "skill": "baoyu-article-illustrator",
                 "backend": overrides.get("illustration_backend", "image_generate"),
                 "max_images": overrides.get("max_images", 3),
@@ -223,14 +223,25 @@ class PipelineJobTests(unittest.TestCase):
     def test_init_rejects_invalid_profile_backends_and_image_count(self):
         cases = (
             ({"illustration_backend": "other"}, "Baoyu"),
-            ({"cover_backend": "html"}, "生图 API 封面"),
-            ({"cover_backend": "other"}, "生图 API 封面"),
+            ({"cover_backend": "html"}, "封面 backend"),
+            ({"cover_backend": "other"}, "封面 backend"),
             ({"max_images": 4}, "Baoyu"),
         )
         for kwargs, message in cases:
             with self.subTest(kwargs=kwargs), tempfile.TemporaryDirectory() as tmp:
                 with self.assertRaisesRegex(pipeline_job.JobError, message):
                     self.init_job(tmp, **kwargs)
+
+    def test_init_accepts_no_inline_images_and_offline_cover_policy(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            job_path = self.init_job(
+                tmp, illustrations_enabled=False, cover_backend="offline_render",
+            )
+            job = json.loads(job_path.read_text(encoding="utf-8"))
+            self.assertEqual(
+                job["image_policy"],
+                {"inline_enabled": False, "cover_backend": "offline_render"},
+            )
 
     def test_auto_hotspot_accepts_category_timestamp_and_focus(self):
         with tempfile.TemporaryDirectory() as tmp:

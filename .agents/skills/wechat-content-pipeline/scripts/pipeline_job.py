@@ -820,19 +820,26 @@ def cmd_init(args):
     profile = profiles[args.account]
     illustrations = profile.get("illustrations", {})
     cover = profile.get("cover", {})
+    inline_enabled = illustrations.get("enabled")
+    cover_backend = cover.get("backend")
     if (
         profile.get("theme_strategy") != "random"
-        or illustrations.get("enabled") is not True
-        # 正文配图已收敛为 gen_inline_images.py 一条命令；旧档案里的
-        # baoyu-article-illustrator 仍然接受（已归档到 archive/），避免存量账号 init 失败。
-        or illustrations.get("skill") not in (
-            "gen_inline_images", "baoyu-article-illustrator"
-        )
-        or illustrations.get("backend") != "image_generate"
-        or type(illustrations.get("max_images")) is not int
-        or not 1 <= illustrations["max_images"] <= 3
+        or inline_enabled not in (True, False)
+        # 正文配图两种合法策略：enabled=true 走生图降级链（须配齐 skill/backend/max_images）；
+        # enabled=false 默认不配图（用户给图时 agent 仍可用 gen_inline_images 识别 user_provided）。
+        or (inline_enabled and (
+            # 正文配图已收敛为 gen_inline_images.py 一条命令；旧档案里的
+            # baoyu-article-illustrator 仍然接受（已归档到 archive/），避免存量账号 init 失败。
+            illustrations.get("skill") not in (
+                "gen_inline_images", "baoyu-article-illustrator"
+            )
+            or illustrations.get("backend") != "image_generate"
+            or type(illustrations.get("max_images")) is not int
+            or not 1 <= illustrations["max_images"] <= 3
+        ))
         or cover.get("enabled") is not True
-        or cover.get("backend") != "image_generate"
+        # 封面两种合法策略：image_generate 先生图再兜底；offline_render 直接离线兜底。
+        or cover_backend not in ("image_generate", "offline_render")
         or cover.get("aspect") not in ("16:9", "2.35:1", "20:9", "3:2")
         or profile.get("publishing", {}).get("target") != "draft"
         or not isinstance(profile.get("audience"), str)
@@ -841,8 +848,9 @@ def cmd_init(args):
         or not profile.get("topic_discovery", {}).get("categories")
     ):
         raise JobError(
-            "账号内容档案必须启用 Baoyu 正文配图、生图 API 封面、随机主题，"
-            "并以草稿箱为终点"
+            "账号内容档案不合法：随机主题与草稿箱终点为必需；正文配图开启时需 "
+            "Baoyu/gen_inline_images + image_generate + 1-3 张，关闭时默认不配图；"
+            "封面 backend 仅支持 image_generate 或 offline_render"
         )
     job_dir = resolve_work_dir(project_root, args.work_dir, args.account)
     existed_before = os.path.isdir(job_dir)
@@ -885,6 +893,10 @@ def cmd_init(args):
         "profiles_path": profiles_path,
         "job_dir": job_dir,
         "account": args.account,
+        "image_policy": {
+            "inline_enabled": inline_enabled,
+            "cover_backend": cover_backend,
+        },
         "run_id": secrets.token_hex(12),
         "topic": args.topic.strip() if has_topic else None,
         "topic_source": "provided" if has_topic else None,

@@ -138,6 +138,30 @@ class CoverFallbackChainTests(unittest.TestCase):
             self.assertEqual(result["backend"], "offline_render")
             self.assertEqual(calls, [], "--skip-generate 时不应调用生图后端")
 
+    def test_offline_render_policy_skips_generation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            job_path, _ = make_job(tmp)
+            job = json.loads(job_path.read_text(encoding="utf-8"))
+            job["image_policy"] = {"inline_enabled": False, "cover_backend": "offline_render"}
+            job_path.write_text(json.dumps(job, ensure_ascii=False), encoding="utf-8")
+            calls = []
+            orig_gen, orig_fb = cover.try_generate, cover.try_fallback
+            cover.try_generate = lambda *a, **kw: (calls.append("generate"), True)[1]
+
+            def ok_fallback(title, kicker, seed, cover_path, ratio):
+                Path(cover_path).write_bytes(b"offline-png")
+                return True
+
+            cover.try_fallback = ok_fallback
+            try:
+                result = cover.run(Args(job_path))
+            finally:
+                cover.try_generate, cover.try_fallback = orig_gen, orig_fb
+
+            self.assertEqual(result["backend"], "offline_render")
+            self.assertEqual(calls, [], "cover_backend=offline_render 时不应调用生图后端")
+            self.assertIn("offline_render", result["generate_failed_because"])
+
     def test_title_falls_back_to_topic_when_h1_missing(self):
         with tempfile.TemporaryDirectory() as tmp:
             job_path, _ = make_job(tmp, title="没有一级标题的正文\n")
