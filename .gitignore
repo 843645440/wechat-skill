@@ -34,3 +34,6 @@ docs/screenshots/
 
 # Claude Code 本地权限配置（含机器相关路径，不入库）
 .claude/settings.local.json
+
+# WorkBuddy 本地记忆与缓存，不入库
+.workbuddy/
