@@ -45,7 +45,7 @@ work/<account>/current/
 
 ## 正文与图片
 
-`article.md` 第一行是唯一一级标题（≤32 字，信息锚点 + 点击钩子），不包含写作计划或待办。`job.json` 可含 `hook` / `tension` / `reader_stakes` 与 **`article_shape`**（`structure_id` / `opening_type` / `ending_type` / `felt_sense` / `tension_type` / `heading_count` / `body_band`）。写作必须吃进。账号 `topic-history.json` 同时服务事件去重与结构轮换。正文图由 Baoyu skill 调用当前 Hermes `image_generate` 后端生成，提示词保存在 `prompts/`，图片保存在 `imgs/`。
+`article.md` 第一行是唯一一级标题（≤32 字，信息锚点 + 点击钩子），不包含写作计划或待办。`job.json` 可含 `hook` / `tension` / `reader_stakes` 与 **`article_shape`**（`structure_id` / `opening_type` / `ending_type` / `felt_sense` / `tension_type` / `heading_count` / `body_band`）。写作必须吃进。账号 `topic-history.json` 同时服务事件去重与结构轮换。正文图由 xiaohu-gen skill 生成（加载 skill 后按路由规则选后端），提示词保存在 `prompts/`，图片保存在 `imgs/`。
 
 正文允许 0—3 张图。缺失或损坏图片可删除对应引用/HTML 标签后继续；路径越界、微信认证失败、有效图片上传失败仍是硬错误。图片上传时以真实文件字节和解码结果决定 MIME 与文件名，不依赖扩展名。
 

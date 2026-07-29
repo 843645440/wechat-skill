@@ -68,19 +68,22 @@ python3 <PIPELINE>/scripts/pipeline_job.py stage --job <job.json> --name humaniz
 #    不新增事实，不删 brief 要求保留的时间线与结论，不把字数改到 1500 以下。
 python3 <PIPELINE>/scripts/pipeline_job.py stage --job <job.json> --name humanize --status completed --detail intensity=strong
 
-# 8. 正文配图（Agent 用 image_generate 生图，不走脚本）
-#    ⚠️ 不要跑 gen_inline_images.py（它依赖 agnes，环境里没有）。
-#    Agent 自己分析文章、挑 0-3 个插图位、用 image_generate 工具生图、插回 article.md。
+# 8. 正文配图（Agent 用 xiaohu 生图，不走脚本）
+#    ⚠️ 不要跑 gen_inline_images.py（它依赖 agnes 脚本，环境里没有）。
+#    Agent 加载 xiaohu-gen skill，按路由规则选后端（文字密集→xiaoyi，艺术→agnes），
+#    自己分析文章、挑 0-3 个插图位、生图、插回 article.md。
+#    只有用户明确说"用 hermes 自带生图"时才用 image_generate。
 #    生不出来就跳过（status=skipped），不阻塞流水线。
 #    记账：
-python3 <PIPELINE>/scripts/pipeline_job.py stage --job <job.json> --name illustrations --status completed --detail "backend=image_generate;count=N"
+python3 <PIPELINE>/scripts/pipeline_job.py stage --job <job.json> --name illustrations --status completed --detail "backend=xiaohu;count=N"
 
-# 9. 封面（Agent 用 image_generate 生图，不走脚本）
-#    ⚠️ 不要跑 gen_cover_image.py（它依赖 agnes，环境里没有）。
-#    Agent 用 image_generate 生成封面，输出到 cover/cover.png。
+# 9. 封面（Agent 用 xiaohu 生图，不走脚本）
+#    ⚠️ 不要跑 gen_cover_image.py（它依赖 agnes 脚本，环境里没有）。
+#    Agent 加载 xiaohu-gen skill，按路由规则选后端生成封面，输出到 cover/cover.png。
+#    只有用户明确说"用 hermes 自带生图"时才用 image_generate。
 #    生不出来走离线兜底：python3 <PIPELINE>/scripts/render_cover_fallback.py ...
 #    记账：
-python3 <PIPELINE>/scripts/pipeline_job.py stage --job <job.json> --name cover --status completed --detail "backend=image_generate"
+python3 <PIPELINE>/scripts/pipeline_job.py stage --job <job.json> --name cover --status completed --detail "backend=xiaohu"
 
 # 10. Prepare（校验标题、字数、humanize、图片数与路径安全，固定主题）
 python3 <PIPELINE>/scripts/pipeline_runtime.py prepare --job <job.json>

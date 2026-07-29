@@ -806,6 +806,28 @@ def _cmd_finish(args):
         reported_state = "validated-dry-run"
     elif args.skip_draft:
         reported_state = "ready-for-draft"
+    
+    # 归档 article.md 到历史目录（仅草稿成功时）
+    if reported_state == "drafted":
+        try:
+            import re
+            from datetime import datetime
+            account = final_job["account"]
+            topic = final_job.get("topic", "untitled")
+            # 清理主题成目录名：去特殊字符，空格转连字符，截断 50 字
+            slug = re.sub(r'[^\w\s\u4e00-\u9fff-]', '', topic)
+            slug = re.sub(r'\s+', '-', slug.strip())[:50]
+            date_str = datetime.now().strftime("%Y-%m-%d")
+            archive_dir = roots["project"] / "work" / account / "archive" / f"{date_str}-{slug}"
+            archive_dir.mkdir(parents=True, exist_ok=True)
+            article_src = artifacts["article"]
+            article_dst = archive_dir / "article.md"
+            import shutil
+            shutil.copy2(str(article_src), str(article_dst))
+        except Exception as e:
+            # 归档失败不阻塞主流程
+            pass
+    
     return {
         "status": "ok", "state": reported_state, "account": final_job["account"],
         "topic": final_job["topic"],
