@@ -137,10 +137,10 @@ class ArticleRendererTests(unittest.TestCase):
     def test_each_theme_uses_a_distinct_rich_component_system(self):
         _, sections = renderer.parse_article(ARTICLE)
         expected = {
-            "moyu-green": ("TECH INSIGHT", "linear-gradient", "PART 01"),
+            "moyu-green": ("TECH INSIGHT", "linear-gradient", "01"),
             "red-white": ("本文看点", "background:#DC2626", "WORKFLOW"),
             "moyu-ticket": ("VALID FOR ONE READ", "END OF TICKET", "NO. 001"),
-            "olive-journal": ("EDITORIAL NOTE", "END NOTE", "PART"),
+            "olive-journal": ("EDITORIAL NOTE", "END NOTE", "letter-spacing:-2px"),
             # 低噪音 / 强母题组
             "plain-white": ("本文看点", "font-size:34px", "letter-spacing:-1px"),
             "ink-rule": ("本文看点", "Songti SC", "background:#111111"),

@@ -480,7 +480,7 @@ def render_toc(headings, theme):
         else:
             card = (
                 f'<section style="flex:1;background:{theme["soft"]};border:1px solid {theme["line"]};border-radius:{theme["radius"]};padding:13px 10px;">'
-                f'<p style="font-size:10px;color:{theme["accent"]};font-weight:800;margin:0 0 6px;">{leaf(f"PART {index:02d}")}</p>'
+                f'<p style="font-size:10px;color:{theme["accent"]};font-weight:800;margin:0 0 6px;">{leaf(f"{index:02d}")}</p>'
                 f'<p style="font-size:12px;font-weight:700;color:{theme["ink"]};margin:0;line-height:1.5;">{leaf(heading)}</p></section>'
             )
         cards.append(card)
@@ -551,8 +551,7 @@ def render_heading(heading, index, total, theme):
     if layout == "journal":
         return (
             '<section style="margin:38px 8px 22px;display:flex;align-items:center;gap:13px;">'
-            f'<section style="text-align:center;"><p style="margin:0;font-size:24px;font-weight:800;color:#23251D;line-height:1;letter-spacing:-2px;">{leaf(number)}</p>'
-            f'<p style="margin:2px 0 0;font-size:7px;font-weight:700;color:#9EA096;letter-spacing:2px;">{leaf("PART")}</p></section>'
+            f'<section style="text-align:center;"><p style="margin:0;font-size:24px;font-weight:800;color:#23251D;line-height:1;letter-spacing:-2px;">{leaf(number)}</p></section>'
             f'<span style="width:1px;height:36px;background:#BFC1B7;display:inline-block;">{leaf(" ")}</span>'
             f'<section><p style="margin:0 0 2px;font-size:17px;font-weight:800;color:#23251D;">{leaf(heading)}</p>'
             f'<p style="margin:0;font-size:9px;color:#65675E;letter-spacing:1.5px;">{leaf(tag)}</p></section></section>'
