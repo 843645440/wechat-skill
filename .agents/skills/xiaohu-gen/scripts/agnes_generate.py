@@ -17,7 +17,7 @@ import urllib.request
 from pathlib import Path
 
 
-DEFAULT_ENDPOINT = "https://apihub.agnes-ai.com/v1/images/generations"
+DEFAULT_ENDPOINT = "https://api.agnes-ai.cn/v1/images/generations"
 DEFAULT_MODEL = "agnes-image-2.1-flash"
 SUPPORTED_RATIOS = {"1:1", "3:4", "4:3", "16:9", "9:16", "2:3", "3:2", "21:9"}
 RATIO_ALIASES = {
