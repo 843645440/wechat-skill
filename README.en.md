@@ -101,14 +101,6 @@ For layout-only environments, install the root Skill with `npx skills add https:
 
 See the Chinese [usage guide](docs/usage.md) for account credentials, cloud-agent scheduling prompts, pipeline stages, and troubleshooting.
 
-## 💬 Community
-
-Scan to join the **official WeChat Work group** (dynamic QR, auto-invite) — chat about WeChat layout & Agent Skills:
-
-<img src="https://github.com/isjiamu/gzh-design-skill/releases/download/assets-v1/group-qr.png" width="220" alt="WeChat Work group QR">
-
-> QR expired? Add WeChat **`zuiyn_soul`** (note "gzh-design") to get invited.
-
 ## 📖 Workflow
 
 1. **Pick a theme** — auto-suggests the best fit by topic and asks you to confirm (defaults to Moyu Green); or specify one, or generate a new one.
@@ -212,5 +204,3 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). Co-built by **Jiamu × Moyu Xiaoli** —
 4. **No closed-source, proprietary, or paid-only distribution.**
 
 Full terms in [LICENSE](LICENSE).
-
-> 🤝 **AI Agent & model vendors welcome to co-create**: want to integrate wechat-skill into your product or deeply co-build on it? We'd love that — contact Jiamu for the co-creation agreement.

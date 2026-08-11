@@ -117,14 +117,6 @@ npx skills add https://github.com/843645440/wechat-skill
 
 > 用摸鱼绿把这篇文章排成公众号 HTML：`article.md`
 
-## 💬 交流群
-
-扫码加入**官方企业微信交流群**（活码自动邀请入群，一起交流公众号排版 & Agent Skills 玩法）：
-
-<img src="https://github.com/isjiamu/gzh-design-skill/releases/download/assets-v1/group-qr.png" width="220" alt="企业微信交流群二维码">
-
-> 扫码失效？加作者微信 **`zuiyn_soul`**（备注「gzh-design」）拉你进群。
-
 ## 📖 使用流程
 
 完整安装、多账号凭证、云端 Agent 定时触发和常见命令见 **[使用指南](docs/usage.md)**。
@@ -413,19 +405,7 @@ A：跑 `scripts/validate_gzh_html.py`，报 ERROR 就回到装配步骤修；�
 
 完整条款见 [LICENSE](LICENSE)。
 
-> 🤝 **欢迎 AI Agent 厂商、模型厂商共创**：想把 wechat-skill 集成进产品、或基于它做深度共建，我们很欢迎——共创协议请联系甲木。
-
 ## 🙏 致谢
 
 - 本项目由 **甲木 × 摸鱼小李** 联名共建：核心组件库与主题设计标准凝聚了两人的公众号排版实践。
 - 质量工程（可验证循环）由 skill-optimizer 审计驱动打磨。
-
----
-
-<div align="center">
-
-<img src="https://origin.picgo.net/2026/07/07/22e8d28de5f71eee085939b2f4c1f19548b19a67a79bdb68.png" width="600" alt="甲木 × 摸鱼小李 公众号名片">
-
-<sub>关注我们的公众号，获取更多 AI 干货与排版实践 👆</sub>
-
-</div>
