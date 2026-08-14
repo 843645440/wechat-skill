@@ -76,6 +76,24 @@ class CoverFallbackChainTests(unittest.TestCase):
             # 关键：原字节一字不动
             self.assertEqual(cover_path.read_bytes(), b"user-supplied-bytes")
 
+    def test_reading_catalog_cover_is_copied(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            job_path, job_dir = make_job(tmp)
+            catalog_cover = Path(tmp) / "book.png"
+            catalog_cover.write_bytes(b"catalog-cover-bytes")
+            raw = json.loads(job_path.read_text(encoding="utf-8"))
+            raw["genre"] = "reading"
+            raw["project_root"] = tmp
+            raw["reading"] = {"book_id": "demo", "cover": str(catalog_cover)}
+            job_path.write_text(json.dumps(raw), encoding="utf-8")
+
+            result = cover.run(Args(job_path))
+
+            dest = job_dir / "cover" / "cover.png"
+            self.assertEqual(result["status"], "completed")
+            self.assertEqual(result["backend"], "book_cover")
+            self.assertEqual(dest.read_bytes(), b"catalog-cover-bytes")
+
     def test_generation_failure_falls_back_to_offline_render(self):
         with tempfile.TemporaryDirectory() as tmp:
             job_path, job_dir = make_job(tmp)

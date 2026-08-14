@@ -36,7 +36,13 @@ TOPIC_HISTORY_VERSION = 2
 TOPIC_HISTORY_MAX_ENTRIES = 100
 TOPIC_DEDUP_DAYS = 7
 
-# 写作结构池（防同质/限流）：与 wechat-tech-insight-writer article-structures 对齐
+# 写作结构池（防同质/限流）：insight 与 wechat-tech-insight-writer 对齐；
+# reading 是认知读书线，结构更短，禁止科技时评那一套模具。
+GENRE_INSIGHT = "insight"
+GENRE_READING = "reading"
+GENRES = (GENRE_INSIGHT, GENRE_READING)
+READING_THEMES = ("ink-rule", "plain-white")
+
 STRUCTURE_IDS = (
     "felt_essay",
     "conflict",
@@ -77,6 +83,39 @@ TENSION_TYPES = (
     "hype_vs_adoption",
     "other",
 )
+READING_STRUCTURE_IDS = (
+    "rename_the_thing",
+    "misuse_scene",
+    "model_limit",
+    "old_belief",
+    "two_models",
+)
+READING_OPENING_TYPES = (
+    "scene",
+    "old_belief",
+    "judgment_first",
+    "contrast",
+)
+READING_ENDING_TYPES = (
+    "hook_return",
+    "model_boundary",
+    "next_use",
+    "unresolved",
+)
+READING_TENSION_TYPES = (
+    "know_vs_use",
+    "name_vs_thing",
+    "story_vs_mechanism",
+    "rule_vs_exception",
+    "other",
+)
+READING_FELT_SENSE_POOL = (
+    "被点破", "不服", "发紧", "清醒", "后悔", "讽刺", "谨慎",
+)
+ALL_STRUCTURE_IDS = STRUCTURE_IDS + READING_STRUCTURE_IDS
+ALL_OPENING_TYPES = tuple(dict.fromkeys(OPENING_TYPES + READING_OPENING_TYPES))
+ALL_ENDING_TYPES = tuple(dict.fromkeys(ENDING_TYPES + READING_ENDING_TYPES))
+ALL_TENSION_TYPES = tuple(dict.fromkeys(TENSION_TYPES + READING_TENSION_TYPES))
 BODY_BANDS = ("short", "mid", "long")
 SHAPE_KEYS = (
     "structure_id",
@@ -115,6 +154,28 @@ CREDENTIAL_KEY_RE = re.compile(
 
 class JobError(RuntimeError):
     pass
+
+
+def genre_of(job):
+    return job.get("genre") or GENRE_INSIGHT
+
+
+def pools_for(genre):
+    if genre == GENRE_READING:
+        return {
+            "structure_ids": READING_STRUCTURE_IDS,
+            "opening_types": READING_OPENING_TYPES,
+            "ending_types": READING_ENDING_TYPES,
+            "tension_types": READING_TENSION_TYPES,
+            "felt_senses": READING_FELT_SENSE_POOL,
+        }
+    return {
+        "structure_ids": STRUCTURE_IDS,
+        "opening_types": OPENING_TYPES,
+        "ending_types": ENDING_TYPES,
+        "tension_types": TENSION_TYPES,
+        "felt_senses": FELT_SENSE_POOL,
+    }
 
 
 def now_iso():
@@ -225,8 +286,13 @@ def record_topic_history(job, value, event_focus, selected_at=None, story=None):
     atomic_write(topic_history_path(job), history)
 
 
-def compute_rotation_plan(entries):
+def compute_rotation_plan(entries, pools=None):
     """根据近文历史给出禁用/告警结构，供 Agent 选题写作前阅读。"""
+    pools = pools or pools_for(GENRE_INSIGHT)
+    structure_ids = pools["structure_ids"]
+    opening_types = pools["opening_types"]
+    ending_types = pools["ending_types"]
+    tension_types = pools["tension_types"]
     timed = []
     for entry in entries:
         if not isinstance(entry, dict):
@@ -259,15 +325,16 @@ def compute_rotation_plan(entries):
         return blocked
 
     # opening 的可用池不含 date_announce（不推荐）：非 date 选项全被堵死时即视为耗尽
+    opening_pool = [o for o in opening_types if o != "date_announce"] or list(opening_types)
     blocked_openings = rotation_block(
         [e.get("opening_type") for e in last5],
         [e.get("opening_type") for e in last3],
-        [o for o in OPENING_TYPES if o != "date_announce"],
+        opening_pool,
     )
     blocked_endings = rotation_block(
         [e.get("ending_type") for e in last5],
         [e.get("ending_type") for e in last3],
-        ENDING_TYPES,
+        ending_types,
     )
     tension_counts = {}
     for entry in last5:
@@ -279,19 +346,19 @@ def compute_rotation_plan(entries):
     )
     recent_felt = [e.get("felt_sense") for e in last3 if e.get("felt_sense")]
     preferred_structures = [
-        sid for sid in STRUCTURE_IDS
+        sid for sid in structure_ids
         if sid not in blocked_structures and sid not in recent_structures
     ]
     if not preferred_structures:
         preferred_structures = [
-            sid for sid in STRUCTURE_IDS if sid not in blocked_structures
+            sid for sid in structure_ids if sid not in blocked_structures
         ]
     preferred_openings = [
-        o for o in OPENING_TYPES if o not in blocked_openings and o != "date_announce"
+        o for o in opening_types if o not in blocked_openings and o != "date_announce"
     ]
     if not preferred_openings:
-        preferred_openings = ["date_announce"]
-    preferred_endings = [e for e in ENDING_TYPES if e not in blocked_endings]
+        preferred_openings = ["date_announce"] if "date_announce" in opening_types else list(opening_types)
+    preferred_endings = [e for e in ending_types if e not in blocked_endings]
     return {
         "window": {
             "structure_lookback": 7,
@@ -314,19 +381,19 @@ def compute_rotation_plan(entries):
         "blocked_tensions": blocked_tensions,
         "recent_felt_senses": recent_felt,
         "preferred_structures": preferred_structures,
-        "preferred_openings": preferred_openings or list(OPENING_TYPES),
-        "preferred_endings": preferred_endings or list(ENDING_TYPES),
+        "preferred_openings": preferred_openings or list(opening_types),
+        "preferred_endings": preferred_endings or list(ending_types),
         "structure_counts_last7": structure_counts,
-        "allowed_structure_ids": list(STRUCTURE_IDS),
-        "allowed_opening_types": list(OPENING_TYPES),
-        "allowed_ending_types": list(ENDING_TYPES),
-        "allowed_tension_types": list(TENSION_TYPES),
+        "allowed_structure_ids": list(structure_ids),
+        "allowed_opening_types": list(opening_types),
+        "allowed_ending_types": list(ending_types),
+        "allowed_tension_types": list(tension_types),
         "allowed_body_bands": list(BODY_BANDS),
     }
 
 
-def validate_shape_against_history(entries, shape, *, enforce=True):
-    plan = compute_rotation_plan(entries)
+def validate_shape_against_history(entries, shape, *, enforce=True, pools=None):
+    plan = compute_rotation_plan(entries, pools=pools)
     errors = []
     sid = shape.get("structure_id")
     if sid in plan["blocked_structures"]:
@@ -377,26 +444,27 @@ def validate_shape_against_history(entries, shape, *, enforce=True):
 FELT_SENSE_POOL = ("烦", "发紧", "不安", "无力", "讽刺", "谨慎的兴奋", "振奋", "欣慰")
 
 
-def auto_shape_from_history(entries, run_id, overrides=None):
+def auto_shape_from_history(entries, run_id, overrides=None, pools=None):
     """按轮换计划确定性生成一个合法 shape（弱模型免选型）。
 
     同一 run_id 结果稳定可复跑；显式传入的字段优先于自动选择。
     所有选择都来自 preferred/allowed 列表，构造即合法。
     """
-    plan = compute_rotation_plan(entries)
+    pools = pools or pools_for(GENRE_INSIGHT)
+    plan = compute_rotation_plan(entries, pools=pools)
     rng = random.Random(str(run_id))
     overrides = {k: v for k, v in (overrides or {}).items() if v}
 
     structures = plan["preferred_structures"] or [
-        s for s in STRUCTURE_IDS if s not in plan["blocked_structures"]
-    ] or list(STRUCTURE_IDS)
+        s for s in pools["structure_ids"] if s not in plan["blocked_structures"]
+    ] or list(pools["structure_ids"])
     openings = plan["preferred_openings"] or ["date_announce"]
-    endings = plan["preferred_endings"] or list(ENDING_TYPES)
+    endings = plan["preferred_endings"] or list(pools["ending_types"])
     tensions = [
-        t for t in TENSION_TYPES if t not in plan["blocked_tensions"]
-    ] or list(TENSION_TYPES)
-    felts = [f for f in FELT_SENSE_POOL if f not in plan["recent_felt_senses"]] \
-        or list(FELT_SENSE_POOL)
+        t for t in pools["tension_types"] if t not in plan["blocked_tensions"]
+    ] or list(pools["tension_types"])
+    felts = [f for f in pools["felt_senses"] if f not in plan["recent_felt_senses"]] \
+        or list(pools["felt_senses"])
 
     timed = sorted(
         (e for e in entries if isinstance(e, dict)),
@@ -428,7 +496,8 @@ def auto_shape_from_history(entries, run_id, overrides=None):
     return shape
 
 
-def parse_shape_from_args(args):
+def parse_shape_from_args(args, pools=None):
+    pools = pools or pools_for(GENRE_INSIGHT)
     shape = {
         "structure_id": (args.structure_id or "").strip(),
         "opening_type": (args.opening_type or "").strip(),
@@ -439,21 +508,21 @@ def parse_shape_from_args(args):
     }
     if getattr(args, "heading_count", None) is not None:
         shape["heading_count"] = int(args.heading_count)
-    if shape["structure_id"] not in STRUCTURE_IDS:
+    if shape["structure_id"] not in pools["structure_ids"]:
         raise JobError(
-            f"structure_id 无效，可选：{', '.join(STRUCTURE_IDS)}"
+            f"structure_id 无效，可选：{', '.join(pools['structure_ids'])}"
         )
-    if shape["opening_type"] not in OPENING_TYPES:
+    if shape["opening_type"] not in pools["opening_types"]:
         raise JobError(
-            f"opening_type 无效，可选：{', '.join(OPENING_TYPES)}"
+            f"opening_type 无效，可选：{', '.join(pools['opening_types'])}"
         )
-    if shape["ending_type"] not in ENDING_TYPES:
+    if shape["ending_type"] not in pools["ending_types"]:
         raise JobError(
-            f"ending_type 无效，可选：{', '.join(ENDING_TYPES)}"
+            f"ending_type 无效，可选：{', '.join(pools['ending_types'])}"
         )
-    if shape["tension_type"] and shape["tension_type"] not in TENSION_TYPES:
+    if shape["tension_type"] and shape["tension_type"] not in pools["tension_types"]:
         raise JobError(
-            f"tension_type 无效，可选：{', '.join(TENSION_TYPES)}"
+            f"tension_type 无效，可选：{', '.join(pools['tension_types'])}"
         )
     if shape["body_band"] and shape["body_band"] not in BODY_BANDS:
         raise JobError(f"body_band 无效，可选：{', '.join(BODY_BANDS)}")
@@ -688,6 +757,72 @@ def runtime_script_command(job_path, subcommand, *extra):
     return _script_command(job_path, "pipeline_runtime.py", subcommand, *extra)
 
 
+def _load_read_book():
+    reader_dir = os.path.join(
+        os.path.dirname(PIPELINE_ROOT),
+        "wechat-reading-insight-writer", "scripts",
+    )
+    if reader_dir not in sys.path:
+        sys.path.insert(0, reader_dir)
+    import read_book
+    return read_book
+
+
+def _bind_reading(job, project_root, book):
+    """账号绑书 + 固定简介/封面。book 可以是路径、book_id，或空（只靠账号配置）。"""
+    reader = _load_read_book()
+    catalog = reader.load_catalog(project_root)
+    source = None
+    book_id = None
+    if book:
+        candidate = book if os.path.isabs(book) else os.path.join(project_root, book)
+        if os.path.isfile(candidate):
+            source = candidate
+            book_id = reader.book_id_from_path(candidate)
+        else:
+            entry = reader.book_entry(catalog, book)
+            book_id = (entry or {}).get("book_id") or book
+            try:
+                source = str(reader.resolve_book(project_root, book_id or book))
+            except Exception:
+                source = candidate
+    if not book_id:
+        book_id = reader.account_book_id(catalog, job.get("account"))
+        if book_id:
+            try:
+                source = str(reader.resolve_book(project_root, book_id))
+            except Exception:
+                source = source
+    if not book_id and not source:
+        return
+    if not book_id and source:
+        book_id = reader.book_id_from_path(source)
+    job["reading"] = {
+        "source": source,
+        "book_id": book_id,
+        "committed": False,
+    }
+    progress = None
+    if book_id:
+        progress_file = reader.progress_path(project_root, book_id)
+        if progress_file.is_file():
+            try:
+                progress = json.loads(progress_file.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                progress = None
+    reader.apply_catalog_to_job(job, project_root, book_id, progress=progress)
+
+
+def reading_script_command(project_root, *extra):
+    script = os.path.join(
+        os.path.dirname(PIPELINE_ROOT),
+        "wechat-reading-insight-writer", "scripts", "read_book.py",
+    )
+    parts = ["python3", shlex.quote(script), "--project-root", shlex.quote(os.path.abspath(project_root))]
+    parts.extend(shlex.quote(str(item)) for item in extra)
+    return " ".join(parts)
+
+
 def suggest_next_command(job, job_path):
     """给出下一条该跑的完整命令：init 之后每个子命令的 stdout 都靠它形成不读文档的命令链。
 
@@ -698,6 +833,14 @@ def suggest_next_command(job, job_path):
     stages = job["stages"]
     draft = stages["draft"]
     if draft["status"] == "completed":
+        reading = job.get("reading") or {}
+        if genre_of(job) == GENRE_READING and not reading.get("committed"):
+            claim = reading.get("claim") or "<本篇用过的那个主张，一句话>"
+            return reading_script_command(
+                job.get("project_root") or ".",
+                "commit", "--job", os.path.abspath(str(job_path)),
+                "--claim", claim,
+            ) + "  # 推进书签，避免下篇复读同一主张"
         return "本轮已完成：draft 已 completed，用 show 核对 draft-result.json 后结束本轮"
     if draft["status"] == "failed":
         if draft.get("details", {}).get("outcome") == "uncertain":
@@ -706,6 +849,22 @@ def suggest_next_command(job, job_path):
                 "重置为 pending，再重跑 finish；禁止自动重发"
             )
         return runtime_script_command(job_path, "finish") + "  # 上次 finish 失败，处理报错原因后重试"
+    if genre_of(job) == GENRE_READING:
+        reading = job.get("reading") or {}
+        if reading.get("piece") != "serial" and not job.get("event_focus"):
+            intro = reading.get("intro_work_file") or "book-intro.md"
+            return (
+                f"先读 {os.path.join(os.path.abspath(job['job_dir']), intro)}，"
+                "按固定简介写 user-brief.md（标题：全世界富豪都推荐读的一本书，"
+                "里面到底能学到什么？答：四字），再跑 topic"
+            )
+        if reading.get("piece") == "serial" and not reading.get("slice"):
+            extra = ["next", "--job", os.path.abspath(str(job_path))]
+            if reading.get("book_id"):
+                extra.extend(("--book", reading["book_id"]))
+            return reading_script_command(
+                job.get("project_root") or ".", *extra,
+            ) + "  # 从书签取下一刀原文；没模型就加 --skip"
     # init 已经把 --topic 写进 job["topic"]，所以不能只看 topic 有没有值，否则整个
     # topic 步骤会被跳过、event_focus 永远为空。以 event_focus 是否落定为准。
     if not job.get("event_focus"):
@@ -796,6 +955,7 @@ def build_job_contract(job, job_path, profile, rebuilt_existing):
             "draft_result_path": _p(artifacts.get("draft_result", "draft-result.json")),
         },
         "stages": stage_roster,
+        "genre": genre_of(job),
         "account_profile": safe_profile_summary(profile),
         "workspace_reset": {
             "rebuilt_existing_workspace": rebuilt_existing,
@@ -807,6 +967,7 @@ def build_job_contract(job, job_path, profile, rebuilt_existing):
             + "；写在 init 之前会被本次清空重建覆盖掉（已知陷阱，顺序反了会丢文件）。"
         ),
         "next_command": suggest_next_command(job, job_path),
+        "reading": job.get("reading"),
     }
 
 
@@ -884,6 +1045,21 @@ def cmd_init(args):
 
     created = now_iso()
     has_topic = bool(args.topic and args.topic.strip())
+    book = (getattr(args, "book", None) or "").strip() or None
+    bound_book = None
+    try:
+        bound_book = _load_read_book().account_book_id(
+            _load_read_book().load_catalog(project_root), args.account
+        )
+    except Exception:
+        bound_book = None
+    genre = (getattr(args, "genre", None) or "").strip() or (
+        GENRE_READING if (book or bound_book) else GENRE_INSIGHT
+    )
+    if genre == GENRE_READING and not book:
+        book = bound_book
+    if genre not in GENRES:
+        raise JobError(f"genre 无效，可选：{', '.join(GENRES)}")
     discover_status = "completed" if has_topic else "pending"
     job = {
         "schema_version": 5,
@@ -893,6 +1069,7 @@ def cmd_init(args):
         "profiles_path": profiles_path,
         "job_dir": job_dir,
         "account": args.account,
+        "genre": genre,
         "image_policy": {
             "inline_enabled": inline_enabled,
             "cover_backend": cover_backend,
@@ -918,6 +1095,8 @@ def cmd_init(args):
             for name in STAGES
         },
     }
+    if book or genre == GENRE_READING:
+        _bind_reading(job, project_root, book)
     job["state"] = summarize_state(job)
     job_path = os.path.join(job_dir, "job.json")
     atomic_write(job_path, job)
@@ -1114,7 +1293,9 @@ def cmd_history(args):
             entry for entry in entries
             if not (job.get("run_id") and entry.get("run_id") == job.get("run_id"))
         ]
-        payload["rotation"] = compute_rotation_plan(rotation_entries)
+        payload["rotation"] = compute_rotation_plan(
+            rotation_entries, pools=pools_for(genre_of(job)),
+        )
     payload["next_command"] = suggest_next_command(job, args.job)
     print(json.dumps(payload, ensure_ascii=False, indent=2))
 
@@ -1134,6 +1315,7 @@ def cmd_shape(args):
         entry for entry in recent_topic_entries(history)
         if not (job.get("run_id") and entry.get("run_id") == job.get("run_id"))
     ]
+    pools = pools_for(genre_of(job))
     if getattr(args, "auto", False):
         overrides = {
             "structure_id": (args.structure_id or "").strip(),
@@ -1145,11 +1327,13 @@ def cmd_shape(args):
         }
         if getattr(args, "heading_count", None) is not None:
             overrides["heading_count"] = int(args.heading_count)
-        shape = auto_shape_from_history(entries, job.get("run_id"), overrides)
+        shape = auto_shape_from_history(
+            entries, job.get("run_id"), overrides, pools=pools,
+        )
     else:
-        shape = parse_shape_from_args(args)
+        shape = parse_shape_from_args(args, pools=pools)
     enforce = not getattr(args, "force", False)
-    validate_shape_against_history(entries, shape, enforce=enforce)
+    validate_shape_against_history(entries, shape, enforce=enforce, pools=pools)
     job["article_shape"] = shape
     save_job(args.job, job)
     merge_shape_into_history(job, shape)
@@ -1191,7 +1375,18 @@ def cmd_choose_theme(args):
         raise JobError(
             f"主题未注册：{', '.join(unknown)}；可用：{', '.join(registered)}"
         )
-    themes = requested or registered
+    if genre_of(job) == GENRE_READING:
+        allowed = [name for name in READING_THEMES if name in registered]
+        if not allowed:
+            raise JobError("读书线需要 ink-rule / plain-white，render_article.py 里找不到")
+        bad = sorted(set(requested) - set(allowed))
+        if bad:
+            raise JobError(
+                f"读书线只用黑白主题：{', '.join(allowed)}；不能用 {', '.join(bad)}"
+            )
+        themes = requested or allowed
+    else:
+        themes = requested or registered
     # 由 run_id 派生，而非 secrets.choice：跨文章仍然轮换（run_id 每次都不同），
     # 但同一个 run 重跑必然选到同一套主题，恢复场景下不会换皮。
     digest = hashlib.sha256(str(job.get("run_id", "")).encode("utf-8")).digest()
@@ -1317,6 +1512,14 @@ def build_parser():
     init.add_argument("--profiles", default="config/wechat-content-profiles.json")
     init.add_argument("--account", required=True)
     init.add_argument("--topic")
+    init.add_argument(
+        "--genre", choices=GENRES,
+        help="insight=科技时评（默认）；reading=认知读书。给了 --book 则自动 reading",
+    )
+    init.add_argument(
+        "--book",
+        help="读书线：epub 路径或 book_id。省略则续最近未读完的那本",
+    )
     init.add_argument(
         "--force-new", action="store_true",
         help="明确丢弃现有 running/failed 工作区并新建任务",

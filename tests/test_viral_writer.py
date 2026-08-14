@@ -523,5 +523,35 @@ class RadarOutputTests(unittest.TestCase):
         self.assertIn("不要硬写", text)
 
 
+class ReadingGenreTests(unittest.TestCase):
+    def test_review_title_is_blocking_in_reading_genre(self):
+        article = "# 读《穷查理宝典》有感\n\n最近在读一本讲思维模型的书，收获很大。\n"
+        result = scorer.analyze(article, dict(scorer.THRESHOLDS), genre="reading")
+        texts = [p["what"] for p in result["problems"]]
+        self.assertTrue(any("书评" in t or "读后感" in t for t in texts))
+        self.assertTrue(any("原句" in t for t in texts))
+
+    def test_judgment_plus_quote_is_not_flagged_as_review(self):
+        article = (
+            "# 手里只有锤子时看什么都是钉子\n\n"
+            "上次评审方案，我下意识就把自己会的那套框架套上去。\n\n"
+            "芒格写过「如果你手里有一把锤子，看什么都像钉子」，说的就是这件事。\n\n"
+            "**判断标准**是：先问自己手里是不是只有一种工具。"
+            "适用边界是复杂系统别用单一模型硬套。\n"
+        )
+        result = scorer.analyze(article, dict(scorer.THRESHOLDS), genre="reading")
+        texts = [p["what"] for p in result["problems"]]
+        self.assertFalse(any("书评" in t or "读后感" in t for t in texts))
+        self.assertFalse(any("原句" in t for t in texts))
+
+    def test_title_ranker_penalizes_book_review_titles(self):
+        ranked = scorer.rank_titles(
+            ["读《金钱心理学》有感", "省下的钱没有消失它变成了别人的工资"],
+            dict(scorer.THRESHOLDS),
+            genre="reading",
+        )
+        self.assertNotIn("读《", ranked["best"])
+
+
 if __name__ == "__main__":
     unittest.main()

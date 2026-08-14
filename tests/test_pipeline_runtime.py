@@ -482,6 +482,18 @@ class PipelineRuntimeTests(unittest.TestCase):
         self.assertIn("75", gates["scored_by"])
         self.assertIn("1500", contract["length_plan"])
 
+    def test_reading_writing_contract_bans_book_review(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            job_path = self.make_job(tmp)
+            job = pipeline_runtime.pipeline_job.load_job(job_path)
+            job["genre"] = "reading"
+            pipeline_runtime.pipeline_job.save_job(job_path, job)
+            contract = pipeline_runtime.cmd_begin(
+                self.args(job_path))["writing_contract"]
+        self.assertEqual("reading", contract["genre"])
+        self.assertIn("答：", contract["title"])
+        self.assertIn("固定简介", contract["voice"])
+
     def test_check_carries_writing_health(self):
         """check 顺带跑写作体检：模型已经会跑 check，多一条命令就多一个会被忘掉的步骤。"""
         with tempfile.TemporaryDirectory() as tmp:

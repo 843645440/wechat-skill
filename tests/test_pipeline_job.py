@@ -521,6 +521,86 @@ class PipelineJobTests(unittest.TestCase):
         self.assertNotIn("fact-check", first["stages"])
         self.assertNotIn("sources", first["artifacts"])
 
+    def test_reading_genre_uses_reading_structure_pool_and_bw_theme(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            job_path = self.init_job(tmp, topic="手里只有锤子时")
+            job = pipeline_job.load_job(job_path)
+            job["genre"] = "reading"
+            pipeline_job.save_job(job_path, job)
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                pipeline_job.cmd_shape(pipeline_job.build_parser().parse_args([
+                    "shape", "--job", str(job_path), "--auto",
+                ]))
+            shape = json.loads(out.getvalue())
+            self.assertIn(shape["structure_id"], pipeline_job.READING_STRUCTURE_IDS)
+            self.assertIn(shape["opening_type"], pipeline_job.READING_OPENING_TYPES)
+            with self.assertRaisesRegex(pipeline_job.JobError, "黑白"):
+                pipeline_job.cmd_choose_theme(pipeline_job.build_parser().parse_args([
+                    "choose-theme", "--job", str(job_path), "--theme", "moyu-green",
+                ]))
+            theme_out = io.StringIO()
+            with contextlib.redirect_stdout(theme_out):
+                pipeline_job.cmd_choose_theme(pipeline_job.build_parser().parse_args([
+                    "choose-theme", "--job", str(job_path),
+                ]))
+            self.assertIn(theme_out.getvalue().strip(), pipeline_job.READING_THEMES)
+
+    def test_book_flag_implies_reading_and_intro_next_command(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.init_job(tmp)
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                pipeline_job.cmd_init(pipeline_job.build_parser().parse_args([
+                    "init", "--project-root", tmp, "--account", "a",
+                    "--genre", "reading", "--book", "穷查理宝典_clean.epub",
+                    "--force-new",
+                ]))
+            contract = json.loads(out.getvalue())["job_contract"]
+            self.assertEqual("reading", contract["genre"])
+            self.assertIn("user-brief.md", contract["next_command"])
+            self.assertIn("答：", contract["next_command"])
+
+    def test_account_binds_book_from_catalog(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.init_job(tmp)
+            root = Path(tmp)
+            (root / "config").mkdir(exist_ok=True)
+            (root / "config/reading/covers").mkdir(parents=True)
+            (root / "config/reading/intros").mkdir(parents=True)
+            (root / "config/reading/covers/demo.png").write_bytes(b"cover-bytes")
+            (root / "config/reading/intros/demo.md").write_text(
+                "固定简介正文\n", encoding="utf-8"
+            )
+            (root / "config/reading-books.json").write_text(json.dumps({
+                "version": 1,
+                "accounts": {"a": "demo"},
+                "books": {
+                    "demo": {
+                        "title": "演示之书",
+                        "author": "测试作者",
+                        "english_title": "Demo",
+                        "cover": "config/reading/covers/demo.png",
+                        "intro": "config/reading/intros/demo.md",
+                    }
+                },
+            }, ensure_ascii=False), encoding="utf-8")
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                pipeline_job.cmd_init(pipeline_job.build_parser().parse_args([
+                    "init", "--project-root", tmp, "--account", "a", "--force-new",
+                ]))
+            contract = json.loads(out.getvalue())["job_contract"]
+            self.assertEqual("reading", contract["genre"])
+            reading = contract["reading"]
+            self.assertEqual("demo", reading["book_id"])
+            self.assertEqual("intro", reading["piece"])
+            self.assertTrue(reading["cover"].endswith("demo.png"))
+            intro_path = Path(contract["paths"]["work_dir"]) / "book-intro.md"
+            self.assertTrue(intro_path.is_file())
+            self.assertIn("固定简介", intro_path.read_text(encoding="utf-8"))
+
 
 if __name__ == "__main__":
     unittest.main()

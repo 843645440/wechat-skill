@@ -16,6 +16,9 @@ node_modules/
 .vscode/
 .idea/
 
+# 本地书源与阅读进度（epub 不入库；进度在 work/library/）
+*.epub
+
 # 本地临时产物（排版输出的 HTML 不入库，除 docs/gallery 示例外）
 /*.html
 *_排版_*.html
@@ -31,6 +34,7 @@ node_modules/
 # 预览图托管在 GitHub Release，不入库
 docs/screenshots/
 *.png
+!config/reading/covers/*.png
 
 # Claude Code 本地权限配置（含机器相关路径，不入库）
 .claude/settings.local.json

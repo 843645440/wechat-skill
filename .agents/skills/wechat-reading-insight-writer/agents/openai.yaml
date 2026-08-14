@@ -1,0 +1,4 @@
+interface:
+  display_name: "认知读书写作：自己的判断，书当引文"
+  short_description: "按书签引用原句写第一人称判断文"
+  default_prompt: "使用 $wechat-reading-insight-writer 根据 reading-slice.md 写一篇公众号：主角是我已经看清的一件事，书只提供原句和命名，不要写成书评或读后感。"

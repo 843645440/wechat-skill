@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "_readme": "账号绑书；一书一份固定简介 + 一张公用封面。改绑定只动 accounts，改书讯只动 books。",
+  "accounts": {
+    "a": "穷查理宝典",
+    "b": "金钱心理学"
+  },
+  "books": {
+    "穷查理宝典": {
+      "title": "穷查理宝典",
+      "author": "查理·芒格",
+      "english_title": "Poor Charlie's Almanack",
+      "cover": "config/reading/covers/穷查理宝典.png",
+      "intro": "config/reading/intros/穷查理宝典.md"
+    },
+    "金钱心理学": {
+      "title": "金钱心理学",
+      "author": "摩根·豪泽尔",
+      "english_title": "The Psychology of Money",
+      "cover": "config/reading/covers/金钱心理学.png",
+      "intro": "config/reading/intros/金钱心理学.md"
+    },
+    "从0到1": {
+      "title": "从0到1",
+      "author": "彼得·蒂尔",
+      "english_title": "Zero to One",
+      "cover": "config/reading/covers/从0到1.png",
+      "intro": "config/reading/intros/从0到1.md"
+    }
+  }
+}

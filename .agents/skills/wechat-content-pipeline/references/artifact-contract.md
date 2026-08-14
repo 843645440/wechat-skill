@@ -19,6 +19,8 @@ work/<account>/current/
 
 `current/` 用于本轮 Skill 间传递，不是文章档案库；正式审核和留存在微信公众号草稿箱。新一轮 `init` 可在安全状态下清空并重建工作区，每次生成不同 `run_id`。
 
+认知读书的书签在 `work/library/<book_id>.json`，不进 `current/`，避免 init 丢进度。当期切片是 `reading-slice.md`。
+
 ## 阶段
 
 固定阶段为：

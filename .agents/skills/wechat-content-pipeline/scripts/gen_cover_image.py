@@ -167,6 +167,23 @@ def run(args):
         return {"status": "completed", "backend": "user_provided",
                 "cover": str(cover_path)}
 
+    # 1b. 读书线：一书一张公用封面，直接拷进工作区，不按标题重生
+    reading = job.get("reading") or {}
+    catalog_cover = reading.get("cover")
+    if catalog_cover:
+        src = Path(catalog_cover)
+        if not src.is_file() and job.get("project_root"):
+            src = Path(job["project_root"]) / catalog_cover
+        if src.is_file() and src.stat().st_size > 0:
+            import shutil
+            shutil.copy2(src, cover_path)
+            return {
+                "status": "completed",
+                "backend": "book_cover",
+                "cover": str(cover_path),
+                "source": str(src),
+            }
+
     title = read_title(article_path, job.get("topic", "") or "封面")
     kicker = account_label(job)
     seed = str(job.get("run_id", "") or "seed")

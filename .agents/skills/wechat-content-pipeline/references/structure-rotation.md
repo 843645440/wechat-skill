@@ -74,6 +74,20 @@ python3 <PIPELINE_ROOT>/scripts/pipeline_job.py shape \
 | `tech_livelihood` | 科技民生 |
 | `non_invest_finance` | 非投资财经 |
 
+### 认知读书（`genre=reading`）只用下面这池
+
+| id | 读者一眼感 |
+|----|------------|
+| `rename_the_thing` | 我本来就会，书给了名字 |
+| `misuse_scene` | 我会在具体场合用错 |
+| `model_limit` | 这个模型的边界 |
+| `old_belief` | 我原来默认 X |
+| `two_models` | 和另一个模型打架 |
+
+读书开头：`scene` / `old_belief` / `judgment_first` / `contrast`（不要「最近在读」）。
+读书结尾：`hook_return` / `model_boundary` / `next_use` / `unresolved`。
+读书矛盾：`know_vs_use` / `name_vs_thing` / `story_vs_mechanism` / `rule_vs_exception` / `other`。
+
 ### opening_type
 
 `emotion_sting` | `contrast` | `myth` | `scene` | `judgment_first` | `date_announce`（不推荐）

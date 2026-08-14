@@ -162,6 +162,13 @@ CLICHE_OPENERS = [
     r"^近年来", r"^众所周知", r"^如今[，,]", r"^在这个[^，。]{0,10}的时代",
     r"^提到[^，。]{1,12}[，,]相信", r"^说起[^，。]{1,12}[，,]大家",
 ]
+READING_CLICHE_OPENERS = [
+    r"^最近在读", r"^最近读了", r"^读完了", r"^今天想聊聊这本书",
+    r"^这本书(?:告诉|讲的是|让我|给了)", r"^作者在书中",
+    r"^读完《", r"^合上这本书",
+]
+REVIEW_TITLE_RE = re.compile(r"读后感|书评|读书笔记|读《|荐书|读完")
+CITE_RE = re.compile(r"[「『“][^」』”]{6,}[」』”]")
 
 TITLE_RE = re.compile(r"^#\s+(.+?)\s*$")
 HEADING_RE = re.compile(r"^(#{2,6})\s+(.+?)\s*$")
@@ -324,7 +331,7 @@ def ratio_score(value, good, bad):
 
 # ---------------------------------------------------------------- 各维度
 
-def check_hook(blocks, stream, origins, thresholds, problems):
+def check_hook(blocks, stream, origins, thresholds, problems, genre="insight"):
     """开头 20 分：标题 + 前 150 字。这是转化漏斗最窄的地方，单独拎出来打分。"""
     notes, score = [], 20.0
     titles = [b for b in blocks if b["kind"] == "h1"]
@@ -363,9 +370,20 @@ def check_hook(blocks, stream, origins, thresholds, problems):
                 "fix": "补一个具体锚点（谁、多少、代价是什么）",
             })
             score -= 2
+        if genre == "reading" and REVIEW_TITLE_RE.search(title):
+            problems.append({
+                "dim": "hook", "severity": "high", "line": titles[0]["line"],
+                "what": "标题写成了书评/读后感",
+                "fix": "标题只写判断或现象，书名不要进标题。"
+                       "例如不要「读《穷查理宝典》有感」，写「手里只有一把锤子时」",
+            })
+            score -= 6
 
     lede = stream[: thresholds["lede_max_chars"]]
-    for pattern in CLICHE_OPENERS:
+    openers = list(CLICHE_OPENERS)
+    if genre == "reading":
+        openers.extend(READING_CLICHE_OPENERS)
+    for pattern in openers:
         if re.search(pattern, lede):
             problems.append({
                 "dim": "hook", "severity": "high",
@@ -696,7 +714,29 @@ def grade_of(score):
     return "E"
 
 
-def analyze(article, thresholds):
+def check_reading_voice(blocks, stream, problems):
+    """读书线额外门禁：必须是自己的判断 + 原句，不能是书评。"""
+    notes, score = [], 0.0
+    if not CITE_RE.search(stream):
+        problems.append({
+            "dim": "value_density", "severity": "high", "line": 1,
+            "what": "全文没有引用书里的原句（需要「」或“”包住至少 6 个字）",
+            "fix": "从 reading-slice.md 摘 1–3 句原话放进正文当证据，不要用「作者大概是想说」",
+        })
+    reviewish = len(re.findall(
+        r"这本书值得|推荐大家|强烈推荐|必读书|读后感|金句打卡|作者生平",
+        stream,
+    ))
+    if reviewish:
+        problems.append({
+            "dim": "reader_benefit", "severity": "medium", "line": 1,
+            "what": "正文里有书评腔（推荐/必读/金句打卡/作者生平）",
+            "fix": "删掉荐书句，改成「我会在哪个场合用错」或这个模型的边界",
+        })
+    return notes
+
+
+def analyze(article, thresholds, genre="insight"):
     blocks = parse_blocks(article)
     stream, origins, offsets = body_stream(blocks)
     if not stream:
@@ -715,7 +755,9 @@ def analyze(article, thresholds):
         }
     problems = []
     dims = {}
-    dims["hook"] = check_hook(blocks, stream, origins, thresholds, problems) + (20,)
+    dims["hook"] = check_hook(
+        blocks, stream, origins, thresholds, problems, genre=genre,
+    ) + (20,)
     dims["value_density"] = check_value_density(
         blocks, stream, origins, offsets, thresholds, problems) + (25,)
     dims["reader_benefit"] = check_reader_benefit(
@@ -723,6 +765,8 @@ def analyze(article, thresholds):
     dims["readability"] = check_readability(blocks, thresholds, problems) + (20,)
     dims["retention"] = check_retention(
         blocks, stream, origins, thresholds, problems) + (15,)
+    if genre == "reading":
+        check_reading_voice(blocks, stream, problems)
 
     body_chars = len(stream)
     if body_chars < thresholds["body_min"]:
@@ -796,7 +840,7 @@ def render_markdown(result):
     return "\n".join(lines)
 
 
-def score_title(title, thresholds):
+def score_title(title, thresholds, genre="insight"):
     """给单个标题打分（100）。标题是整条漏斗最窄的一道闸门，值得单独算。
 
     刺点类型也一并返回：三个候选如果全是同一类刺点，等于只想出了一个标题——
@@ -858,6 +902,9 @@ def score_title(title, thresholds):
     if re.search(r"(?:的一些|几点|浅谈|漫谈|随笔|思考|探讨|之我见)", flat):
         score -= 20
         notes.append("周报腔：「思考/浅谈/几点」是过程词，读者要的是结果")
+    if genre == "reading" and REVIEW_TITLE_RE.search(flat):
+        score -= 30
+        notes.append("书评/读后感标题：改成判断或现象，书名不要进标题")
     if re.search(r"^[^，。？！]{6,}(?:引入|接入|上线|发布|推出|开放)[^，。？！]*[，,]", flat):
         score -= 15
         notes.append("通报体：只说发生了什么，没说关读者什么事")
@@ -876,9 +923,9 @@ def score_title(title, thresholds):
     }
 
 
-def rank_titles(titles, thresholds):
+def rank_titles(titles, thresholds, genre="insight"):
     ranked = sorted(
-        (score_title(t, thresholds) for t in titles),
+        (score_title(t, thresholds, genre=genre) for t in titles),
         key=lambda r: (-r["score"], r["chars"]),
     )
     kinds = {s for item in ranked for s in item["stings"] + item["late_stings"]}
@@ -932,6 +979,10 @@ def build_parser():
         help="只给标题候选打分排序（不看正文）。写正文之前先用它挑标题",
     )
     parser.add_argument("--config", help="writer-config.json，用于覆盖阈值")
+    parser.add_argument(
+        "--genre", choices=("insight", "reading"), default="insight",
+        help="reading：按认知读书文判，拦书评腔、要求引用原句",
+    )
     parser.add_argument("--markdown", action="store_true", help="输出给人看的报告")
     parser.add_argument("--out", help="把 JSON 结果另存到这个路径")
     return parser
@@ -956,7 +1007,7 @@ def main(argv=None):
     thresholds = load_thresholds(args.config)
 
     if args.titles:
-        result = rank_titles(args.titles, thresholds)
+        result = rank_titles(args.titles, thresholds, genre=args.genre)
         print(render_titles_markdown(result) if args.markdown
               else json.dumps(result, ensure_ascii=False))
         return 0
@@ -974,7 +1025,7 @@ def main(argv=None):
             }],
         }, ensure_ascii=False))
         return 0
-    result = analyze(article, thresholds)
+    result = analyze(article, thresholds, genre=args.genre)
     if args.out:
         Path(args.out).parent.mkdir(parents=True, exist_ok=True)
         Path(args.out).write_text(

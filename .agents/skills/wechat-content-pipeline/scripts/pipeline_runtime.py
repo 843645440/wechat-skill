@@ -134,11 +134,13 @@ def ngram_recall(source, target, size=2):
     return len(head & grams(target)) / len(head)
 
 
-def writing_health(article_path):
+def writing_health(article_path, genre=None):
     """跑写作体检，返回结果字典；Skill 缺失或脚本异常时返回 None（不影响 check）。"""
     if not VIRAL_SCORER.is_file():
         return None
     command = [sys.executable, str(VIRAL_SCORER), "--article", str(article_path)]
+    if genre:
+        command += ["--genre", genre]
     if VIRAL_CONFIG.is_file():
         command += ["--config", str(VIRAL_CONFIG)]
     try:
@@ -332,17 +334,56 @@ def writing_contract(job):
     """把写作硬门禁压缩成一张机器可读的卡片，弱模型照抄执行，不必翻文档。"""
     shape = job.get("article_shape", {})
     band = shape.get("body_band")
+    reading = pipeline_job.genre_of(job) == pipeline_job.GENRE_READING
+    if reading:
+        piece = (job.get("reading") or {}).get("piece") or "intro"
+        if piece != "serial":
+            title_rule = (
+                "唯一一级标题 # ，≤32 字。格式："
+                "全世界富豪都推荐读的一本书，里面到底能学到什么？答：四字。"
+                "答必须短：成语或不超过 4 个字。前 16 字要有钩"
+            )
+            voice = (
+                "一书一篇总介绍。开头用 job 里的 book-intro.md 固定简介，"
+                "不要重写作者履历。后半写普通人在生活里能用什么，"
+                "投资人那截点到即可。禁止小说，禁止把简介扩成人物传"
+            )
+            faithful = (
+                "固定简介里的作者、书名、出处不得改。正文主场是普通人。"
+                "封面用配置里的公用封面，不要按标题重生图"
+            )
+        else:
+            title_rule = (
+                "唯一一级标题 # ，≤32 字。导师口吻两截："
+                "为什么你＋普通人的笨办法？其实不是A，是B。"
+                "解决办法不要写进标题。刺点放前 16 字"
+            )
+            voice = (
+                "连载：从 reading-slice.md 挖一个判断，给普通人用。"
+                "专业原句下一句必须译成人话。禁止小说开场"
+            )
+            faithful = (
+                "引文必须来自 reading-slice.md；一篇一个判断；"
+                "固定简介不必再写一遍；封面仍用该书公用封面"
+            )
+    else:
+        title_rule = (
+            "唯一一级标题 # ，≤32 字。**必须回答「谁 + 干了什么」**——"
+            "读者在推荐页只看得到标题，说不出这写的是谁、哪件事就不会点，"
+            "这比没有刺点更致命。在有主体的前提下把刺点放前 16 字；禁周报体/通稿体。"
+            "先写 3 个不同刺点的候选（数字/反差/损失），用 "
+            "wechat-viral-writer/scripts/score_draft.py --titles A B C 排序再定"
+        )
+        voice = "第一人称「我」+ 强情感；情绪钉在机制/事实上；禁编造亲历、人物、数据"
+        faithful = "忠实用户 brief：不换题、不反转结论、must_avoid 禁区不碰、关键数字全保留"
     return {
         "output_file": "article.md",
-        "title": "唯一一级标题 # ，≤32 字。**必须回答「谁 + 干了什么」**——"
-        "读者在推荐页只看得到标题，说不出这写的是谁、哪件事就不会点，"
-        "这比没有刺点更致命。在有主体的前提下把刺点放前 16 字；禁周报体/通稿体。"
-        "先写 3 个不同刺点的候选（数字/反差/损失），用 "
-        "wechat-viral-writer/scripts/score_draft.py --titles A B C 排序再定",
+        "title": title_rule,
         "body_chars": f"可读字符 {MIN_BODY_CHARS}—{MAX_BODY_CHARS}"
         + (f"（本篇目标 {BAND_CHAR_HINTS[band]}）" if band in BAND_CHAR_HINTS else ""),
-        "voice": "第一人称「我」+ 强情感；情绪钉在机制/事实上；禁编造亲历、人物、数据",
-        "faithful": "忠实用户 brief：不换题、不反转结论、must_avoid 禁区不碰、关键数字全保留",
+        "voice": voice,
+        "faithful": faithful,
+        "genre": pipeline_job.genre_of(job),
         "shape": shape,
         "shape_note": "shape 只保证轮换合法，不懂题材。felt_sense / tension_type 与本题"
         "明显相悖时（判决、事故写成「振奋」这类），先跑 "
@@ -496,9 +537,11 @@ def cmd_check(args):
         )
     # 写作体检：结构合法 ≠ 有人读得下去。high 级问题并进 problems（挡住 status=ok），
     # 其余进 hints——阈值类问题值得看，但不该让弱模型在这里原地打转。
-    health = writing_health(article_path)
+    genre = pipeline_job.genre_of(job)
+    health = writing_health(article_path, genre=genre)
     writing = None
     if health:
+        genre_flag = f" --genre {genre}" if genre == pipeline_job.GENRE_READING else ""
         writing = {
             "score": health.get("score"),
             "grade": health.get("grade"),
@@ -506,7 +549,7 @@ def cmd_check(args):
             "dimensions": {k: v["score"] for k, v in
                            (health.get("dimensions") or {}).items()},
             "report_command": (
-                f"python3 {VIRAL_SCORER} --article {article_path} --markdown"
+                f"python3 {VIRAL_SCORER} --article {article_path}{genre_flag} --markdown"
             ),
         }
         for item in health.get("problems", []):

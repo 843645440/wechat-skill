@@ -1,11 +1,13 @@
 ---
 name: wechat-content-pipeline
-description: 编排中文微信公众号文章：用户提供主题与大致思路后，完成写作、humanize、可降级正文配图、生图或用户指定封面、随机主题并写入指定公众号草稿箱。默认不自动选题、不扫热点；不公开发布。
+description: 编排中文微信公众号文章。本分支主路径是认知读书：按书签从 epub 取下一刀原文，写成「自己的判断 + 引用书里的知识」，黑白排版后写入指定账号草稿箱。也保留用户命题的科技时评路径（--genre insight）。默认不自动选题、不公开发布。
 ---
 
 # 微信公众号内容生产流水线
 
-**默认模式：用户命题。**用户给出主题 + 大致思路，本 Skill 扩写成稿并送到指定账号草稿箱。
+**本分支默认：认知读书。**给一本正在读的书（或续书签），按顺序读下一刀，写成你自己已经看清的一件事，书只当引文。
+
+科技时评旧路径仍在：`init --genre insight --topic "…"`。
 
 - **禁止**在未获主题时自行联网选题、换题或「找个热点凑一篇」。
 - **禁止**公开发布（仅草稿箱，除非用户另行明确要求）。
@@ -17,40 +19,46 @@ description: 编排中文微信公众号文章：用户提供主题与大致思�
 
 下面的「命令链」是全部流程。只有卡在某一步时才去读对应的 reference。
 
-⚠️ 链上有 **3 步没有命令**，是你自己写文件，最容易漏：
+⚠️ 读书链上有 **3 步没有命令**，是你自己写文件，最容易漏：
 
-1. `init` 之后写 `user-brief.md`（第 2 步）
-2. `begin` 之后写 `article.md` + `digest.txt`（第 5 步）
-3. humanize 阶段就地改写 `article.md`（第 7 步）
+1. `next` 之后写 `user-brief.md`（我原来默认 / 引用哪句 / 我会用错的场合）
+2. `begin` 之后写 `article.md` + `digest.txt`
+3. humanize 阶段就地改写 `article.md`
 
 其余每一步都有现成命令，**不要自己发明命令、不要新建脚本**。
 
-## 命令链
+## 命令链（认知读书）
 
-`<PIPELINE>` = 本 Skill 根目录，`<ROOT>` = 项目根目录。所有产出路径由 `init` 打印的
-`job_contract.paths` 给出绝对路径，**不要自己推算路径**。
+`<PIPELINE>` = 本 Skill 根目录，`<ROOT>` = 项目根目录，
+`<READ>` = `.agents/skills/wechat-reading-insight-writer`。
+所有产出路径由 `init` 打印的 `job_contract.paths` 给出绝对路径。
 
 ```bash
-# 1. 初始化（生成 run_id，清空重建工作区，打印 job_contract）
-python3 <PIPELINE>/scripts/pipeline_job.py init --project-root <ROOT> --account <账号> --topic "<用户主题>"
+# 1. 初始化（账号在 config/reading-books.json 里绑书；可被 --book 覆盖）
+python3 <PIPELINE>/scripts/pipeline_job.py init --project-root <ROOT> --account <账号>
 
-# 2. 落盘用户 brief —— 必须在 init 之后（init 会清空工作区）
-#    写到 job_contract.paths.work_dir/user-brief.md，格式见 references/user-brief.md
-#    这一步没有命令，是你自己写文件；init 的 next_command 会提醒你。
+# 2. 该书第一篇是总介绍：读 job 里的 book-intro.md，不要跑 next
+#    封面用配置里的公用图（gen_cover_image 会拷），不要按标题生图
+#    之后连载才：
+python3 <READ>/scripts/read_book.py next --project-root <ROOT> --job <job.json>
 
-# 3. 固化选题（source 必须是 provided）
-python3 <PIPELINE>/scripts/pipeline_job.py topic --job <job.json> --value "<主题>" --source provided --event-focus "<一句话核心>"
+# 3. 落盘 user-brief.md（init 之后才写，否则会被清空）
+#    总介绍：简介固定，标题「……答：四字」
+#    连载：抄 user-brief.skeleton.md，导师口吻标题
+
+# 4. 固化选题（source 必须是 provided；主题写判断，不要写「读《xx》」）
+python3 <PIPELINE>/scripts/pipeline_job.py topic --job <job.json> --value "<判断句>" --source provided --event-focus "<一句话核心>"
 
 # 4. 锁定结构（防同质，默认 --auto，同 run_id 稳定，永不死锁）
 python3 <PIPELINE>/scripts/pipeline_job.py shape --job <job.json> --auto
 
 # 5. 开始写作 → 输出 writing_contract，照卡片写 article.md（+ digest.txt）
 #    写作本身没有命令，是你自己写文件。
-#    ⭐ 写之前先读 ../wechat-viral-writer/references/writing-checklist.md（一页纸硬要求）
-#    ⭐ 标题先用 3 个不同刺点的候选跑一次排序（30 秒，比写完再改省事）：
+#    ⭐ 写之前先读 ../wechat-reading-insight-writer/references/writing-checklist.md
+#    ⭐ 标题先排序（不要带书名）：
 #       python3 <ROOT>/.agents/skills/wechat-viral-writer/scripts/score_draft.py \
-#               --markdown --titles "候选A" "候选B" "候选C"
-#    深度风格读 ../wechat-tech-insight-writer/SKILL.md
+#               --genre reading --markdown --titles "候选A" "候选B" "候选C"
+#    深度风格读 ../wechat-reading-insight-writer/SKILL.md
 python3 <PIPELINE>/scripts/pipeline_runtime.py begin --job <job.json>
 
 # 6. 自检（不改状态，一次列出全部问题与修法，修到 status=ok）
@@ -59,7 +67,7 @@ python3 <PIPELINE>/scripts/pipeline_runtime.py begin --job <job.json>
 python3 <PIPELINE>/scripts/pipeline_runtime.py check --job <job.json>
 #    想看逐条修法的完整报告（推荐，问题多的时候直接跑这条）：
 python3 <ROOT>/.agents/skills/wechat-viral-writer/scripts/score_draft.py \
-        --article <article.md> --markdown
+        --article <article.md> --genre reading --markdown
 
 # 7. Humanize（就地改写 article.md，默认 intensity=strong）
 python3 <PIPELINE>/scripts/pipeline_job.py stage --job <job.json> --name humanize --status running
@@ -92,7 +100,15 @@ python3 <PIPELINE>/scripts/pipeline_runtime.py prepare --job <job.json>
 #    ℹ️ 图片解码校验依赖 Pillow（可选）：缺 Pillow 只记 warning 并按 magic bytes 放行，不阻塞；
 #    需要完整解码校验时，用装了 Pillow 的解释器跑本条。
 python3 <PIPELINE>/scripts/pipeline_runtime.py finish --job <job.json> --config <ROOT>/wechat-accounts.json
+
+# 12. 推进书签（finish 成功后必须做，否则下篇会复读同一段）
+python3 <READ>/scripts/read_book.py commit --project-root <ROOT> --job <job.json> \
+        --claim "<本篇用过的那个主张，一句话>"
 ```
+
+排版由 `choose-theme` 锁定为 **墨线 / 素白**（黑白），不要改成彩色主题。
+
+科技时评旧链：`init --genre insight --topic "…"`，写作改读 `wechat-tech-insight-writer`，体检不要加 `--genre reading`。
 
 ## 三条硬门禁
 
@@ -162,8 +178,8 @@ python3 <PIPELINE>/scripts/gen_cover_image.py --job <job.json> --record-stage
 - **正文不写关注段**：文末「在看 / 转发 / 关注」由渲染器自动追加，正文再写一遍就是重复。
 - **摘要**：另写一句 ≤50 字到 `digest.txt`——它是分享卡片副标题，要补标题没说完的第二钩子（关键数字、悬念下半句、读者代价），不要复述标题。
 
-深度风格细节读 `wechat-tech-insight-writer`。声口与 `writer_instructions` 已内联在 `init` 的
-`job_contract.account_profile` 里，不必另读账号档案文档。
+读书线深度风格读 `wechat-reading-insight-writer`；科技时评读 `wechat-tech-insight-writer`。
+声口与 `writer_instructions` 已内联在 `init` 的 `job_contract.account_profile` 里。
 
 ### 3.5 写作体检（`check` 自动带）
 
@@ -187,8 +203,8 @@ python3 <PIPELINE>/scripts/gen_cover_image.py --job <job.json> --record-stage
 
 ## 主题
 
-由 `pipeline_job.py choose-theme` 从 `render_article.py` 的 `THEMES` 里**按 run_id 派生**：
-跨文章会轮换，同一个 run 重跑必然选到同一套（恢复时不换皮）。
+读书线由 `choose-theme` 只在 `ink-rule` / `plain-white` 里按 `run_id` 派生，不用彩色主题。
+科技时评仍从全部 `THEMES` 派生。同一个 run 重跑不换皮。
 
 主题的单一真相源就是 `render_article.py`。**不要读 `archive/themes-v2/` 下的 Markdown 组件库，
 不要手写排版 HTML，不要为单篇文章新建渲染脚本。**
@@ -232,6 +248,7 @@ python3 <PIPELINE>/scripts/gen_cover_image.py --job <job.json> --record-stage
 | 卡在哪 | 读什么 |
 |---|---|
 | 写作体检不过线、标题/开头/节奏 | [`../wechat-viral-writer/SKILL.md`](../wechat-viral-writer/SKILL.md) |
+| 写成了书评、不知怎么引用原句 | [`../wechat-reading-insight-writer/SKILL.md`](../wechat-reading-insight-writer/SKILL.md) |
 | 不知道写什么（需要开热点开关） | [`../wechat-viral-writer/references/hot-topic-radar.md`](../wechat-viral-writer/references/hot-topic-radar.md) |
 | brief 格式、缺项追问、忠实扩写边界 | [references/user-brief.md](references/user-brief.md) |
 | 结构池与近文轮换 | [references/structure-rotation.md](references/structure-rotation.md) |

@@ -30,3 +30,4 @@ jobs:
           .agents/skills/wechat-html-cover
           .agents/skills/wechat-tech-insight-writer
           .agents/skills/wechat-viral-writer
+          .agents/skills/wechat-reading-insight-writer
