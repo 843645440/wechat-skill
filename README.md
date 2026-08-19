@@ -260,6 +260,40 @@ python3 scripts/wechat_publish.py --config wechat-accounts.json send \
 
 完整凭证配置见 [`references/multi-account-publishing.md`](references/multi-account-publishing.md)。根发布工具仍保留显式 `publish` 命令供独立人工操作，但自动内容流水线不会调用它。
 
+### 公共事件档案自动日更
+
+仓库新增了 [`wechat-public-event-archive`](.agents/skills/wechat-public-event-archive/SKILL.md)，用于在用户明确授权后，自动复盘已有稳定官方结论的中国重大人物或公共事件。默认覆盖涉黑涉恶、贪腐、重大诈骗、非法集资、公共安全、食品药品与环境事件及重大刑事案件。
+
+它不是通用热点雷达。人物犯罪稿必须有生效裁判；重大事件必须有正式调查或责任认定；两类题材都必须同时具备权威机关材料和中国官方媒体报道。没有合格题材时跳过当天，不使用传闻凑稿。
+
+生产开关在 [`config/public-event-archive.json`](config/public-event-archive.json)：
+
+```json
+{
+  "enabled": true,
+  "account": "b",
+  "output_target": "draft"
+}
+```
+
+开关关闭后，外部定时任务仍可保留，但会在搜索和写作前静默退出。去重与抢占记录保存在 gitignored 的 `state/public-event-archive.sqlite3`；同一人物或事件不会因云端重启、手动补跑或并发触发而重复创建草稿。
+
+Hermes 云端推荐使用原生 Skill-backed Cron，并把 `workdir` 指向仓库：
+
+```bash
+hermes skills trust /srv/wechat-skill
+hermes config set timezone Asia/Shanghai
+sudo hermes gateway install --system
+hermes cron create "0 9 * * *" \
+  "运行公共事件档案每日任务；无合格题材返回 [SILENT]，有合格题材只创建账号 b 的微信草稿。" \
+  --skill wechat-public-event-archive \
+  --workdir /srv/wechat-skill \
+  --deliver telegram \
+  --name "wechat-public-event-daily"
+```
+
+部署前还需在 Hermes 的 `cron` 平台工具集中启用联网搜索、网页读取、terminal 和文件读写，并先手动执行一次 `hermes cron run wechat-public-event-daily` 验收。完整步骤见 [`hermes-deployment.md`](.agents/skills/wechat-public-event-archive/references/hermes-deployment.md)。
+
 ## 💡 为什么这么设计
 
 - **约束优于自由** — 预设主题色板 + 固定组件先保住输出下限，不让模型每次现场发挥、风格飘忽。

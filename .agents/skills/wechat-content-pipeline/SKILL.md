@@ -10,6 +10,10 @@ description: 编排中文微信公众号文章：用户提供主题与大致思�
 - **禁止**在未获主题时自行联网选题、换题或「找个热点凑一篇」。
 - **禁止**公开发布（仅草稿箱，除非用户另行明确要求）。
 
+**受控上游例外：**当 `wechat-public-event-archive` 已被用户明确启用时，它可先核验官方来源，
+再写入 `source-dossier.json` 和完整 `user-brief.md`。本流水线把这份 brief 当作外部已提供材料，
+仍使用 `--source provided`；不得借此恢复通用热点发现或跳过写作门禁。
+
 ## 怎么用这份文档
 
 **每一条命令的 stdout 都会告诉你下一条命令**（`next_command` 字段），`begin` 还会给出
@@ -93,11 +97,13 @@ python3 <PIPELINE>/scripts/pipeline_runtime.py finish --job <job.json> --config 
 
 ### 1. 用户 brief（第 1 步之前）
 
-用户须提供**主题**（一句话）+ **大致思路**（要点、时间线、论点、素材或大纲，可短）。
+正常模式下，用户须提供**主题**（一句话）+ **大致思路**（要点、时间线、论点、素材或大纲，
+可短）。受控公共事件档案模式下，上游 Skill 必须提供满足相同完备度的核验 brief 和 dossier。
 可选：目标读者、情绪、必须写到的点、禁止写的点、配图/封面路径、字数偏好。
 
 缺主题，或思路为空（只有一句话题目、无可展开材料）→ **停止并追问**，最多 1–2 个问题。
-**不得**自行找热点填空。详见 [references/user-brief.md](references/user-brief.md)。
+定时公共事件档案缺少合格材料时直接跳过当天，不在无人值守会话中追问，也不得降级到传闻。
+详见 [references/user-brief.md](references/user-brief.md)。
 
 ⚠️ `user-brief.md` 必须写在 `init` **之后**。`init` 会清空重建工作区，在它之前落盘会被清掉。
 
@@ -240,4 +246,5 @@ python3 <PIPELINE>/scripts/gen_cover_image.py --job <job.json> --record-stage
 
 > 自动热点发现已**默认关闭**。仅当账号档案显式 `topic_discovery.enabled=true` 且用户要求
 > 自动选题时才走那条路，历史文档在 `archive/pipeline-refs-v1/hotspot-discovery.md`，
-> 不得作为日常路径。`--source auto-hotspot` 在默认模式下禁用。
+> 不得作为日常路径。公共事件档案是基于稳定官方结论的独立上游，不是热点模式；它仍使用
+> `provided`。`--source auto-hotspot` 在默认模式下禁用。

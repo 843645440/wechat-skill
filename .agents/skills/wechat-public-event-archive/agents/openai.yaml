@@ -1,0 +1,4 @@
+interface:
+  display_name: "公共事件档案自动生产"
+  short_description: "核验官方材料并每日生成重大人物或公共事件公众号草稿"
+  default_prompt: "运行公共事件档案每日任务：先检查开关，再核验官方来源、去重并生成公众号草稿；无合格题材则停止。"

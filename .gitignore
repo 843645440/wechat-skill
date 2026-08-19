@@ -21,6 +21,7 @@ node_modules/
 *_排版_*.html
 /wechat-accounts.json
 /work/
+/state/
 .env
 .env.*
 !.env.example

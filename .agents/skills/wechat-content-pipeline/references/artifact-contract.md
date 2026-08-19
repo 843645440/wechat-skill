@@ -7,6 +7,7 @@
 ```text
 work/<account>/current/
 ├── job.json
+├── source-dossier.json # 可选；仅受控公共事件档案模式，存核验事实与来源映射
 ├── article.md
 ├── digest.txt        # 可选：≤50 字摘要（分享卡副标题）；缺失时微信自动截正文
 ├── imgs/
@@ -33,7 +34,8 @@ work/<account>/current/
 
 状态只使用 `pending`、`running`、`completed`、`failed`、`skipped`。`humanize` 和 `illustrations` 完成前必须先标记 `running`。每个阶段记录真实 `started_at`、`completed_at` 和 `duration_ms`。
 
-不存在 `fact-check`、`validate` 阶段；不存在 `sources.md`、预览、leaf count 或文件哈希 checkpoint。
+不存在 `fact-check`、`validate` 阶段；不存在自由格式 `sources.md`、预览、leaf count 或文件哈希
+checkpoint。`source-dossier.json` 只是公共事件档案的受控上游证据卡，不新增流水线阶段。
 
 ## `run_id`
 
