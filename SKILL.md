@@ -90,7 +90,8 @@ python3 scripts/wrap_preview.py "<上面的 html>"
 - 只需要写作 → 转交 `wechat-tech-insight-writer`，不要在本 Skill 代写正文。
 - 从选题到草稿箱一条龙 → 转交 `wechat-content-pipeline`，用它的 `pipeline_job.py` / `pipeline_runtime.py` 命令链，不要在本 Skill 另写排版或封面实现。
 - 流水线排障 → 先读 `work/<account>/current/job.json`，再读 `.agents/skills/wechat-content-pipeline/references/pipeline-failure-triage.md`。
-- 正文配图 → `.agents/skills/wechat-content-pipeline/scripts/gen_inline_images.py`（用户图优先；机制图走 `xiaohu:xiaoyi`；失败可无图）。封面 → `gen_cover_image.py` 一条命令自动走用户图 → `xiaohu:agnes` → Pillow 离线兜底。
+- 正文配图 → `.agents/skills/wechat-content-pipeline/scripts/gen_inline_images.py`（用户/Agent 已有图优先；否则仅在有 `AGNES_API_KEY` 时脚本生图；失败不配图）。封面 → `gen_cover_image.py`：用户图 → 正式报道 HTML 标题 → 可选生图 → Pillow / 账号默认封面。
+- 用户说「帮我配置」→ 读 `docs/setup.md`，先跑 `python3 scripts/setup_status.py`。
 - 审计草稿恢复以 `run_id` 为幂等边界：同时核对 job 阶段、`draft-result.json` 的账号、动作、`run_id` 和 `draft_media_id`；`running`/`uncertain` 禁止自动重发。
 
 ## 可选：多账号草稿与发布

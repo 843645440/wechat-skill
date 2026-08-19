@@ -58,6 +58,12 @@ class PipelineJobTests(unittest.TestCase):
             argv.extend(("--topic", topic))
         if force_new:
             argv.append("--force-new")
+        if overrides.get("lane"):
+            argv.extend(("--lane", overrides["lane"]))
+        if overrides.get("humanize") is True:
+            argv.append("--humanize")
+        if overrides.get("humanize") is False:
+            argv.append("--no-humanize")
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
             pipeline_job.cmd_init(pipeline_job.build_parser().parse_args(argv))
@@ -554,6 +560,18 @@ class PipelineJobTests(unittest.TestCase):
         self.assertEqual(first["run_id"], second["run_id"])
         self.assertNotIn("fact-check", first["stages"])
         self.assertNotIn("sources", first["artifacts"])
+
+    def test_manuscript_lane_defaults_humanize_off(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            job_path = self.init_job(tmp, lane="manuscript")
+            job = pipeline_job.load_job(job_path)
+        self.assertEqual("manuscript", job["lane"])
+        self.assertFalse(job["switches"]["humanize"])
+
+    def test_brief_lane_rejects_disabled_humanize(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(pipeline_job.JobError, "去 AI 味不能关"):
+                self.init_job(tmp, lane="brief", humanize=False)
 
 
 if __name__ == "__main__":

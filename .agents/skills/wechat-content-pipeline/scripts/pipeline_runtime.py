@@ -258,6 +258,18 @@ def count_body_chars(article):
     return len(re.sub(r"\s+", "", text))
 
 
+def manuscript_quality():
+    return {
+        "score": None,
+        "grade": None,
+        "blocking_count": 0,
+        "pass_line": None,
+        "checked_after_humanize": False,
+        "skipped": True,
+        "reason": "manuscript",
+    }
+
+
 def require_content(artifacts, job=None):
     try:
         article = artifacts["article"].read_text(encoding="utf-8").strip()
@@ -271,6 +283,8 @@ def require_content(artifacts, job=None):
     title = " ".join(matches[0].split())
     if len(title) > 32:
         raise RuntimeFailure(f"article.md 标题长度 {len(title)} 超过 32 字")
+    if pipeline_job.job_lane(job) == "manuscript":
+        return title
     body_chars = count_body_chars(article)
     if body_chars < MIN_BODY_CHARS or body_chars > MAX_BODY_CHARS:
         raise RuntimeFailure(
@@ -316,11 +330,16 @@ def require_writing_inputs(job):
 def require_prepare_stages(job):
     if job["stages"]["discover"]["status"] != "completed":
         raise RuntimeFailure("prepare 前必须完成阶段 discover")
-    require_writing_inputs(job)
+    if pipeline_job.job_lane(job) != "manuscript":
+        require_writing_inputs(job)
     if job["stages"]["write"]["status"] not in ("running", "completed"):
         raise RuntimeFailure("prepare 前必须通过 begin 启动阶段 write")
-    if job["stages"]["humanize"]["status"] != "completed":
-        raise RuntimeFailure("prepare 前必须完成阶段 humanize")
+    humanize_status = job["stages"]["humanize"]["status"]
+    if pipeline_job.humanize_enabled(job):
+        if humanize_status != "completed":
+            raise RuntimeFailure("prepare 前必须完成阶段 humanize")
+    elif humanize_status not in ("completed", "skipped"):
+        raise RuntimeFailure("成稿模式未开启去 AI 味时，humanize 必须为 skipped")
     if job["stages"]["illustrations"]["status"] not in ("completed", "skipped"):
         raise RuntimeFailure("prepare 前必须完成或跳过阶段 illustrations")
 
@@ -468,9 +487,40 @@ def writing_contract(job):
 
 
 def cmd_begin(args):
-    job, _ = job_paths(args.job)
+    job, artifacts = job_paths(args.job)
     if job["stages"]["discover"]["status"] != "completed":
         raise RuntimeFailure("必须先确定并记录选题")
+    if pipeline_job.job_lane(job) == "manuscript":
+        if not artifacts["article"].is_file() or not artifacts["article"].read_text(
+            encoding="utf-8"
+        ).strip():
+            raise RuntimeFailure("成稿模式必须先把用户文章写入 article.md")
+        if job["stages"]["write"]["status"] not in ("running", "completed"):
+            mark(args.job, "write", "running", "使用用户成稿")
+        if (
+            not pipeline_job.humanize_enabled(job)
+            and job["stages"]["humanize"]["status"] == "pending"
+        ):
+            mark(args.job, "humanize", "skipped", "成稿模式未开启去 AI 味", {
+                "enabled": "false",
+            })
+        return {
+            "status": "ok",
+            "next": "format-content",
+            "job": str(args.job),
+            "lane": "manuscript",
+            "humanize": False,
+            "writing_contract": {
+                "output_file": "article.md",
+                "mode": "manuscript",
+                "gates": "不校验字数和写作分；保留一个一级标题、路径安全和占位符检查",
+                "humanize": "默认关闭；用户要求时再开",
+                "after_write": [
+                    "可选：把已有图写入 imgs/ 并插入正文",
+                    "pipeline_runtime.py prepare → finish",
+                ],
+            },
+        }
     require_writing_inputs(job)
     if job["stages"]["write"]["status"] not in ("running", "completed"):
         mark(args.job, "write", "running", "开始写作")
@@ -478,6 +528,8 @@ def cmd_begin(args):
         "status": "ok",
         "next": "write-content",
         "job": str(args.job),
+        "lane": "brief",
+        "humanize": True,
         "writing_contract": writing_contract(job),
     }
 
@@ -536,12 +588,14 @@ def cmd_check(args):
                 f"标题 {len(title)} 字超过 32：压缩到 32 字内，保留前 16 字的刺点"
             )
     body_chars = count_body_chars(article)
-    if body_chars < MIN_BODY_CHARS:
-        problems.append(
-            f"正文 {body_chars} 字 < {MIN_BODY_CHARS}：补真实机制/人群/成本细节，禁止注水"
-        )
-    elif body_chars > MAX_BODY_CHARS:
-        problems.append(f"正文 {body_chars} 字 > {MAX_BODY_CHARS}：删冗余段落")
+    enforce_writing = pipeline_job.job_lane(job) != "manuscript"
+    if enforce_writing:
+        if body_chars < MIN_BODY_CHARS:
+            problems.append(
+                f"正文 {body_chars} 字 < {MIN_BODY_CHARS}：补真实机制/人群/成本细节，禁止注水"
+            )
+        elif body_chars > MAX_BODY_CHARS:
+            problems.append(f"正文 {body_chars} 字 > {MAX_BODY_CHARS}：删冗余段落")
     refs = MARKDOWN_IMAGE_RE.findall(article)
     if len(refs) > 3:
         problems.append(f"正文图 {len(refs)} 张 > 3：删到 3 张以内")
@@ -573,7 +627,10 @@ def cmd_check(args):
                 "digest.txt 在复述标题：它是分享卡的**第二个钩子**，"
                 "该补标题没说完的部分——关键数字、悬念下半句、或读者的代价"
             )
-    if job["stages"]["humanize"]["status"] != "completed":
+    if (
+        pipeline_job.humanize_enabled(job)
+        and job["stages"]["humanize"]["status"] != "completed"
+    ):
         hints.append(
             "humanize 未完成：改写前后用 stage --name humanize --status running/completed 记账"
         )
@@ -585,7 +642,7 @@ def cmd_check(args):
         )
     # 写作体检：结构合法 ≠ 有人读得下去。high 级问题并进 problems（挡住 status=ok），
     # 其余进 hints——阈值类问题值得看，但不该让弱模型在这里原地打转。
-    health = writing_health(article_path)
+    health = writing_health(article_path) if enforce_writing else None
     writing = None
     if health:
         writing = {
@@ -614,8 +671,15 @@ def cmd_check(args):
         "writing": writing,
         "problems": problems,
         "hints": hints,
-        "next": "修复 problems 后重跑 check；全部通过后走 humanize → prepare → finish"
-        if problems else "humanize（若未做）→ prepare → finish",
+        "next": (
+            "修复 problems 后重跑 check；全部通过后再进入后续阶段"
+            if problems
+            else (
+                "prepare → finish"
+                if pipeline_job.job_lane(job) == "manuscript"
+                else "humanize（若未做）→ prepare → finish"
+            )
+        ),
     }
 
 
@@ -636,15 +700,21 @@ def _cmd_prepare(args):
     job, artifacts = job_paths(args.job)
     require_prepare_stages(job)
     title = require_content(artifacts, job)
-    quality = require_writing_quality(artifacts["article"])
+    quality = (
+        manuscript_quality()
+        if pipeline_job.job_lane(job) == "manuscript"
+        else require_writing_quality(artifacts["article"])
+    )
     image_count = require_illustrations(job, artifacts)
     mark(
         args.job, "write", "completed", "正文与最终写作体检均已通过",
         details={
-            "quality_score": quality["score"],
+            "quality_score": quality["score"] if quality.get("score") is not None else "skipped",
             "quality_grade": quality.get("grade") or "",
             "quality_blocking_count": quality["blocking_count"],
-            "quality_checked_after_humanize": "true",
+            "quality_checked_after_humanize": (
+                "false" if quality.get("skipped") else "true"
+            ),
         },
         artifacts={"article": artifacts["article"]},
     )
@@ -896,14 +966,20 @@ def _cmd_finish(args):
         return draft_resume_response(job, existing_draft)
     # prepare 后文件仍可能被人工编辑；finish 再验一次，保证真正送入渲染器的是合格稿。
     require_content(artifacts, job)
-    quality = require_writing_quality(artifacts["article"])
+    quality = (
+        manuscript_quality()
+        if pipeline_job.job_lane(job) == "manuscript"
+        else require_writing_quality(artifacts["article"])
+    )
     mark(
         args.job, "write", "completed", "发布前最终写作体检通过",
         details={
-            "quality_score": quality["score"],
+            "quality_score": quality["score"] if quality.get("score") is not None else "skipped",
             "quality_grade": quality.get("grade") or "",
             "quality_blocking_count": quality["blocking_count"],
-            "quality_checked_after_humanize": "true",
+            "quality_checked_after_humanize": (
+                "false" if quality.get("skipped") else "true"
+            ),
         },
         artifacts={"article": artifacts["article"]},
     )

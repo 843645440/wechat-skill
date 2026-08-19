@@ -28,8 +28,7 @@ python3 <PIPELINE>/scripts/gen_cover_image.py --job <job.json> --record-stage
 
 - `config/wechat-content-profiles.json` 的 `cover.backend=adaptive`：正式题材走 HTML，普通观点稿走艺术指导生图。
 - `cover.backend=offline_render`：跳过生图，优先 HTML，再用 Pillow。
-- `cover.backend=image_generate`：非正式题材先调用
-  `.agents/skills/xiaohu-gen/scripts/agnes_generate.py`，固定 2.35:1，再离线兜底；正式题材仍禁止 AI 现场插画。
+- `cover.backend=image_generate`：非正式题材在已配置 `AGNES_API_KEY` 时由脚本生图，固定 2.35:1，再离线兜底；正式题材仍禁止 AI 现场插画。免费 Key：<https://platform.agnes-ai.cn>。
 - 用户明确要求跳过生图时，可给命令加 `--skip-generate`。
 - 离线字体自动查找 PingFang、冬青黑、华文黑体和 Noto CJK；都没有时设置
   `WECHAT_COVER_FONT=<字体文件绝对路径>`。

@@ -1,4 +1,4 @@
 interface:
-  display_name: "小虎图片生成路由"
-  short_description: "按图片类型路由 xiaoyi 或 Agnes，并处理凭证降级"
-  default_prompt: "使用 $xiaohu-gen 根据图片类型选择合适后端并生成图片。"
+  display_name: "可选生图客户端"
+  short_description: "优先用 Agent 自带生图；否则在配置了 AGNES_API_KEY 时调用脚本"
+  default_prompt: "优先使用当前运行时自带的生图工具。没有自带能力且已配置 AGNES_API_KEY 时，再调用本 Skill 的脚本。"

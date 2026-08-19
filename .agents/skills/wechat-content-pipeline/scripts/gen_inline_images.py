@@ -4,14 +4,15 @@ Markdown」这几步 agent 判断压成一次调用，防止弱模型在这一�
 
 降级链（语义固定，任何环境都一样）：
 
-1. **用户已给图优先**：`article.md` 里已经引用了真实存在的本地图片，或
+1. **用户或 Agent 已给图优先**：`article.md` 里已经引用了真实存在的本地图片，或
    `--imgs-dir` 里已经放了图片文件 → 直接 `backend=user_provided`，
-   `status=completed`，不生图、不覆盖、不删用户的图。
-2. **没有用户图 → 尝试生图**：用确定性启发式挑 0-3 个插入位，套同一个固定
-   prompt 模板（不做美学分支决策），调用 xiaohu-gen 的 xiaoyi 后端生成 PNG。
+   `status=completed`，不生图、不覆盖、不删已有图。Agent 若有自带生图能力，
+   应先把图写入 imgs/ 并插入 Markdown 引用，再跑本脚本。
+2. **没有现成图 → 仅在配置了 AGNES_API_KEY 时尝试脚本生图**：挑 0-3 个插入位，
+   套固定 prompt，调用 Agnes 客户端。提示词不写供应商名。
 3. **生成成功 → 用生成的**：成功几张就插几张，`backend=image_generate`。
-4. **生成失败/没有后端 → 不配图**：`status=skipped`，`article.md` 原样不
-   动，这是正常结果，不是失败——上游流水线不应该因为这个退出非 0。
+4. **没有生图能力或生成失败 → 不配图**：`status=skipped`，`article.md` 原样不
+   动。这是正常结果，不是失败。
 
 退出码约定：只有命令行参数本身非法时才非 0（argparse 的默认行为）；
 其余任何失败路径（没有 API key、超时、后端返回非图片……）都归一化成
@@ -31,10 +32,10 @@ import _stage_record  # noqa: E402 - 同目录内部模块，必须在 sys.path 
 import visual_policy  # noqa: E402
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-# 正文图固定为机制/流程/对比型信息图，按 xiaohu-gen 的路由契约应走 xiaoyi。
-# 本脚本只负责选位置、写 prompt、插回 Markdown，绝不自己拼 HTTP 请求。
-XIAOYI_GENERATE = (
-    SCRIPT_DIR.parent.parent / "xiaohu-gen" / "scripts" / "xiaoyi_generate.py"
+# 脚本生图只作为 Agent 自带能力之外的可选后端。本脚本选位置、写 prompt、
+# 插回 Markdown，绝不自己拼 HTTP 请求。
+AGNES_GENERATE = (
+    SCRIPT_DIR.parent.parent / "xiaohu-gen" / "scripts" / "agnes_generate.py"
 )
 
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
@@ -46,7 +47,7 @@ TABLE_ROW_RE = re.compile(r"^\s*\|.*\|\s*$")
 MD_STRIP_RE = re.compile(r"[#*`\[\]()_>]")
 
 MIN_SECTION_CHARS = 60  # 少于这个字数的章节不值得配图
-DEFAULT_TIMEOUT = 200  # 与 xiaohu-gen 的 xiaoyi 单 key 超时契约一致
+DEFAULT_TIMEOUT = 80
 
 # 单一固定 prompt 模板：弱模型不需要、也不应该做风格/美学分支决策。
 PROMPT_TEMPLATE = """{title} — inline illustration {index}/{total}: {heading}
@@ -214,18 +215,23 @@ def choose_positions(article_text, max_images):
 # 3. 生图后端调用（唯一允许调用外部命令的地方）
 # ---------------------------------------------------------------------------
 
+def agnes_key_configured():
+    return bool(os.environ.get("AGNES_API_KEY", "").strip())
+
+
 def call_image_backend(prompt_path, output_path, timeout=DEFAULT_TIMEOUT):
-    """调用 xiaohu-gen/scripts/xiaoyi_generate.py；失败一律返回 False。
+    """可选调用 Agnes 客户端；失败一律返回 False。
 
     测试里会整体 monkeypatch 这个函数，不打真实网络请求。
     """
-    if not XIAOYI_GENERATE.is_file():
+    if not AGNES_GENERATE.is_file() or not agnes_key_configured():
         return False
     cmd = [
-        sys.executable, str(XIAOYI_GENERATE),
+        sys.executable, str(AGNES_GENERATE),
         "--prompt-file", str(prompt_path),
         "--output", str(output_path),
-        "--size", "16:9",
+        "--ratio", "16:9",
+        "--size", "1K",
         "--timeout", str(max(5, timeout - 5)),
     ]
     try:
@@ -342,7 +348,7 @@ def run(args):
 
     if not inserted:
         return {"status": "skipped", "backend": "none", "inserted": 0,
-                "reason": "生图后端不可用或全部失败（无 key/超时/非图片响应）"}
+                "reason": "没有可用生图能力：Agent 未放入图片，且未配置 AGNES_API_KEY 或生成失败"}
 
     lines = article_text.splitlines()
     keep_trailing_newline = article_text.endswith("\n")
@@ -361,7 +367,7 @@ def run(args):
         for sec in sorted(inserted, key=lambda s: s["index"])
     ]
     return {"status": "completed", "backend": "image_generate",
-            "provider": "xiaohu:xiaoyi",
+            "provider": "agnes",
             "inserted": len(inserted), "positions": positions}
 
 

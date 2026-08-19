@@ -1,6 +1,6 @@
 # wechat-skill 使用指南
 
-`wechat-skill` 是面向云端 AI Agent 的微信公众号内容工具包。它能单独完成写作或排版，也能通过编排 Skill 自动完成“选题到草稿箱”的完整流程。
+`wechat-skill` 是面向云端 AI Agent 的微信公众号内容工具包。刚装好时对 Agent 说「帮我配置公众号技能」，见 [setup.md](setup.md)。有两种用法：用户成稿只排版，或给主题让 AI 写；后半段同一条流水线，只创建草稿。
 
 ## 1. Skill 组成
 
@@ -13,7 +13,7 @@
 | `wechat-content-pipeline` | 按用户 brief 编排写作、humanize、配图、封面、排版并创建草稿（默认不自动选题） |
 | `wechat-public-event-archive` | 用户开启后自动核验中国重大公共事件并把合格选题交给主流水线 |
 | `humanizer-zh` | 写后去 AI 味；声口服从 brief，正式报道保持克制 |
-| `xiaohu-gen` | 流水线图片后端：正文机制图走 xiaoyi，生成式封面走 Agnes |
+| `xiaohu-gen` | 可选脚本生图客户端；优先用 Agent 自带生图，否则用 AGNES_API_KEY |
 
 `wechat-inline-visuals`、`wechat-html-cover`、`baoyu-cover-image` 位于 `optional-skills/`。它们不会被自动发现；主流水线只调用前两者的确定性脚本，并把 Baoyu 的设计维度压成小型运行策略，不加载三份完整 Skill。只有明确需要独立能力时才安装其中一个，见 [`optional-skills/README.md`](../optional-skills/README.md)。
 
@@ -93,8 +93,8 @@ python3 scripts/wechat_publish.py --config wechat-accounts.json send \
 3. `begin` 验证 brief、`event_focus` 和结构后输出 `writing_contract` → 写作忠实 brief 的 `article.md`（1500—4000 字），建议补 `digest.txt` 摘要 → `check` 自检到 ok。普通观点稿可用账号强情感声口；公共事件档案覆盖为克制正式。
 4. `humanizer-zh` 一轮去 AI 味，强度与声口服从 brief。
 5. `choose-theme` 先固定主题；`build_inline_visuals.py` 为公共事件生成至多一张只引用正文原句的 HTML 事实脉络，普通稿默认为空。
-6. `gen_inline_images.py --record-stage` 处理 0—3 张正文图（用户图优先；公共事件禁用 AI 图；其他题材显式开启后走 `xiaohu:xiaoyi`）。
-7. `gen_cover_image.py --record-stage` 自适应写入封面：正式报道走准确标题 HTML，普通观点稿走无文字 `xiaohu:agnes` 主视觉，再降级到 HTML、Pillow、账号默认素材。
+6. `gen_inline_images.py --record-stage` 处理 0—3 张正文图（已有图优先；公共事件禁用 AI 图；其他题材仅在有生图能力或 `AGNES_API_KEY` 时生成）。
+7. `gen_cover_image.py --record-stage` 写入封面：正式报道走准确标题 HTML，普通观点稿可脚本生图，再降级到 HTML、Pillow、账号默认素材。
 8. `prepare` 对 humanize 后最终稿执行 score ≥75、blocking=0 的硬门禁并校验标题、字数、图数和路径；`finish` 发布前重检一次，随后排版并创建指定账号草稿。
 
 云端 Agent 必须使用固定入口：`pipeline_job.py init/topic/history/shape/stage/show` 和 `pipeline_runtime.py begin/check/prepare/finish`。不得为某篇文章临时写排版脚本或视觉检测循环。`finish` 默认创建草稿；只有开发验证时才使用 `--dry-run`。

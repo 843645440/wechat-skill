@@ -8,8 +8,8 @@
    原样保留，绝不覆盖。
 2. **正式报道/公共事件**：用 HTML 模板准确排标题，绝不生成案件现场插画 →
    `backend=html_render`。
-3. **普通观点稿**：把 Baoyu 的封面维度压成确定性艺术指导，调 xiaohu-gen 的
-   Agnes 后端生成无文字的 2.35:1 主视觉 → `backend=image_generate`。
+3. **普通观点稿**：把封面维度压成确定性艺术指导，有 `AGNES_API_KEY` 时调用
+   脚本生图，生成无文字的 2.35:1 主视觉 → `backend=image_generate`。
 4. **前路由失败 → 离线兜底**：先尝试准确标题 HTML，再用
    `render_cover_fallback.py` 排一张确定性
    封面 → `backend=offline_render`。这一步不需要网络、不需要 API key、不需要浏览器。

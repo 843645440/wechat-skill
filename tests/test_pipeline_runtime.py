@@ -748,6 +748,40 @@ class PipelineRuntimeTests(unittest.TestCase):
             pipeline_runtime.count_body_chars(article),
         )
 
+    def test_manuscript_check_skips_word_count_and_score(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            job_path = self.make_job(tmp)
+            job = pipeline_runtime.pipeline_job.load_job(job_path)
+            job["lane"] = "manuscript"
+            job["switches"] = {"humanize": False}
+            pipeline_runtime.pipeline_job.save_job(job_path, job)
+            (job_path.parent / "article.md").write_text(
+                "# 用户自己写的短稿\n\n就这几句，不够一千五，也不该被拦。\n",
+                encoding="utf-8",
+            )
+            result = pipeline_runtime.cmd_check(self.args(job_path))
+        self.assertEqual("ok", result["status"])
+        self.assertIsNone(result["writing"])
+        self.assertLess(result["body_chars"], 1500)
+
+    def test_manuscript_begin_skips_humanize_when_disabled(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            job_path = self.make_job(tmp)
+            job = pipeline_runtime.pipeline_job.load_job(job_path)
+            job["lane"] = "manuscript"
+            job["switches"] = {"humanize": False}
+            pipeline_runtime.pipeline_job.save_job(job_path, job)
+            (job_path.parent / "article.md").write_text(
+                "# 用户自己写的短稿\n\n保留原文，只做排版。\n",
+                encoding="utf-8",
+            )
+            result = pipeline_runtime.cmd_begin(self.args(job_path))
+            loaded = pipeline_runtime.pipeline_job.load_job(job_path)
+        self.assertEqual("manuscript", result["lane"])
+        self.assertFalse(result["humanize"])
+        self.assertEqual("running", loaded["stages"]["write"]["status"])
+        self.assertEqual("skipped", loaded["stages"]["humanize"]["status"])
+
 
 if __name__ == "__main__":
     unittest.main()

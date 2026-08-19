@@ -19,6 +19,8 @@ Concrete `AskUserQuestion` references below are examples — substitute the loca
 
 ## Image Generation Tools
 
+主流水线不要加载本 Skill。单独使用时：先调用当前 Agent 自带的生图工具，提示词不写供应商名；没有生图能力则跳过配图，不要改走第三方中转站。
+
 When this skill needs to render an image, resolve the backend in this order:
 
 1. **Current-request override** — if the user names a specific backend in the current message, use it.

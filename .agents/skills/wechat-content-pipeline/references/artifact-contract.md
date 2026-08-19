@@ -28,7 +28,7 @@ work/<account>/current/
 1. `discover`：使用给定主题，或发现并记录 48 小时内热点；自动热点必须带 `event_focus` / `hook` / `tension` / `reader_stakes`。
 2. `write`：完成 `article.md`（声口服从 brief；写作前须 `shape`；陌生主体按需简介；避免新闻汇报腔和同质模具）。公共事件档案使用克制正式声口。
 3. `humanize`：用 `humanizer-zh` 一轮改写；普通观点稿默认 strong，公共事件档案为 restrained；保留结构差异与事实边界。
-4. `illustrations`：`gen_inline_images.py --record-stage` 处理 0—3 张正文图片；公共事件禁用 AI 图片，失败可 `skipped`。`inline-visuals.json` 是独立的原生 HTML 阅读辅助，不计入图片数。
+4. `illustrations`：`gen_inline_images.py --record-stage` 处理 0—3 张正文图片。已有图优先；否则 Agent 自带生图或 `AGNES_API_KEY`；都没有或公共事件则 `skipped`。`inline-visuals.json` 是独立的原生 HTML 阅读辅助，不计入图片数。
 5. `format`：humanize 后先用 `choose-theme` 固定主题，再由 `build_inline_visuals.py` 生成/校验模块计划；`finish` 生成 `article.html`。
 6. `cover`：写入 `cover/cover.png`；正式报道走准确标题 HTML，普通观点稿可走无文字生图，随后降级到 HTML、Pillow、账号默认 thumb，全不可用才失败。
 7. `draft`：创建指定账号草稿。

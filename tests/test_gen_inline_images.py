@@ -7,6 +7,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -192,6 +193,18 @@ class NoBackendTest(unittest.TestCase):
             self.assertEqual(result["status"], "skipped")
             self.assertEqual(called, [])
 
+    def test_missing_agnes_key_skips_without_inserting(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            article_path, imgs_dir = make_article(tmp)
+            before = article_path.read_text(encoding="utf-8")
+            env = {key: value for key, value in os.environ.items() if key != "AGNES_API_KEY"}
+            with mock.patch.dict(os.environ, env, clear=True):
+                result = gen.run(make_args(article_path, imgs_dir))
+            self.assertEqual(result["status"], "skipped")
+            self.assertEqual(result["backend"], "none")
+            self.assertIn("AGNES_API_KEY", result["reason"])
+            self.assertEqual(article_path.read_text(encoding="utf-8"), before)
+
 
 class DeterminismTest(unittest.TestCase):
     def test_same_article_same_seed_yields_same_positions(self):
@@ -242,6 +255,7 @@ class SuccessfulGenerationTest(unittest.TestCase):
 
             self.assertEqual(result["status"], "completed")
             self.assertEqual(result["backend"], "image_generate")
+            self.assertEqual(result.get("provider"), "agnes")
             self.assertGreaterEqual(result["inserted"], 1)
             self.assertEqual(len(result["positions"]), result["inserted"])
 

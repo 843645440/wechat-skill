@@ -180,7 +180,7 @@ class SimplifiedPipelineTests(unittest.TestCase):
         self.assertEqual("finish", result["next"])
         self.assertEqual(0, result["image_count"])
 
-    def test_active_pipeline_uses_xiaohu_clients_not_removed_agnes_skill(self):
+    def test_active_pipeline_does_not_call_xiaoyi_or_removed_agnes_skill(self):
         pipeline_root = ROOT / ".agents/skills/wechat-content-pipeline"
         active = "\n".join(
             path.read_text(encoding="utf-8")
@@ -190,7 +190,12 @@ class SimplifiedPipelineTests(unittest.TestCase):
             )
         )
         self.assertNotIn('parent.parent / "agnes-image-gen"', active)
-        self.assertIn('parent.parent / "xiaohu-gen"', active)
+        self.assertNotIn("xiaoyi_generate.py", active)
+        self.assertNotIn("XIAOYI", active)
+        self.assertIn("agnes_generate.py", active)
+        self.assertFalse(
+            (ROOT / ".agents/skills/xiaohu-gen/scripts/xiaoyi_generate.py").exists()
+        )
 
     def test_completed_draft_is_reused_by_run_id_without_hashes(self):
         with tempfile.TemporaryDirectory() as tmp:

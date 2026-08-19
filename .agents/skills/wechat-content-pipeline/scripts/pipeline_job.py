@@ -104,6 +104,7 @@ STAGE_OWNERS = {
 # 这里只用于 job_contract 里给账号档案摘要提供参考区间，两边改动需同步。
 JOB_MIN_BODY_CHARS = 1500
 JOB_MAX_BODY_CHARS = 4000
+LANES = ("brief", "manuscript")
 
 # 防御性脱敏：账号内容档案本不应包含凭证（AppID/AppSecret/token 存在 wechat-accounts.json，
 # 且只存环境变量名），但仍递归剔除任何形似凭证的字段名，防止未来误加字段后被 init 打到 stdout。
@@ -115,6 +116,18 @@ CREDENTIAL_KEY_RE = re.compile(
 
 class JobError(RuntimeError):
     pass
+
+
+def job_lane(job):
+    lane = (job or {}).get("lane") or "brief"
+    return lane if lane in LANES else "brief"
+
+
+def humanize_enabled(job):
+    """AI 写作强制去 AI 味；用户成稿默认关，只有显式打开才做。"""
+    if job_lane(job) != "manuscript":
+        return True
+    return bool((job.get("switches") or {}).get("humanize"))
 
 
 def now_iso():
@@ -719,9 +732,14 @@ def suggest_next_command(job, job_path):
                 "重置为 pending，再重跑 finish；禁止自动重发"
             )
         return runtime_script_command(job_path, "finish") + "  # 上次 finish 失败，处理报错原因后重试"
+    if job_lane(job) == "manuscript":
+        article_rel = job.get("artifacts", {}).get("article", "article.md")
+        article_path = os.path.join(os.path.abspath(job["job_dir"]), article_rel)
+        if not os.path.isfile(article_path) or os.path.getsize(article_path) == 0:
+            return f"成稿模式：把用户文章写入 {article_path}，然后重跑 show"
     # init 已经把 --topic 写进 job["topic"]，所以不能只看 topic 有没有值，否则整个
     # topic 步骤会被跳过、event_focus 永远为空。以 event_focus 是否落定为准。
-    if not job.get("event_focus"):
+    if job_lane(job) != "manuscript" and not job.get("event_focus"):
         brief_path = os.path.join(os.path.abspath(job["job_dir"]), "user-brief.md")
         prefix = ""
         if not os.path.exists(brief_path):
@@ -735,7 +753,7 @@ def suggest_next_command(job, job_path):
             "--source", "provided",
             "--event-focus", "<一句话核心，从 brief 提炼>",
         )
-    if not job.get("article_shape"):
+    if job_lane(job) != "manuscript" and not job.get("article_shape"):
         return job_script_command(job_path, "shape", "--auto")
     write_status = stages["write"]["status"]
     if write_status == "pending":
@@ -805,6 +823,11 @@ def build_job_contract(job, job_path, profile, rebuilt_existing):
         "run_id": job["run_id"],
         "account": job["account"],
         "topic": job.get("topic"),
+        "lane": job_lane(job),
+        "switches": {
+            "humanize": humanize_enabled(job),
+            "inline_images": bool((job.get("image_policy") or {}).get("inline_enabled")),
+        },
         "state": job["state"],
         "paths": {
             "work_dir": job_dir,
@@ -909,6 +932,15 @@ def cmd_init(args):
     created = now_iso()
     has_topic = bool(args.topic and args.topic.strip())
     discover_status = "completed" if has_topic else "pending"
+    lane = getattr(args, "lane", None) or "brief"
+    if lane not in LANES:
+        raise JobError("lane 只能是 brief 或 manuscript")
+    if lane == "brief":
+        if args.humanize is False:
+            raise JobError("给主题让 AI 写时去 AI 味不能关")
+        humanize = True
+    else:
+        humanize = bool(args.humanize)
     job = {
         "schema_version": 5,
         "created_at": created,
@@ -917,6 +949,8 @@ def cmd_init(args):
         "profiles_path": profiles_path,
         "job_dir": job_dir,
         "account": args.account,
+        "lane": lane,
+        "switches": {"humanize": humanize},
         "image_policy": {
             "inline_enabled": inline_enabled,
             "inline_max_images": illustrations.get("max_images", 3),
@@ -1354,6 +1388,14 @@ def build_parser():
     init.add_argument("--profiles", default="config/wechat-content-profiles.json")
     init.add_argument("--account", required=True)
     init.add_argument("--topic")
+    init.add_argument(
+        "--lane", choices=LANES, default="brief",
+        help="brief=给主题由 AI 写；manuscript=用户已有成稿，只排版推草稿",
+    )
+    init.add_argument(
+        "--humanize", action=argparse.BooleanOptionalAction, default=None,
+        help="成稿模式下去 AI 味开关，默认关；AI 写作模式强制开启",
+    )
     init.add_argument(
         "--force-new", action="store_true",
         help="明确丢弃现有 running/failed 工作区并新建任务",
