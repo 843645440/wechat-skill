@@ -25,8 +25,8 @@ work/<account>/current/
 固定阶段为：
 
 1. `discover`：使用给定主题，或发现并记录 48 小时内热点；自动热点必须带 `event_focus` / `hook` / `tension` / `reader_stakes`。
-2. `write`：完成 `article.md`（第一人称强情感；写作前须 `shape`；陌生主体按需简介；非新闻汇报/同质模具）。
-3. `humanize`：用 `humanizer-zh` 一轮改写，默认 strong；保留强情感与结构差异。
+2. `write`：完成 `article.md`（声口服从 brief；写作前须 `shape`；陌生主体按需简介；避免新闻汇报腔和同质模具）。公共事件档案使用克制正式声口。
+3. `humanize`：用 `humanizer-zh` 一轮改写；普通观点稿默认 strong，公共事件档案为 restrained；保留结构差异与事实边界。
 4. `illustrations`：`gen_inline_images.py --record-stage` 处理 0—3 张正文图；失败可 `skipped`。
 5. `format`：`prepare` 通过 humanize 后最终体检并固定随机主题，`finish` 生成 `article.html`。
 6. `cover`：写入 `cover/cover.png`（不再 HTML 截图）；按降级链 用户图 → 生图 API → `render_cover_fallback.py` 离线渲染 → 账号默认 thumb，全不可用才失败。

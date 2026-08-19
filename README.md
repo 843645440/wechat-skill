@@ -4,7 +4,7 @@
 
 # wechat-skill · 微信公众号内容 Skill 工具包
 
-**把用户命题写作、原生 HTML 信息设计、排版和多账号草稿串成可复用工作流**
+**把用户命题写作、排版和多账号草稿串成可复用工作流**
 
 11 套精选主题 + 主题生成器 · 代码块/图片/GIF · 自动章节编号与关键词标记 · 双关卡质量校验
 
@@ -28,13 +28,13 @@
 - **主题生成器**：不满足现成主题？用一句话描述或一张参考图，生成一套全新组件库并保存本地复用（见 `references/theme-generator.md`）。
 - **内容全兼容**：代码块（深/浅色，等宽不折行）、图片、GIF（带动图角标）、行内代码、引用、列表、产品徽章。
 - **智能排版**：章节自动编号（末章 ∞ / ///）、每段主动标 1–3 个关键词下划线、从正文提炼引言卡与目录、作者签名去重合并。
-- **原生信息设计**：提取 0—3 个观点、比较、流程或数据模块，由固定渲染器一次完成同主题正文排版；异常时降级纯正文，不重试、不生成正文图片。
+- **可选视觉扩展**：原生信息模块、HTML 确定性封面和独立 AI 封面已移到 `optional-skills/`，按需安装，不进入默认 Skill 索引。
 - **中文全角标点**：正文自动规范全角，代码块内原样保留。
 - **不掉格式**：所有样式内联、文字 `<span leaf="">` 包裹，规避 `<style>/<div>/class/grid/position` 等公众号会过滤的写法。
 - **双关卡质量校验**：`component_lint.py`（组件库源头）+ `validate_gzh_html.py`（最终产物），构成可复现的「改→验→修」闭环。
 - **一键复制**：生成带「复制」按钮的预览页，点一下把富文本复制到剪贴板，直接粘进公众号，免手动全选。
 - **多账号发布**：每个公众号使用独立环境变量和素材空间，外部 Agent 定时任务只需传入账号别名。
-- **内容生产流水线**：`wechat-content-pipeline` 默认 **用户命题**（主题 + 思路 / `user-brief.md`），禁止无主题自动选题；写作前 `history --rotation` + `shape` 防同质；正文强情感且**忠实 brief**（按题材选择结尾与增量，不硬塞防骗清单）；用户可指定配图；否则生图封面/正文图；humanize 后进草稿箱。正文字数硬门禁 1500—4000。
+- **内容生产流水线**：`wechat-content-pipeline` 默认 **用户命题**（主题 + 思路 / `user-brief.md`），禁止无主题自动选题；写作前 `history --rotation` + `shape` 防同质；声口服从 brief（观点稿可强情感，公共事件档案克制正式）；用户可指定配图，图片失败按规则降级；humanize 后进草稿箱。正文字数硬门禁 1500—4000。
 
 ## 👀 效果预览
 
@@ -107,7 +107,7 @@ git clone https://github.com/843645440/wechat-skill.git
 cd wechat-skill
 ```
 
-把该仓库作为云端 Agent 的工作区运行。这样根排版 Skill、`.agents/skills/` 下的写作、原生信息模块、封面与编排 Skill、项目配置和脚本会一起可用。
+把该仓库作为云端 Agent 的工作区运行。这样根排版 Skill、`.agents/skills/` 下的写作、日更选题、图片后端与编排 Skill、项目配置和脚本会一起可用。`optional-skills/` 不自动加载。
 
 ### 方式二：让 AI 加载完整仓库
 
@@ -115,7 +115,7 @@ cd wechat-skill
 
 > 请克隆并以工作区方式加载 https://github.com/843645440/wechat-skill，使用其中的项目级 Skills。
 
-不要只复制根 `SKILL.md`，否则写作、原生信息模块、封面和完整流水线不会随包加载。
+不要只复制根 `SKILL.md`，否则写作、图片后端和完整流水线不会随包加载。
 
 ### 方式三：只安装排版能力
 
@@ -133,17 +133,17 @@ npx skills add https://github.com/843645440/wechat-skill
 
 完整内容生产可以直接调用：
 
-> 使用 `$wechat-content-pipeline`，根据这个选题为 A 账号完成写作、随机主题排版、同主题原生信息模块和封面，并写入草稿箱：……
+> 使用 `$wechat-content-pipeline`，根据这个选题为 A 账号完成写作、随机主题排版和封面，并写入草稿箱：……
 
 完整流水线由 `pipeline_job.py` 的状态命令和 `pipeline_runtime.py begin/check/prepare/finish` 固定编排。Agent 不应为单篇文章创建临时渲染器；正文图与封面分别走固定脚本，**不做视觉审图**（草稿箱人工核对）。
 
 流水线默认**用户命题**：由你提供主题与大致思路（brief），缺失时追问，不自动联网选题。每个账号只复用一个内部交接区 `work/<account>/current/`，不是文章档案库；每次 `init` 生成新 `run_id`，同账号同日可产多篇。
 
 1. **接收 brief** — 主题 + 思路是硬门禁；读近 7 天历史做结构轮换（`shape`），防同质限流。
-2. **写作** — `begin` 先验证 brief、`event_focus` 与结构；生成 `article.md`（第一人称强情感、忠实 brief、1500—4000 字），随后 `humanizer-zh` 一轮去 AI 味。
+2. **写作** — `begin` 先验证 brief、`event_focus` 与结构；生成忠实 brief 的 `article.md`（1500—4000 字）。普通观点稿按账号声口写，公共事件档案覆盖为克制正式；随后 `humanizer-zh` 一轮去 AI 味。
 3. **正文配图** — `gen_inline_images.py` 处理 0—3 张；用户图优先，机制图走 `xiaohu:xiaoyi`，失败可无图继续。
 4. **封面** — `gen_cover_image.py` 自动走用户图 → `xiaohu:agnes` → Pillow 离线兜底 → 账号默认素材。
-5. **随机主题与一次排版** — 随机固定一套主题，由固定脚本一次生成正文 HTML；信息模块异常直接降级纯正文。
+5. **随机主题与一次排版** — 随机固定一套主题，由固定脚本一次生成正文 HTML。
 6. **最终门禁** — `prepare` 与 `finish` 都检查 humanize 后稿件 score ≥75、blocking=0，并校验标题、字数、图数、路径与占位符；图片按真实字节识别格式上传，**不做视觉/OCR 审图**。
 7. **自动建草稿** — 写入指定账号草稿箱，到此结束；同一 `run_id` 成功后不重复发送；人工只在草稿箱审核，流水线不公开发布。
 
@@ -204,7 +204,7 @@ WECHAT_B_APP_SECRET
 - 云端执行器的公网出口 IP 已分别加入两个公众号的接口 IP 白名单；动态出口环境应配置固定 NAT、固定代理或中转服务。
 - 运行环境能够通过 HTTPS 访问 `api.weixin.qq.com`。
 - 已安装 Python 3，Agent 能读取根 `SKILL.md` 和 `.agents/skills/`，并能写入 `work/<account>/current/`。
-- 完整流水线不需要 Chrome。只有单独调用 `wechat-html-cover` 时才需要 Chrome/Chromium；自定义路径时设置 `WECHAT_COVER_BROWSER`。
+- 完整流水线不需要 Chrome。只有安装并单独调用可选的 `wechat-html-cover` 时才需要 Chrome/Chromium；自定义路径时设置 `WECHAT_COVER_BROWSER`。
 - 云端 Agent 本身具有可用的大模型能力；模型授权由 Agent 平台提供，本仓库不读取通用 LLM API Key。
 
 公众号类型和认证状态可能影响可用接口。首次部署时应在两个公众号后台分别确认接口权限，不能只验证其中一个账号。
@@ -222,7 +222,7 @@ WECHAT_A_THUMB_MEDIA_ID
 WECHAT_B_THUMB_MEDIA_ID
 ```
 
-永久素材 ID 属于具体公众号，A/B 不能混用。生成式封面与离线兜底都失败且没有对应默认素材 ID 时，草稿门禁会停止上传。`wechat-html-cover` 和 `baoyu-cover-image` 仍可独立调用，但不属于默认流水线。
+永久素材 ID 属于具体公众号，A/B 不能混用。生成式封面与离线兜底都失败且没有对应默认素材 ID 时，草稿门禁会停止上传。`wechat-html-cover` 和 `baoyu-cover-image` 位于 `optional-skills/`，安装后可独立调用，但不属于默认流水线。
 
 ### 【按场景】其他能力
 
@@ -239,7 +239,7 @@ WECHAT_B_THUMB_MEDIA_ID
 - 不需要手动配置微信 `access_token`。
 - 不需要微信公众号登录 Cookie、扫码登录、回调 URL、消息校验 Token 或 EncodingAESKey。
 - 不需要小程序 AppID/AppSecret。
-- 原生 HTML 信息模块和默认 `offline_render` 封面不需要图片 API Key。
+- 固定脚本生成的正文 HTML 和默认 `offline_render` 封面不需要图片 API Key。
 - 公开仓库只读克隆不需要 GitHub Token；只有推送修改或仓库改为私有时才需要仓库凭证。
 - Skill 内不需要 cron、早晚时间或轮询配置。
 
@@ -254,7 +254,7 @@ python3 scripts/wechat_publish.py --config wechat-accounts.json send \
   --action draft --dry-run
 ```
 
-使用默认永久封面时可省略 `--cover`。`--dry-run` 只检查账号映射和 HTML，不能验证 AppSecret、IP 白名单、素材权限或草稿接口。正式启用定时任务前，必须分别为 A、B 创建一次真实草稿并在各自草稿箱确认文章、作者、原生信息模块和封面。
+使用默认永久封面时可省略 `--cover`。`--dry-run` 只检查账号映射和 HTML，不能验证 AppSecret、IP 白名单、素材权限或草稿接口。正式启用定时任务前，必须分别为 A、B 创建一次真实草稿并在各自草稿箱确认文章、作者、排版和封面。
 
 `wechat-content-pipeline` 只创建草稿。定时时间配置在 Agent 自带的定时任务中，由它触发 Skill 并传入 `a`、`b` 等账号别名和可选主题；Skill 内没有 cron、早晚时间或轮询器。
 
@@ -307,7 +307,8 @@ hermes cron create "0 9 * * *" \
 
 ```
 wechat-skill/
-├── .agents/skills/             # 写作、humanizer-zh 去 AI 味、原生信息模块、封面与编排 Skill
+├── .agents/skills/             # 默认发现：写作、日更选题、去 AI 味、图片后端与编排 Skill
+├── optional-skills/            # 按需安装：独立封面与原生信息模块扩展
 ├── .baoyu-skills/              # 图片 Skill 的项目级非交互偏好
 ├── config/                     # A/B 账号的非敏感内容档案
 ├── SKILL.md                    # 排版工作流主文档（Agent 入口）

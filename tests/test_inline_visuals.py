@@ -11,8 +11,7 @@ from pathlib import Path
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRIPT = os.path.join(
     ROOT,
-    ".agents",
-    "skills",
+    "optional-skills",
     "wechat-inline-visuals",
     "scripts",
     "validate_plan.py",

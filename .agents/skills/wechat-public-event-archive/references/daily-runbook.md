@@ -70,7 +70,8 @@ python3 <ARCHIVE>/scripts/archive_state.py validate-dossier \
 ## 5. 写作、体检与排版
 
 根据 brief 和 dossier 写 `article.md`、`digest.txt`。每个事实都必须能回到 claim，不从模型记忆
-增补案件细节。运行 `check`，最多进行两轮针对性修正；仍未达到 score 75 或仍有 high/blocking
+增补案件细节。Humanize 使用 `intensity=restrained`，保持克制正式，不注入第一人称愤怒。
+运行 `check`，最多进行两轮针对性修正；仍未达到 score 75 或仍有 high/blocking
 问题时停止，不为过关添加虚构数字或情节。
 
 按原流水线完成 humanize、正文图阶段和封面。正文图应自然 `skipped`。在 `prepare` 前限定主题：

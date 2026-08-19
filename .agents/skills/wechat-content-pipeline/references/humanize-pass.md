@@ -1,56 +1,39 @@
-# 流水线内 Humanizer-zh（写后、排版前）
+# 流水线内 Humanize
 
-`article.md` 写完后、`prepare` 前必须跑一轮，只一轮。
+`article.md` 写完并通过 `check` 后、`prepare` 前执行一轮，只改这个文件。
 
-## 加载
+## 先选声口
 
-1. `<wechat-skill>/.agents/skills/humanizer-zh/SKILL.md`  
-2. 同目录 `references/wechat-pipeline-constraints.md`  
-3. 本文件  
+以 `user-brief.md` 为准：
 
-默认 **intensity=strong**。
+- 标有“公共事件档案模式”或要求正式报道：`intensity=restrained`。保持克制、事实优先，不新增第一人称或表演性愤怒。
+- 普通行业观点、科技与民生专栏：默认 `intensity=strong`。保留已有第一人称和锋利判断，但情绪必须钉在事实、机制、成本或责任上。
+- 用户另有语气要求：服从用户，不用默认值覆盖。
 
-## 目标（覆盖「去 AI = 变中立」）
-
-成功标准：读起来像**懂行的人在带火气/兴奋/发紧地说话**，  
-不是更干净的 briefing，也不是空洞鸡汤。
-
-- 保留并**加强**已有的第一人称与具体情绪。  
-- 删 AI 套话、报告腔、对称三段式。  
-- 标题更像脱口刺点；若仍是汇报体必须改掉。  
-- **不新增**事实、亲历、人物、数据、引语。
+两种模式都要删除套话、报告腔、机械排比、模糊权威和聊天机器人残留；都不得新增事实、亲历、人物、数据、引语或结论。
 
 ## 阶段记账
 
 ```bash
 python3 <PIPELINE_ROOT>/scripts/pipeline_job.py stage \
   --job <WORK_DIR>/job.json --name humanize --status running
-# …改写 article.md…
+# 就地改写 article.md 一轮
 python3 <PIPELINE_ROOT>/scripts/pipeline_job.py stage \
   --job <WORK_DIR>/job.json --name humanize --status completed \
-  --detail 'pass=humanizer-zh;intensity=strong;voice=strong-emotion'
+  --detail 'pass=humanizer-zh;intensity=<strong|restrained>;voice=<brief声口>'
 ```
 
 ## 硬约束
 
-1. 只改 `article.md`。  
-2. 唯一 `#` 标题，≤32 字，信息锚点 + 情感/判断钩子。  
-3. 保留 `##` 与必要表格/加粗。  
-4. 字数 1500—4000。  
-5. 禁止编造亲历与伪访谈。  
-6. **允许并鼓励**：我很烦、我发紧、我讨厌、有一瞬间我很兴奋、说真的……  
-7. 禁止聊天收尾、emoji、希望对你有帮助。  
-8. 只跑一轮；在本 stage 内改到过关。
+1. 保留唯一 `#` 标题、必要 `##`、表格、引用、链接和少量关键词强调。
+2. 标题 ≤32 字，纯正文仍为 1500—4000 字。
+3. 忠实 brief 和 dossier；不改变裁判/调查结论的生效状态，不抬高指控。
+4. 不写伪采访、伪亲历、推测动机或来源没有的现场细节。
+5. 不添加聊天收尾、emoji、关注转发段和海报口号。
+6. 只跑一轮；问题在本阶段内定点修正，不再做第二次全文改写。
 
-### strong 操作
+## 完成标准
 
-- 拆长句；删「赋能/值得注意的是/本文的判断是」。  
-- 若初稿偏中立简报：在**不增事实**前提下注入主观反应与节奏，把机制接到「我为什么上火」。  
-- 若初稿情绪悬浮：把形容词改成钉在权限/签字/验收/成本上的具体发堵。  
-- 结尾避免海报金句；可留不适与追问。  
-- **保留可转发资产**：钉在机制/数据上的判断句、各小节结尾的留人勾子不得抹平（「删金句」只针对空洞排比）。
-
-### 完成 / 失败
-
-- 完成：专栏主观 + 强情感可感 + 非说明书 + 事实未膨胀。  
-- 失败：几乎没改、仍像汇报、情绪被抹平、字数越界 → 同 stage 内重写到过关，不得 mark completed。
+- `strong`：像懂行的人在表达判断，不像通稿；有情绪但不悬浮。
+- `restrained`：像严肃编辑完成的正式叙述，清楚、有节奏，不猎奇、不煽动。
+- 两者共同：事实未膨胀、必要限定仍在、结构未损坏、字数未越界。

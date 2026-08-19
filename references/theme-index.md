@@ -78,4 +78,4 @@ done
 
 样例文章要覆盖代码块、表格、列表、引用、子标题，否则漏测的块类型会在真文章里才暴露。
 
-> **归档说明**：v1/v2 的 Markdown 组件库在 `archive/themes-v2/`，含 `theme-generator.md`（自定义主题生成流程）与 `common-components.md`（通用增量库）。它们只是**历史设计参考**，不再是排版依据——代码块、图片/GIF、小标签标题等通用组件已全部实现在 `render_article.py` 里。
+> **历史说明**：v1/v2 的 Markdown 组件库已从活跃分支移除，需要考古时可从 Git 历史读取。它们不再是排版依据；代码块、图片/GIF、小标签标题等组件均以 `render_article.py` 为准。

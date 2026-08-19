@@ -394,12 +394,8 @@ def default_thumb_available(config_path, account_alias):
 
 def command_roots(job):
     pipeline_root = SCRIPT_DIR.parent
-    skills_root = pipeline_root.parent
     return {
         "pipeline": pipeline_root,
-        "inline": skills_root / "wechat-inline-visuals",
-        # HTML 封面 skill 保留在 monorepo，但流水线不再调用
-        "cover": skills_root / "wechat-html-cover",
         "project": SCRIPT_DIR.parents[3],
     }
 

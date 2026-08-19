@@ -5,246 +5,117 @@ description: 编排中文微信公众号文章：用户提供主题与大致思�
 
 # 微信公众号内容生产流水线
 
-**默认模式：用户命题。**用户给出主题 + 大致思路，本 Skill 扩写成稿并送到指定账号草稿箱。
+把用户给出的主题和思路扩写成文章，经写作体检、去 AI 味、配图、封面和排版后写入指定公众号草稿箱。
 
-- **禁止**在未获主题时自行联网选题、换题或「找个热点凑一篇」。
-- **禁止**公开发布（仅草稿箱，除非用户另行明确要求）。
+## 边界
 
-**受控上游例外：**当 `wechat-public-event-archive` 已被用户明确启用时，它可先核验官方来源，
-再写入 `source-dossier.json` 和完整 `user-brief.md`。本流水线把这份 brief 当作外部已提供材料，
-仍使用 `--source provided`；不得借此恢复通用热点发现或跳过写作门禁。
+- 默认必须有用户提供的主题与思路；缺一项就追问，不联网另找题，不自行换题。
+- 唯一自动选题例外是已明确启用的 `wechat-public-event-archive`。它必须先产出通过校验的 `source-dossier.json` 和完整 `user-brief.md`，本流水线仍按 `--source provided` 接收。
+- 只创建草稿，不公开发布。不得把 API 密钥、token 或素材 ID 写进文章和日志。
+- 只用下列固定命令和 `init` 声明的工作区文件；不新建临时脚本、单篇渲染器、封面 JSON 或视觉审图循环。
+- `optional-skills/` 中的独立封面、原生信息模块扩展不属于本流水线，除非用户明确单独调用。
 
-## 怎么用这份文档
+## 执行原则
 
-**每一条命令的 stdout 都会告诉你下一条命令**（`next_command` 字段），`begin` 还会给出
-`writing_contract`——全部写作硬门禁的机器可读卡片。**照命令链和卡片走就能完成全程。**
+`<PIPELINE>` 是本 Skill 目录，`<ROOT>` 是项目根目录。每条命令的 JSON 输出都含下一步提示；路径一律取 `init` 返回的 `job_contract.paths`，不要自行拼接。
 
-下面的「命令链」是全部流程。只有卡在某一步时才去读对应的 reference。
+有三步由 Agent 编辑文件：`init` 后写 brief，`begin` 后写正文，humanize 阶段就地改正文。其余步骤全部使用现成命令。
 
-⚠️ 链上有 **3 步没有命令**，是你自己写文件，最容易漏：
-
-1. `init` 之后写 `user-brief.md`（第 2 步）
-2. `begin` 之后写 `article.md`，并建议补 `digest.txt`（第 5 步）
-3. humanize 阶段就地改写 `article.md`（第 7 步）
-
-其余每一步都有现成命令，**不要自己发明命令、不要新建脚本**。
-
-## 命令链
-
-`<PIPELINE>` = 本 Skill 根目录，`<ROOT>` = 项目根目录。所有产出路径由 `init` 打印的
-`job_contract.paths` 给出绝对路径，**不要自己推算路径**。
+## 固定命令链
 
 ```bash
-# 1. 初始化（生成 run_id，清空重建工作区，打印 job_contract）
-python3 <PIPELINE>/scripts/pipeline_job.py init --project-root <ROOT> --account <账号> --topic "<用户主题>"
+# 1. 初始化。注意：它会重建本账号 current 工作区。
+python3 <PIPELINE>/scripts/pipeline_job.py init \
+  --project-root <ROOT> --account <账号> --topic '<主题>'
 
-# 2. 落盘用户 brief —— 必须在 init 之后（init 会清空工作区）
-#    写到 job_contract.paths.work_dir/user-brief.md，格式见 references/user-brief.md
-#    这一步没有命令，是你自己写文件；init 的 next_command 会提醒你。
+# 2. 把主题、思路、边界和素材偏好写入 <work_dir>/user-brief.md。
+#    公共事件档案同时写 <work_dir>/source-dossier.json，并先由上游校验。
 
-# 3. 固化选题（source 必须是 provided）
-python3 <PIPELINE>/scripts/pipeline_job.py topic --job <job.json> --value "<主题>" --source provided --event-focus "<一句话核心>"
-
-# 4. 锁定结构（防同质，默认 --auto，同 run_id 稳定，永不死锁）
+# 3. 固化选题、读取近文轮换并锁定结构。
+python3 <PIPELINE>/scripts/pipeline_job.py topic \
+  --job <job.json> --value '<主题>' --source provided --event-focus '<一句话核心>'
+python3 <PIPELINE>/scripts/pipeline_job.py history --job <job.json> --rotation
 python3 <PIPELINE>/scripts/pipeline_job.py shape --job <job.json> --auto
 
-# 5. 开始写作 → 输出 writing_contract，照卡片写 article.md（建议同时写 digest.txt）
-#    写作本身没有命令，是你自己写文件。
-#    ⭐ 写之前先读 ../wechat-viral-writer/references/writing-checklist.md（一页纸硬要求）
-#    ⭐ 标题先用 3 个不同刺点的候选跑一次排序（30 秒，比写完再改省事）：
-#       python3 <ROOT>/.agents/skills/wechat-viral-writer/scripts/score_draft.py \
-#               --markdown --titles "候选A" "候选B" "候选C"
-#    深度风格读 ../wechat-tech-insight-writer/SKILL.md
+# 4. 输出 writing_contract。写作前先读 writing-checklist.md，随后写 article.md；
+#    建议另写一句不复述标题的 digest.txt。
 python3 <PIPELINE>/scripts/pipeline_runtime.py begin --job <job.json>
 
-# 6. 自检（不改状态，一次列出全部问题与修法，修到 status=ok）
-#    check 会连带跑写作体检，结果在 `writing` 字段（score / grade / dimensions）。
-#    体检的 high 级问题会并进 problems，带 [写作·xxx] 前缀；score < 75 也会拦。
+# 5. 写作体检。按 problems 修到 status=ok；需要逐条修法时运行输出中的 report_command。
 python3 <PIPELINE>/scripts/pipeline_runtime.py check --job <job.json>
-#    想看逐条修法的完整报告（推荐，问题多的时候直接跑这条）：
-python3 <ROOT>/.agents/skills/wechat-viral-writer/scripts/score_draft.py \
-        --article <article.md> --markdown
 
-# 7. Humanize（就地改写 article.md，默认 intensity=strong）
-python3 <PIPELINE>/scripts/pipeline_job.py stage --job <job.json> --name humanize --status running
-#    ⚠️ 这一步没有脚本，是你自己动手改写。读 ../humanizer-zh/SKILL.md 拿改写手法，
-#    读 references/humanize-pass.md 拿本流水线的尺度限制，然后直接编辑 article.md。
-#    不新增事实，不删 brief 要求保留的时间线与结论，不把字数改到 1500 以下。
-python3 <PIPELINE>/scripts/pipeline_job.py stage --job <job.json> --name humanize --status completed --detail intensity=strong
+# 6. Humanize：只改 article.md 一轮。
+python3 <PIPELINE>/scripts/pipeline_job.py stage \
+  --job <job.json> --name humanize --status running
+python3 <PIPELINE>/scripts/pipeline_job.py stage \
+  --job <job.json> --name humanize --status completed \
+  --detail 'intensity=<strong|restrained>'
 
-# 8. 正文配图（唯一入口；自动记账）
-#    用户图优先；否则固定挑 0-3 个机制/流程/对比位，走 xiaohu:xiaoyi；
-#    无 key、超时或无合适位置时自动 skipped，无图继续。
+# 7. 正文图与封面。两条命令都自动降级并记账。
 python3 <PIPELINE>/scripts/gen_inline_images.py \
   --article <article.md> --imgs-dir <imgs_dir> --seed <run_id> \
   --job <job.json> --record-stage
-
-# 9. 封面（唯一入口；自动记账）
-#    用户图优先 → xiaohu:agnes 生图 → Pillow 离线兜底；不需要 Agent 临场拼后端。
 python3 <PIPELINE>/scripts/gen_cover_image.py --job <job.json> --record-stage
 
-# 10. Prepare（humanize 后最终体检 + 标题/字数/图片路径校验，固定主题）
-#     score < 75、high 级问题或 scorer 不可用都会阻塞；修稿后重跑 prepare。
+# 8. 固定主题、终检并创建草稿。
+python3 <PIPELINE>/scripts/pipeline_job.py choose-theme --job <job.json>
 python3 <PIPELINE>/scripts/pipeline_runtime.py prepare --job <job.json>
-
-# 11. Finish（验收封面，写草稿箱，文件锁防双草稿）
-#    ℹ️ 图片解码校验依赖 Pillow（可选）：缺 Pillow 只记 warning 并按 magic bytes 放行，不阻塞；
-#    需要完整解码校验时，用装了 Pillow 的解释器跑本条。
-python3 <PIPELINE>/scripts/pipeline_runtime.py finish --job <job.json> --config <ROOT>/wechat-accounts.json
+python3 <PIPELINE>/scripts/pipeline_runtime.py finish \
+  --job <job.json> --config <ROOT>/wechat-accounts.json
 ```
 
-## 三条硬门禁
+写作前必须完整读取 [`../wechat-viral-writer/references/writing-checklist.md`](../wechat-viral-writer/references/writing-checklist.md)。Humanize 时读取 [`../humanizer-zh/SKILL.md`](../humanizer-zh/SKILL.md) 和 [`references/humanize-pass.md`](references/humanize-pass.md)，就地覆盖 `article.md`，不要把改写说明写进正文。
 
-### 1. 用户 brief（第 1 步之前）
+## 三道门禁
 
-正常模式下，用户须提供**主题**（一句话）+ **大致思路**（要点、时间线、论点、素材或大纲，
-可短）。受控公共事件档案模式下，上游 Skill 必须提供满足相同完备度的核验 brief 和 dossier。
-可选：目标读者、情绪、必须写到的点、禁止写的点、配图/封面路径、字数偏好。
+### Brief
 
-缺主题，或思路为空（只有一句话题目、无可展开材料）→ **停止并追问**，最多 1–2 个问题。
-定时公共事件档案缺少合格材料时直接跳过当天，不在无人值守会话中追问，也不得降级到传闻。
-详见 [references/user-brief.md](references/user-brief.md)。
+正常模式至少需要：主题、思路或时间线、必须写到/避免写到的内容。公共事件档案模式还必须有已通过上游校验的 dossier；当天没有合格材料就跳过，不以传闻、模型记忆或普通热点代替。格式见 [`references/user-brief.md`](references/user-brief.md)。
 
-⚠️ `user-brief.md` 必须写在 `init` **之后**。`init` 会清空重建工作区，在它之前落盘会被清掉。
+`user-brief.md` 必须在 `init` 之后写，因为 `init` 会重建工作区。
 
-### 2. 图片降级链
+### 正文
 
-**默认策略（账号档案决定）**：`illustrations.enabled=false` 时正文默认不配图；把阶段记为
-`skipped`。用户给了图时照常运行 `gen_inline_images.py`；用户明确要求生图时给该命令加
-`--force-generate`。用户图始终以 `user_provided` 最高优先级处理。`cover.backend=offline_render` 时仍运行 `gen_cover_image.py`，
-它会读取 `image_policy` 并直接走离线兜底。开工前用户没提配图方式时，先问一次
-（不配图 / 用户供图 / 生图），不要自行决定。
+以 `begin` 返回的 `writing_contract` 为权威，并遵守：
 
-**正文配图**——全部交给 `gen_inline_images.py` 一条命令。机制/流程/对比型正文图固定走
-`xiaohu:xiaoyi`，脚本内部完成挑位、提示词、插回 Markdown 与阶段记账：
+- 标题只有一个一级标题，≤32 字；主题明确，避免周报体和空洞悬念。
+- 纯正文 1500—4000 字，以 `check` 结果为准，不用字节数估算。
+- 忠实 brief、dossier 和来源边界；不编造数字、引语、案例、亲历、采访或内幕。
+- 按锁定结构组织，但事实与 brief 的叙事顺序优先；每段可保留 1—3 个真实关键短语的 `**强调**`。
+- 不硬塞清单。历史案件和人物稿优先事实线、机制与治理影响；正文不写关注、转发或在看引导。
+- `check`、`prepare`、`finish` 都会运行写作体检。最终稿必须 score ≥75 且 blocking/high 为 0；不得用假细节刷分。
 
-| 情况 | backend | status |
-|---|---|---|
-| 用户已给图（article.md 已引用真实文件，或 imgs/ 里已有图） | `user_provided` | `completed` |
-| 无用户图，生图成功 | `image_generate` | `completed` |
-| 无用户图，无候选位（文章太短/全是代码表格） | `none` | `skipped` |
-| 无用户图，生图失败（无 key / 超时 / 非图片 / 后端非零退出） | `none` | `skipped` |
+### 媒体与草稿
 
-**生不出图就不配图，这是正常结果，不是失败。**脚本退出码恒为 0，article.md 保持原样，
-绝不会留下指向不存在文件的 `![]()`。不要自己分析文章挑插图位，不要视觉审图。
+- 素材方式先服从用户 brief；没有指示时服从账号档案。用户图优先且不覆盖。
+- 正文图只走 `gen_inline_images.py`：无候选位、无 Key、超时或生成失败都可记为 `skipped`，无图继续。
+- 封面只走 `gen_cover_image.py`：用户图 → `xiaohu:agnes` → Pillow 离线兜底 → 账号默认素材。封面最终不可用才阻塞。
+- 主题由 `choose-theme` 从渲染器的 `THEMES` 中按 `run_id` 稳定选择；公共事件上游可限定为 `solemn-gray`、`news-wire`、`formal-brief`。
+- `finish` 默认创建草稿；只有开发验证才使用 `--dry-run`。不得直接调用独立发布命令绕过门禁。
 
-**封面**（`finish` 的硬门禁）——同样是一条命令。生成式封面固定走 `xiaohu:agnes`，
-`gen_cover_image.py` 内部走完整降级链并自动记账：
+## 幂等与完成判定
 
-| 情况 | backend | status |
-|---|---|---|
-| `cover/cover.png` 已存在（用户给的） | `user_provided` | `completed`（原样保留，绝不覆盖） |
-| 无用户图，生图成功 | `image_generate` | `completed` |
-| 无用户图，生图失败/无 key/无后端 → 自动离线兜底 | `offline_render` | `completed` |
-| 生图和兜底都失败 | `none` | `failed` |
+同一 `run_id` 成功后重复执行应返回原结果；新 `run_id` 可以在同一天创建新草稿。若 `draft/add` 已发出但未读到响应，结果为 `uncertain` 且 `retry_safe=false`：禁止自动重发，先人工核对草稿箱。明确的前置失败可在修复后只重跑 `finish`。
 
-```bash
-python3 <PIPELINE>/scripts/gen_cover_image.py --job <job.json> --record-stage
-```
+只有同时满足以下条件才能报告成功：
 
-**正文图可以没有，封面不能没有**——所以这条链一直走到出图为止，不需要你判断走到第几档。
-只有第 4 行那种极端情况才会 `failed`，此时只有账号配了默认 `thumb_media_id` 才能继续。
+1. `job.json.state == drafted`；
+2. `stages.draft.status == completed`；
+3. `draft-result.json` 的账号、`action == draft`、`run_id` 一致；
+4. `draft_media_id` 非空且不是测试占位符。
 
-`check` 在封面缺失时会把这条命令拼好放进 `hints`。**禁止 HTML 封面与视觉审图。**
-标题取 `article.md` 的一级标题，眉标取账号 label，都不需要你传参。
+`draft-result.json` 只能由 `finish` 生成。最终报告主题、配图来源、排版主题、正文图数、账号、HTML 路径和草稿 ID，不展示密钥。
 
-### 3. 写作契约
+## 按需读取
 
-`begin` 输出的 `writing_contract` 是权威。**照卡片执行即可满足所有硬门禁。**要点：
-
-- **忠实 brief（第一信源）**：不换题、不推翻用户主判断与事实线；可润色、补机制解释与可读结构。
-- 标题 ≤32 字，禁止周报体。
-- **正文 1500–4000 字**。这里的字数是 `check` 算出来的**纯正文中文字符数**：已扣掉
-  `#` 标题、开头引言、图片引用、代码块和空白，所以**远小于 `wc -c` 的字节数**。
-  别用 `wc` 自估，写完直接跑 `check` 看它报的数。首轮写太短是最高频的返工点。
-- 按已锁 structure 组织，但**内容顺序优先服务 brief 大纲**。
-- 每段留 1–3 个 `**关键短语**`——渲染器把它渲染成主题下划线，是排版的基础标记，缺了排出来会很平。
-- **读者价值服从题材**：有可执行点再写清单；历史案件、人物传记类以认知增量与事实线为主，禁止硬塞防骗清单。
-- 禁止编造亲历；禁止把用户未提供的「内幕」写成既定事实。
-- **正文不写关注段**：文末「在看 / 转发 / 关注」由渲染器自动追加，正文再写一遍就是重复。
-- **摘要（强烈建议）**：写一句 ≤50 字到 `digest.txt`。它是分享卡片副标题，要补标题没说完的第二钩子（关键数字、悬念下半句、读者代价），不要复述标题；缺失时微信会截取正文开头，不阻塞草稿。
-
-深度风格细节读 `wechat-tech-insight-writer`。声口与 `writer_instructions` 已内联在 `init` 的
-`job_contract.account_profile` 里，不必另读账号档案文档。
-
-### 3.5 写作体检（`check` 自动带）
-
-写作契约管的是**交付合法性**，体检管的是**有没有人读得下去**。两者不重叠，都要过。
-
-`check` 的输出里有一个 `writing` 字段：
-
-```json
-"writing": {"score": 86.8, "grade": "B", "pass_line": 75,
-            "dimensions": {"hook": 20, "value_density": 25, "reader_benefit": 15,
-                           "readability": 17.8, "retention": 9},
-            "report_command": "python3 …/score_draft.py --article … --markdown"}
-```
-
-- 体检的 **high 级问题会并进 `problems`**（前缀 `[写作·xxx]`），`score < 75` 也会拦。
-- `check` 是写作期反馈；`prepare` 和 `finish` 会对 **humanize 后的最终稿**再次硬校验，
-  并把分数、等级、blocking 数写入 `stages.write.details`。不能靠跳过 `check` 绕过门禁。
-- 问题多的时候直接跑 `report_command`，它给的是**逐条修法**，不是评价。
-- 五个维度的判据和阈值见 `../wechat-viral-writer/SKILL.md`；写之前先读它的
-  [writing-checklist.md](../wechat-viral-writer/references/writing-checklist.md)，
-  可以少返工一轮。
-- ⚠️ **不许为了刷分塞假数字、假案例、假亲历。**体检是用来发现问题的，不是用来刷的。
-
-## 主题
-
-由 `pipeline_job.py choose-theme` 从 `render_article.py` 的 `THEMES` 里**按 run_id 派生**：
-跨文章会轮换，同一个 run 重跑必然选到同一套（恢复时不换皮）。
-
-主题的单一真相源就是 `render_article.py`。**不要读 `archive/themes-v2/` 下的 Markdown 组件库，
-不要手写排版 HTML，不要为单篇文章新建渲染脚本。**
-
-## 幂等与恢复
-
-- 同一 `run_id` 已成功：账号、动作、`run_id`、`draft_media_id` 全匹配时直接返回原结果。
-- 新 `run_id`：允许同账号当天继续新草稿。**不得**因为今天已有 `drafted` 就退出。
-判定标准只有一条，**不是错误码枚举**：这次失败之后，远端草稿箱里有没有可能已经躺着一篇草稿？
-
-- **`draft/add` 已发出但没读到响应**（timeout / EOF / 连接重置 / 响应无法解析）→ `outcome=uncertain`，
-  `retry_safe=false`，**禁止自动重发**，先人工核对草稿箱。这是唯一会走到这一档的情况。
-- **其余全部失败**（取 token 被拒、正文图/封面上传失败、服务端对 `draft/add` 明确返回 errcode）
-  → `preflight-failed`，`retry_safe=true`。草稿一定没建，**直接重跑 `finish` 即可，不必手工重置 draft 阶段**。
-- IP 白名单错误（40164）属于上面第二档：**要加白的 IP 就在错误信息里**（微信实际看到的直连出口）。
-  ⚠️ 不要用 `curl ifconfig.me` 取 IP——发布器强制直连 `api.weixin.qq.com`（忽略 `HTTP(S)_PROXY`），
-  而 curl 走本机代理，有分流规则时两者不是同一个出口，加白 curl 给的那个不会生效。
-  加白后只重跑 `finish`，不重写正文。
-- `state=failed` 且 draft 曾 running/uncertain → 重置 format/draft 为 pending，确认 `article.md` 契约后 prepare → finish。继续现有工作区，**禁止无故 init 新 job**。
-- write 未完成就中断 → 有 brief 则照 brief 写完；**禁止**改为自动热点选题。
-
-`init` 之后任何一步的 stdout 都带 `next_command`，卡住时先看它，再读
-[references/pipeline-failure-triage.md](references/pipeline-failure-triage.md)。
-
-## 完成核验
-
-同时满足才可报告成功：
-
-1. `job.json.state == drafted`
-2. `stages.draft.status == completed`
-3. `draft-result.json` 的账号、`action==draft`、`run_id` 一致
-4. `draft_media_id` 非空且非占位符（不得含 dummy/fake/placeholder/test/mock/sample）
-
-`draft-result.json` 只能由 `pipeline_runtime.py finish` 写入，**agent 不得手写伪造**。
-
-最终报告：主题、是否用了用户配图、主题皮肤、正文图数、账号、`article.html` 路径、草稿 ID。
-**不得展示密钥。**
-
-## 需要时才读
-
-| 卡在哪 | 读什么 |
+| 场景 | Reference |
 |---|---|
-| 写作体检不过线、标题/开头/节奏 | [`../wechat-viral-writer/SKILL.md`](../wechat-viral-writer/SKILL.md) |
-| 不知道写什么（需要开热点开关） | [`../wechat-viral-writer/references/hot-topic-radar.md`](../wechat-viral-writer/references/hot-topic-radar.md) |
-| brief 格式、缺项追问、忠实扩写边界 | [references/user-brief.md](references/user-brief.md) |
-| 结构池与近文轮换 | [references/structure-rotation.md](references/structure-rotation.md) |
-| humanize 改写尺度 | [references/humanize-pass.md](references/humanize-pass.md) |
-| 封面生图 | [references/ai-cover-generation.md](references/ai-cover-generation.md) |
-| 任何一步报错 | [references/pipeline-failure-triage.md](references/pipeline-failure-triage.md) |
-| 工作区/阶段语义（`init` 的 job_contract 没覆盖到的） | [references/artifact-contract.md](references/artifact-contract.md) |
+| brief 格式与忠实扩写边界 | [`references/user-brief.md`](references/user-brief.md) |
+| 结构池与近文轮换 | [`references/structure-rotation.md`](references/structure-rotation.md) |
+| Humanize 尺度 | [`references/humanize-pass.md`](references/humanize-pass.md) |
+| 封面降级链 | [`references/ai-cover-generation.md`](references/ai-cover-generation.md) |
+| 中断、字数、图片、草稿不确定 | [`references/pipeline-failure-triage.md`](references/pipeline-failure-triage.md) |
+| 工作区与阶段语义 | [`references/artifact-contract.md`](references/artifact-contract.md) |
+| 深度写作声口 | [`../wechat-tech-insight-writer/SKILL.md`](../wechat-tech-insight-writer/SKILL.md) |
 
-> 自动热点发现已**默认关闭**。仅当账号档案显式 `topic_discovery.enabled=true` 且用户要求
-> 自动选题时才走那条路，历史文档在 `archive/pipeline-refs-v1/hotspot-discovery.md`，
-> 不得作为日常路径。公共事件档案是基于稳定官方结论的独立上游，不是热点模式；它仍使用
-> `provided`。`--source auto-hotspot` 在默认模式下禁用。
+通用热点雷达默认关闭，也不会自动选题。公共事件档案是独立、受控且需要稳定官方结论的上游，不等于恢复热点模式。

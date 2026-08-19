@@ -4,16 +4,18 @@
 
 ## 1. Skill 组成
 
+默认目录 `.agents/skills/` 只放全自动链路真正需要的核心 Skill：
+
 | Skill | 用途 |
 |---|---|
 | `wechat-skill` | 根 Skill：已有文章排版、HTML 校验、多账号草稿上传 |
 | `wechat-tech-insight-writer` | 科技、AI、产业、企业和民生深度写作 |
-| `wechat-inline-visuals` | 从正文提取信息，由固定渲染器一次生成同主题正文与原生 HTML 模块 |
-| `wechat-html-cover` | 单独调用时用 HTML/CSS 模板生成确定性封面 PNG（流水线已改用生图 API 封面） |
 | `wechat-content-pipeline` | 按用户 brief 编排写作、humanize、配图、封面、排版并创建草稿（默认不自动选题） |
-| `humanizer-zh` | 写后去 AI 味一轮改写，保留强情感声口 |
+| `wechat-public-event-archive` | 用户开启后自动核验中国重大公共事件并把合格选题交给主流水线 |
+| `humanizer-zh` | 写后去 AI 味；声口服从 brief，正式报道保持克制 |
 | `xiaohu-gen` | 流水线图片后端：正文机制图走 xiaoyi，生成式封面走 Agnes |
-| `baoyu-cover-image` | 单独生成文章封面时使用，不属于默认流水线 |
+
+`wechat-inline-visuals`、`wechat-html-cover`、`baoyu-cover-image` 位于 `optional-skills/`。它们不会被自动发现，也不会被主流水线读取；只有明确需要独立能力时才安装其中一个，见 [`optional-skills/README.md`](../optional-skills/README.md)。
 
 ## 2. 安装和加载
 
@@ -24,9 +26,9 @@ git clone https://github.com/843645440/wechat-skill.git
 cd wechat-skill
 ```
 
-确保云端 Agent 能读取根 `SKILL.md` 和 `.agents/skills/`。不要只复制根 Skill，否则写作、原生信息模块、封面和完整工作流不会一起加载。
+确保云端 Agent 能读取根 `SKILL.md` 和 `.agents/skills/`。不要只复制根 Skill，否则写作、图片后端和完整工作流不会一起加载。默认部署无需安装 `optional-skills/`。
 
-运行环境需要 Python 3。正文信息模块是公众号原生 HTML；默认封面/正文图走生图 API（用户也可自备图）。创建草稿需要公众号 API 权限与 IP 白名单。默认不自动选题。
+运行环境需要 Python 3。正文由固定渲染器生成公众号 HTML；默认封面/正文图走统一图片脚本（用户也可自备图）。创建草稿需要公众号 API 权限与 IP 白名单。默认不自动选题。
 
 ## 3. 配置公众号账号
 
@@ -45,7 +47,7 @@ export WECHAT_B_APP_ID='公众号 B 的 AppID'
 export WECHAT_B_APP_SECRET='公众号 B 的 AppSecret'
 ```
 
-仅单独使用 `wechat-html-cover` 时需要浏览器（流水线封面走生图 API，不需要）。封面渲染器会自动查找 Chrome、Chromium 或 Playwright Chromium。只有自动发现失败时才设置：
+仅安装并单独使用 `wechat-html-cover` 时需要浏览器（流水线封面走生图 API，不需要）。封面渲染器会自动查找 Chrome、Chromium 或 Playwright Chromium。只有自动发现失败时才设置：
 
 ```bash
 export WECHAT_COVER_BROWSER='/path/to/chrome-or-chromium'
@@ -54,7 +56,7 @@ export WECHAT_COVER_BROWSER='/path/to/chrome-or-chromium'
 可以用仓库测试规格做一次离线封面渲染，不连接图片 API：
 
 ```bash
-python3 .agents/skills/wechat-html-cover/scripts/render_cover.py \
+python3 optional-skills/wechat-html-cover/scripts/render_cover.py \
   --spec tests/fixtures/html-cover.json \
   --html-output /tmp/wechat-cover.html \
   --output /tmp/wechat-cover.png
@@ -88,8 +90,8 @@ python3 scripts/wechat_publish.py --config wechat-accounts.json send \
 
 1. 接收用户 brief（主题 + 思路，硬门禁；缺失则追问，不联网找题）。
 2. `shape --auto` 按轮换计划自动锁定本篇结构（防同质，永不死锁；显式字段可覆盖）。
-3. `begin` 验证 brief、`event_focus` 和结构后输出 `writing_contract` → 写作 `article.md`（第一人称强情感，忠实 brief，1500—4000 字），建议补 `digest.txt` 摘要 → `check` 自检到 ok。
-4. `humanizer-zh` 一轮去 AI 味改写（默认 strong）。
+3. `begin` 验证 brief、`event_focus` 和结构后输出 `writing_contract` → 写作忠实 brief 的 `article.md`（1500—4000 字），建议补 `digest.txt` 摘要 → `check` 自检到 ok。普通观点稿可用账号强情感声口；公共事件档案覆盖为克制正式。
+4. `humanizer-zh` 一轮去 AI 味，强度与声口服从 brief。
 5. `gen_inline_images.py --record-stage` 处理 0—3 张正文图（用户图优先；机制图走 `xiaohu:xiaoyi`；生图失败可无图继续）。
 6. `gen_cover_image.py --record-stage` 写入封面：用户图 → `xiaohu:agnes` → Pillow 离线兜底 → 账号默认封面素材。
 7. `prepare` 对 humanize 后最终稿执行 score ≥75、blocking=0 的硬门禁，再校验标题、字数、图数和路径并固定主题；`finish` 发布前重检一次，随后排版并创建指定账号草稿。
@@ -121,7 +123,7 @@ Agent 应落盘 `user-brief.md`，`--source provided`，不得自行换题。详
 
 > 使用 `$wechat-skill`，把 `article.md` 用橄榄手记主题排成公众号 HTML。
 
-只生成原生信息模块并一次排好正文：
+以下三项须先从 `optional-skills/` 安装对应目录。只生成原生信息模块并一次排好正文：
 
 > 使用 `$wechat-inline-visuals`，从文章提取信息，并用当前主题的固定渲染器生成正文和原生 HTML 模块。
 
@@ -131,7 +133,7 @@ Agent 应落盘 `user-brief.md`，`--source provided`，不得自行换题。详
 
 封面模板可选 `signal-editorial`、`night-signal` 与 `redaction-poster`。三套模板拥有独立固定配色，不跟随正文主题，目前不按 A/B 账号写死；需要固定账号规则时再修改账号档案。
 
-只有脱离流水线单独创作封面时才调用 `$baoyu-cover-image`。完整流水线使用固定图片脚本，不直接调用后端 Skill。
+只有脱离流水线单独创作封面时才调用 `$baoyu-cover-image`。完整流水线使用固定图片脚本，不读取这些可选 Skill。
 
 ## 7. 运行产物
 
@@ -173,5 +175,5 @@ python3 scripts/component_lint.py .
 
 ## 9. 来源与许可
 
-- 根排版组件、`wechat-inline-visuals`、`wechat-html-cover` 和编排工作流按仓库根 `LICENSE` 的 AGPL-3.0 使用。
-- `baoyu-article-illustrator` 与 `baoyu-cover-image` 来源于 [JimLiu/baoyu-skills](https://github.com/JimLiu/baoyu-skills)，许可证保存在 `.agents/skills/LICENSE`。
+- 根排版组件、编排工作流、`optional-skills/wechat-inline-visuals` 与 `optional-skills/wechat-html-cover` 按仓库根 `LICENSE` 的 AGPL-3.0 使用。
+- `baoyu-cover-image` 来源于 [JimLiu/baoyu-skills](https://github.com/JimLiu/baoyu-skills)，MIT 许可证保存在 `optional-skills/baoyu-cover-image/LICENSE`。

@@ -9,8 +9,7 @@ from pathlib import Path
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRIPT = os.path.join(
     ROOT,
-    ".agents",
-    "skills",
+    "optional-skills",
     "wechat-html-cover",
     "scripts",
     "render_cover.py",
@@ -21,8 +20,7 @@ SPEC.loader.exec_module(render_html_cover)
 
 BUILDER_SCRIPT = os.path.join(
     ROOT,
-    ".agents",
-    "skills",
+    "optional-skills",
     "wechat-html-cover",
     "scripts",
     "build_cover_spec.py",
@@ -104,8 +102,7 @@ class HtmlCoverTests(unittest.TestCase):
     def test_title_css_uses_one_uninterrupted_surface_per_template(self):
         css = Path(
             ROOT,
-            ".agents",
-            "skills",
+            "optional-skills",
             "wechat-html-cover",
             "assets",
             "cover.css",

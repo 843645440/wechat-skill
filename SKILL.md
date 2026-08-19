@@ -11,8 +11,8 @@ description: 微信公众号文章排版与多账号发布工具，把已有 Mar
 `.agents/skills/wechat-content-pipeline/scripts/render_article.py`，主题、组件、
 内联样式、`<span leaf="">` 包裹、章节编号、代码块缩进全部在里面确定性生成。
 
-> 历史上本 Skill 要求 agent 读 44–56 KB 的 Markdown 组件库再手写 HTML。那些组件库
-> 已归档到 `archive/themes-v2/`，仅作设计参考。**不要读它们，不要照它们手写 HTML。**
+> 历史上本 Skill 要求 Agent 读取大型 Markdown 组件库再手写 HTML。旧组件已从活跃分支移除，
+> 需要考古时从 Git 历史读取；当前实现只以固定渲染器为准。
 
 ## 主流程（五步，无分支）
 
@@ -79,7 +79,7 @@ python3 scripts/wrap_preview.py "<上面的 html>"
 ## 不要做的事
 
 - 不要手写或手改 HTML 组件，不要为单篇文章新建渲染脚本。
-- 不要读 `archive/themes-v2/` 下的组件库来「参考着写」。
+- 不要从 Git 历史恢复旧组件来手写 HTML。
 - 不要解析 `theme-index.md` 去发现主题——`--theme` 的 choices 才是全集。
 - 产物是**纯 `<section>…</section>` 正文片段**，不带 `<!DOCTYPE>`/`<html>`/`<head>`/`<body>`。这由脚本保证，别去包壳。
 - 署名：没有真实作者信息就**省略署名组件**，不要把 `{{作者名}}` 之类占位符带进产物或草稿箱。
