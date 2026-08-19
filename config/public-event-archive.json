@@ -1,55 +1,20 @@
 {
   "version": 1,
+  "preset": "tech-ai",
   "enabled": true,
-  "account": "b",
+  "account": "a",
   "output_target": "draft",
   "state": {
-    "path": "state/public-event-archive.sqlite3",
+    "path": "state/tech-ai-series.sqlite3",
     "reservation_ttl_hours": 24
   },
   "selection": {
     "min_source_count": 2,
-    "require_authority_source": true,
-    "require_official_media_report": true,
-    "person_crime_requires_effective_judgment": true,
-    "event_requires_official_conclusion": true,
     "categories": [
-      "organized_crime",
-      "corruption",
-      "major_fraud",
-      "illegal_fundraising",
-      "public_safety",
-      "food_drug_environment",
-      "major_criminal_case"
-    ],
-    "score_weights": {
-      "social_impact": 25,
-      "source_authority": 25,
-      "fact_completeness": 20,
-      "public_interest": 15,
-      "timeline_completeness": 10,
-      "portfolio_diversity": 5
-    }
-  },
-  "source_policy": {
-    "authority_domains": [
-      "court.gov.cn",
-      "spp.gov.cn",
-      "ccdi.gov.cn",
-      "mps.gov.cn",
-      "gov.cn",
-      "npc.gov.cn"
-    ],
-    "official_media_domains": [
-      "news.cn",
-      "xinhuanet.com",
-      "cctv.com",
-      "people.com.cn"
+      "人工智能",
+      "科技产品",
+      "中国高新技术",
+      "就业变化"
     ]
-  },
-  "theme_allowlist": [
-    "solemn-gray",
-    "news-wire",
-    "formal-brief"
-  ]
+  }
 }

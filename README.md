@@ -164,7 +164,7 @@ npx skills add https://github.com/843645440/wechat-skill
 > 主题：……  
 > 思路：……（时间线 / 论点 / 必须写到 / 不要写）
 
-系列选题（涉黑涉恶、贪腐、重大诈骗等）是用法 2 的一个预设，不是热搜。开关在 [`config/public-event-archive.json`](config/public-event-archive.json)。必须已有生效裁判或稳定官方结论，并且同时有机关材料和中国官方媒体报道；没有合格题就跳过当天。由你的 Agent 定时任务触发，仓库里不内置 cron。
+系列选题默认是**科技 / AI 圈**（账号 `a`，类别见 [`config/public-event-archive.json`](config/public-event-archive.json)）。由你的 Agent 定时任务触发，仓库里不内置 cron。自用的其他系列配置放 `config/local/`，不会进 Git。
 
 每个账号只复用一个内部交接区 `work/<account>/current/`，不是文章档案库；每次 `init` 生成新 `run_id`，同账号同日可产多篇。Agent 不应为单篇文章创建临时渲染器，**不做视觉审图**（草稿箱人工核对）。
 

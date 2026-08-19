@@ -29,6 +29,9 @@ node_modules/
 # 本地凭证目录：AppSecret、生图 Key、素材 ID，绝不入库
 /secrets/
 
+# 本机系列选题（如自用公共事件档案），不入库
+/config/local/
+
 # 预览图托管在 GitHub Release，不入库
 docs/screenshots/
 *.png

@@ -14,11 +14,11 @@
 
 ## 方式 2：给主题，AI 写 `--lane brief`（默认）
 
-用户给主题和思路，或打开系列选题（`wechat-public-event-archive`）。
+用户给主题和思路，或打开系列选题（默认科技/AI）。
 
 - 必须写作，去 AI 味强制开，不能 `--no-humanize`
 - `check` / `prepare` / `finish` 拦字数和 score ≥75
-- 系列选题多官方核验，由用户 Agent 的定时任务触发；不是 48 小时热搜
+- 默认系列见 `config/public-event-archive.json`（科技/AI）；由用户 Agent 的定时任务触发
 
 只丢了一个标题、没有成稿，不要进方式 1。
 

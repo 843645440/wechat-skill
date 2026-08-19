@@ -27,9 +27,23 @@ def project_root_from_script():
     return Path(__file__).resolve().parents[4]
 
 
+def series_preset(config):
+    preset = str((config or {}).get("preset") or "public-event").strip()
+    if preset not in {"public-event", "tech-ai"}:
+        raise ArchiveStateError("preset 只能是 public-event 或 tech-ai")
+    return preset
+
+
+def resolve_config_path(root):
+    local = root / "config/local/public-event-archive.json"
+    if local.is_file():
+        return local
+    return root / "config/public-event-archive.json"
+
+
 def load_config(project_root):
     root = Path(project_root).expanduser().resolve()
-    path = root / "config/public-event-archive.json"
+    path = resolve_config_path(root)
     if not path.is_file():
         raise ArchiveStateError(f"缺少配置文件: {path}")
     try:
@@ -67,6 +81,9 @@ def validate_config(config):
         isinstance(item, str) and item.strip() for item in categories
     ):
         raise ArchiveStateError("selection.categories 必须是非空字符串列表")
+    preset = series_preset(config)
+    if preset == "tech-ai":
+        return
     for field in (
         "require_authority_source",
         "require_official_media_report",
@@ -120,6 +137,11 @@ def connect(state_path):
     return db
 
 
+def require_public_event_curator(config):
+    if series_preset(config) != "public-event":
+        raise ArchiveStateError("当前配置是科技AI系列，公共事件档案策展未启用")
+
+
 def emit(payload):
     print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
 
@@ -135,16 +157,28 @@ def state_counts(db):
 
 def cmd_check(args):
     root, config, state_path = load_config(args.project_root)
+    preset = series_preset(config)
+    curator = "public-event" if preset == "public-event" else "none"
+    allowed = bool(config["enabled"] and curator == "public-event")
+    if not config["enabled"]:
+        reason = "disabled_by_config"
+    elif curator != "public-event":
+        reason = "tech_ai_series_skips_public_event_curator"
+    else:
+        reason = "enabled"
     with connect(state_path) as db:
         counts = state_counts(db)
     emit({
-        "allowed": config["enabled"],
-        "reason": "enabled" if config["enabled"] else "disabled_by_config",
+        "allowed": allowed,
+        "preset": preset,
+        "curator": curator,
+        "config_path": str(resolve_config_path(root)),
+        "reason": reason,
         "project_root": str(root),
         "account": config["account"],
         "output_target": config["output_target"],
         "state_path": str(state_path),
-        "theme_allowlist": config["theme_allowlist"],
+        "theme_allowlist": config.get("theme_allowlist") or [],
         "min_source_count": config["selection"]["min_source_count"],
         "categories": config["selection"]["categories"],
         "counts": counts,
@@ -200,6 +234,7 @@ def parse_time(value):
 
 def cmd_reserve(args):
     _, config, state_path = load_config(args.project_root)
+    require_public_event_curator(config)
     if not config["enabled"]:
         emit({"reserved": False, "reason": "disabled_by_config", "case_key": args.key})
         return
@@ -284,7 +319,8 @@ def require_reservation(db, key, reservation_id, allowed_states=("reserved",)):
 
 
 def cmd_complete(args):
-    _, _, state_path = load_config(args.project_root)
+    _, config, state_path = load_config(args.project_root)
+    require_public_event_curator(config)
     if not args.run_id.strip():
         raise ArchiveStateError("run_id 不能为空")
     with connect(state_path) as db:
@@ -303,7 +339,8 @@ def cmd_complete(args):
 
 
 def transition_from_reservation(args, new_state, allowed_states=("reserved",), clear_id=True):
-    _, _, state_path = load_config(args.project_root)
+    _, config, state_path = load_config(args.project_root)
+    require_public_event_curator(config)
     reason = args.reason.strip()
     if not reason:
         raise ArchiveStateError("reason 不能为空")
@@ -357,6 +394,7 @@ def require_text(mapping, field, context="dossier"):
 
 def cmd_validate_dossier(args):
     _, config, state_path = load_config(args.project_root)
+    require_public_event_curator(config)
     path = Path(args.file).expanduser().resolve()
     if not path.is_file():
         raise ArchiveStateError(f"dossier 不存在: {path}")

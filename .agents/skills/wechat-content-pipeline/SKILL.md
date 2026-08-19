@@ -10,7 +10,7 @@ description: 编排中文微信公众号文章。两条入口：用户成稿只�
 ## 边界
 
 - 方式 2 必须有用户主题与思路；缺一项就追问，不联网另找题。只丢标题没有成稿时，不要走方式 1。
-- 系列选题唯一上游是已启用的 `wechat-public-event-archive`。它必须先产出通过校验的 `source-dossier.json` 和完整 `user-brief.md`，本流水线仍按 `--source provided` 接收。
+- 仓库默认系列是科技/AI。只有本机 `config/local` 启用 `public-event` 时，才走公共事件档案上游（dossier + brief，仍按 `--source provided`）。
 - 只创建草稿，不公开发布。不得把 API 密钥、token 或素材 ID 写进文章和日志。
 - 只用下列固定命令和 `init` 声明的工作区文件；不新建临时脚本、单篇渲染器或视觉审图循环。
 - `optional-skills/` 的完整说明仍按需加载；主流水线只复用其中的确定性脚本，不读取整份扩展 Skill。
@@ -122,4 +122,4 @@ python3 <PIPELINE>/scripts/pipeline_runtime.py finish \
 | 工作区与阶段语义 | [`references/artifact-contract.md`](references/artifact-contract.md) |
 | 深度写作声口 | [`../wechat-tech-insight-writer/SKILL.md`](../wechat-tech-insight-writer/SKILL.md) |
 
-通用热点雷达默认关闭，也不会自动选题。公共事件档案是独立、受控且需要稳定官方结论的上游，不等于恢复热点模式。
+通用热点雷达默认关闭，也不会自动选题。公共事件档案只在本机 local 配置启用，不等于恢复热点模式。

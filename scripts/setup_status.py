@@ -32,7 +32,8 @@ def main():
     accounts_path = ROOT / "wechat-accounts.json"
     example_path = ROOT / "assets" / "wechat-accounts.example.json"
     profiles_path = ROOT / "config" / "wechat-content-profiles.json"
-    archive_path = ROOT / "config" / "public-event-archive.json"
+    local_archive = ROOT / "config" / "local" / "public-event-archive.json"
+    archive_path = local_archive if local_archive.is_file() else ROOT / "config" / "public-event-archive.json"
 
     accounts = _read_json(accounts_path)
     profiles = (_read_json(profiles_path) or {}).get("profiles") or {}
@@ -72,13 +73,18 @@ def main():
     else:
         missing.append("config/wechat-content-profiles.json")
 
-    if archive.get("enabled"):
+    preset = archive.get("preset") or "public-event"
+    if archive.get("enabled") and preset == "tech-ai":
         ready.append(
-            f"公共事件档案已开启，账号 {archive.get('account') or '未指定'}，只写草稿"
+            f"科技/AI 系列已开启，账号 {archive.get('account') or '未指定'}，只写草稿"
         )
-        questions.append("系列选题（涉黑涉恶等）已开。是否要用你的 Agent 定时任务每天触发？")
+        questions.append("科技/AI 系列已开。是否要用你的 Agent 定时任务每天触发？")
+    elif archive.get("enabled"):
+        ready.append(
+            f"本机系列已开启（preset={preset}），账号 {archive.get('account') or '未指定'}，只写草稿"
+        )
     else:
-        questions.append("要不要开启系列选题（涉黑涉恶等公共事件档案）？")
+        questions.append("要不要开启科技/AI 系列选题？")
 
     questions.append("你更常用哪一种：把已有文章拿来排版，还是给主题让 AI 写？")
 

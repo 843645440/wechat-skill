@@ -252,6 +252,54 @@ class PublicEventArchiveTests(unittest.TestCase):
         )
         self.assertIn("effective_judgment", error["error"])
 
+    def test_local_config_overrides_public_tech_ai_preset(self):
+        temp, root = self.make_project()
+        self.addCleanup(temp.cleanup)
+        (root / "config/local").mkdir()
+        local = json.loads((root / "config/public-event-archive.json").read_text(encoding="utf-8"))
+        local["preset"] = "public-event"
+        local["account"] = "b"
+        (root / "config/local/public-event-archive.json").write_text(
+            json.dumps(local), encoding="utf-8"
+        )
+        (root / "config/public-event-archive.json").write_text(json.dumps({
+            "version": 1,
+            "preset": "tech-ai",
+            "enabled": True,
+            "account": "a",
+            "output_target": "draft",
+            "state": {"path": "state/tech-ai-series.sqlite3", "reservation_ttl_hours": 24},
+            "selection": {
+                "min_source_count": 2,
+                "categories": ["人工智能", "科技产品"],
+            },
+        }), encoding="utf-8")
+        result = self.run_cli(root, "check")
+        self.assertTrue(result["allowed"])
+        self.assertEqual("public-event", result["preset"])
+        self.assertEqual("b", result["account"])
+        self.assertIn("local/public-event-archive.json", result["config_path"])
+
+    def test_tech_ai_preset_skips_public_event_curator(self):
+        temp, root = self.make_project()
+        self.addCleanup(temp.cleanup)
+        (root / "config/public-event-archive.json").write_text(json.dumps({
+            "version": 1,
+            "preset": "tech-ai",
+            "enabled": True,
+            "account": "a",
+            "output_target": "draft",
+            "state": {"path": "state/tech-ai-series.sqlite3", "reservation_ttl_hours": 24},
+            "selection": {
+                "min_source_count": 2,
+                "categories": ["人工智能", "科技产品"],
+            },
+        }), encoding="utf-8")
+        result = self.run_cli(root, "check")
+        self.assertFalse(result["allowed"])
+        self.assertEqual("tech-ai", result["preset"])
+        self.assertEqual("none", result["curator"])
+
 
 if __name__ == "__main__":
     unittest.main()

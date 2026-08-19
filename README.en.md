@@ -101,7 +101,7 @@ Then say: `Help me configure this WeChat skill`. The agent runs `python3 scripts
 | Length / score | Off | On (1500–4000, score ≥75) |
 | Cron | No | Yes, via your agent |
 
-A title without a manuscript is not lane 1. Series topics (organized crime, corruption, major fraud, …) are a lane-2 preset, not a trending scanner. Free image key if needed: <https://platform.agnes-ai.cn>
+A title without a manuscript is not lane 1. The default series is tech/AI. Personal series configs belong in `config/local/` and are not committed. Free image key if needed: <https://platform.agnes-ai.cn>
 
 Chinese [usage guide](docs/usage.md) covers credentials, IP allowlists, and pipeline commands.
 

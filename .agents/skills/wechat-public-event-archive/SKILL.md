@@ -1,6 +1,6 @@
 ---
 name: wechat-public-event-archive
-description: 自动策展中国重大公共事件、涉黑涉恶、贪腐、诈骗等历史案件；核验中国官方材料、去重并把合格选题交给微信公众号流水线生成草稿。用于用户明确开启每日公共事件档案时；不处理未有稳定官方结论的传闻或自动公开发布。
+description: 受控系列选题上游。仓库默认是科技/AI 系列；仅当本机 config/local 启用 public-event 预设时，才核验官方材料并策展公共事件档案。不自动公开发布。
 metadata:
   hermes:
     tags: [wechat, research, public-events, automation]
@@ -15,8 +15,9 @@ metadata:
 
 ## 不可越过的边界
 
-- 先读取 `<ROOT>/config/public-event-archive.json`。`enabled=false` 时不搜索、不写作、不建草稿，
-  定时任务最终只返回 `[SILENT]`。
+- 先运行 `archive_state.py check`。优先读 `<ROOT>/config/local/public-event-archive.json`（本机，不入库），否则读仓库默认配置。
+- 仓库默认 `preset=tech-ai`：这是科技/AI 系列，本 Skill **不**按公共事件档案搜案、不写涉黑涉恶。
+- 只有本机配置 `preset=public-event` 且 `enabled=true` 时才允许搜案写作。`allowed=false` 时返回 `[SILENT]`。
 - 只创建微信公众号草稿，绝不调用公开发布接口。
 - 人物犯罪稿必须已有生效裁判；只有审查调查、立案侦查、起诉或一审未生效时不写此人。
 - 重大事件稿可以没有刑事判决，但必须已有官方调查报告、责任认定或稳定的官方结论。
