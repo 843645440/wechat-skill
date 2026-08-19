@@ -20,7 +20,7 @@ description: 编排中文微信公众号文章：用户提供主题与大致思�
 ⚠️ 链上有 **3 步没有命令**，是你自己写文件，最容易漏：
 
 1. `init` 之后写 `user-brief.md`（第 2 步）
-2. `begin` 之后写 `article.md` + `digest.txt`（第 5 步）
+2. `begin` 之后写 `article.md`，并建议补 `digest.txt`（第 5 步）
 3. humanize 阶段就地改写 `article.md`（第 7 步）
 
 其余每一步都有现成命令，**不要自己发明命令、不要新建脚本**。
@@ -44,7 +44,7 @@ python3 <PIPELINE>/scripts/pipeline_job.py topic --job <job.json> --value "<主�
 # 4. 锁定结构（防同质，默认 --auto，同 run_id 稳定，永不死锁）
 python3 <PIPELINE>/scripts/pipeline_job.py shape --job <job.json> --auto
 
-# 5. 开始写作 → 输出 writing_contract，照卡片写 article.md（+ digest.txt）
+# 5. 开始写作 → 输出 writing_contract，照卡片写 article.md（建议同时写 digest.txt）
 #    写作本身没有命令，是你自己写文件。
 #    ⭐ 写之前先读 ../wechat-viral-writer/references/writing-checklist.md（一页纸硬要求）
 #    ⭐ 标题先用 3 个不同刺点的候选跑一次排序（30 秒，比写完再改省事）：
@@ -68,24 +68,19 @@ python3 <PIPELINE>/scripts/pipeline_job.py stage --job <job.json> --name humaniz
 #    不新增事实，不删 brief 要求保留的时间线与结论，不把字数改到 1500 以下。
 python3 <PIPELINE>/scripts/pipeline_job.py stage --job <job.json> --name humanize --status completed --detail intensity=strong
 
-# 8. 正文配图（Agent 用 xiaohu 生图，不走脚本）
-#    ⚠️ 不要跑 gen_inline_images.py（它依赖 agnes 脚本，环境里没有）。
-#    Agent 加载 xiaohu-gen skill，按路由规则选后端（文字密集→xiaoyi，艺术→agnes），
-#    自己分析文章、挑 0-3 个插图位、生图、插回 article.md。
-#    只有用户明确说"用 hermes 自带生图"时才用 image_generate。
-#    生不出来就跳过（status=skipped），不阻塞流水线。
-#    记账：
-python3 <PIPELINE>/scripts/pipeline_job.py stage --job <job.json> --name illustrations --status completed --detail "backend=xiaohu;count=N"
+# 8. 正文配图（唯一入口；自动记账）
+#    用户图优先；否则固定挑 0-3 个机制/流程/对比位，走 xiaohu:xiaoyi；
+#    无 key、超时或无合适位置时自动 skipped，无图继续。
+python3 <PIPELINE>/scripts/gen_inline_images.py \
+  --article <article.md> --imgs-dir <imgs_dir> --seed <run_id> \
+  --job <job.json> --record-stage
 
-# 9. 封面（Agent 用 xiaohu 生图，不走脚本）
-#    ⚠️ 不要跑 gen_cover_image.py（它依赖 agnes 脚本，环境里没有）。
-#    Agent 加载 xiaohu-gen skill，按路由规则选后端生成封面，输出到 cover/cover.png。
-#    只有用户明确说"用 hermes 自带生图"时才用 image_generate。
-#    生不出来走离线兜底：python3 <PIPELINE>/scripts/render_cover_fallback.py ...
-#    记账：
-python3 <PIPELINE>/scripts/pipeline_job.py stage --job <job.json> --name cover --status completed --detail "backend=xiaohu"
+# 9. 封面（唯一入口；自动记账）
+#    用户图优先 → xiaohu:agnes 生图 → Pillow 离线兜底；不需要 Agent 临场拼后端。
+python3 <PIPELINE>/scripts/gen_cover_image.py --job <job.json> --record-stage
 
-# 10. Prepare（校验标题、字数、humanize、图片数与路径安全，固定主题）
+# 10. Prepare（humanize 后最终体检 + 标题/字数/图片路径校验，固定主题）
+#     score < 75、high 级问题或 scorer 不可用都会阻塞；修稿后重跑 prepare。
 python3 <PIPELINE>/scripts/pipeline_runtime.py prepare --job <job.json>
 
 # 11. Finish（验收封面，写草稿箱，文件锁防双草稿）
@@ -108,14 +103,14 @@ python3 <PIPELINE>/scripts/pipeline_runtime.py finish --job <job.json> --config 
 
 ### 2. 图片降级链
 
-**默认策略（账号档案决定）**：`illustrations.enabled=false` 时**正文默认不配图**——不要主动跑
-`gen_inline_images.py`，直接把 illustrations 阶段记为 `skipped`；`cover.backend=offline_render`
-时封面**直接走离线兜底**（`gen_cover_image.py` 会读 job.json 里的 `image_policy` 自动跳过生图，
-无需传 `--skip-generate`）。**例外**：用户给了图或明确要求配图时，照常跑两条命令，用户图仍按
-`user_provided` 最高优先级处理。**开工前用户没提配图方式时，先问一次**（不配图 / 用户供图 / 生图），
-不要自行决定。
+**默认策略（账号档案决定）**：`illustrations.enabled=false` 时正文默认不配图；把阶段记为
+`skipped`。用户给了图时照常运行 `gen_inline_images.py`；用户明确要求生图时给该命令加
+`--force-generate`。用户图始终以 `user_provided` 最高优先级处理。`cover.backend=offline_render` 时仍运行 `gen_cover_image.py`，
+它会读取 `image_policy` 并直接走离线兜底。开工前用户没提配图方式时，先问一次
+（不配图 / 用户供图 / 生图），不要自行决定。
 
-**正文配图**——全部交给 `gen_inline_images.py` 一条命令，它内部就是这条链：
+**正文配图**——全部交给 `gen_inline_images.py` 一条命令。机制/流程/对比型正文图固定走
+`xiaohu:xiaoyi`，脚本内部完成挑位、提示词、插回 Markdown 与阶段记账：
 
 | 情况 | backend | status |
 |---|---|---|
@@ -127,7 +122,8 @@ python3 <PIPELINE>/scripts/pipeline_runtime.py finish --job <job.json> --config 
 **生不出图就不配图，这是正常结果，不是失败。**脚本退出码恒为 0，article.md 保持原样，
 绝不会留下指向不存在文件的 `![]()`。不要自己分析文章挑插图位，不要视觉审图。
 
-**封面**（`finish` 的硬门禁）——同样是**一条命令**，`gen_cover_image.py` 内部走完整降级链：
+**封面**（`finish` 的硬门禁）——同样是一条命令。生成式封面固定走 `xiaohu:agnes`，
+`gen_cover_image.py` 内部走完整降级链并自动记账：
 
 | 情况 | backend | status |
 |---|---|---|
@@ -160,7 +156,7 @@ python3 <PIPELINE>/scripts/gen_cover_image.py --job <job.json> --record-stage
 - **读者价值服从题材**：有可执行点再写清单；历史案件、人物传记类以认知增量与事实线为主，禁止硬塞防骗清单。
 - 禁止编造亲历；禁止把用户未提供的「内幕」写成既定事实。
 - **正文不写关注段**：文末「在看 / 转发 / 关注」由渲染器自动追加，正文再写一遍就是重复。
-- **摘要**：另写一句 ≤50 字到 `digest.txt`——它是分享卡片副标题，要补标题没说完的第二钩子（关键数字、悬念下半句、读者代价），不要复述标题。
+- **摘要（强烈建议）**：写一句 ≤50 字到 `digest.txt`。它是分享卡片副标题，要补标题没说完的第二钩子（关键数字、悬念下半句、读者代价），不要复述标题；缺失时微信会截取正文开头，不阻塞草稿。
 
 深度风格细节读 `wechat-tech-insight-writer`。声口与 `writer_instructions` 已内联在 `init` 的
 `job_contract.account_profile` 里，不必另读账号档案文档。
@@ -179,6 +175,8 @@ python3 <PIPELINE>/scripts/gen_cover_image.py --job <job.json> --record-stage
 ```
 
 - 体检的 **high 级问题会并进 `problems`**（前缀 `[写作·xxx]`），`score < 75` 也会拦。
+- `check` 是写作期反馈；`prepare` 和 `finish` 会对 **humanize 后的最终稿**再次硬校验，
+  并把分数、等级、blocking 数写入 `stages.write.details`。不能靠跳过 `check` 绕过门禁。
 - 问题多的时候直接跑 `report_command`，它给的是**逐条修法**，不是评价。
 - 五个维度的判据和阈值见 `../wechat-viral-writer/SKILL.md`；写之前先读它的
   [writing-checklist.md](../wechat-viral-writer/references/writing-checklist.md)，

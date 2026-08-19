@@ -1,13 +1,6 @@
 ---
 name: xiaohu-gen
 description: 统一图片生成路由（别名：小虎生图）。信息图/流程图/文字密集类使用 xiaoyi (gpt-image-2)，人像/风景/艺术创作类使用 Agnes。支持双 key 降级和 200s 超时。
-version: 1.0.0
-author: Hermes Agent
-license: MIT
-metadata:
-  hermes:
-    tags: [image-generation, routing, xiaoyi, agnes, failover]
-    related_skills: [wechat-content-pipeline, baoyu-cover-image, baoyu-article-illustrator]
 ---
 
 # 统一图片生成路由

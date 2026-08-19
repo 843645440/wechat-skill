@@ -92,7 +92,35 @@ THEMES = {
         "radius": "0", "shadow": "none",
         "block": "#1B5E8C", "blockink": "#FFFFFF",
     },
+    # ── 新闻 / 正式报道组：不用渐变、投影和营销式 CTA。三套分别承担
+    #    快讯长文、沉重事件、专题报告，不能只靠换色冒充不同风格。────────
+    "news-wire": {
+        "layout": "newswire", "name": "新闻线",
+        "paper": "#FFFFFF", "ink": "#111827", "body": "#303844",
+        "muted": "#5F6873", "accent": "#273746", "soft": "#F5F6F7",
+        "line": "#D8DCE1",
+        "underline": "border-bottom:1.5px solid #7B8793;font-weight:650;",
+        "radius": "0", "shadow": "none",
+    },
+    "solemn-gray": {
+        "layout": "solemn", "name": "沉静灰",
+        "paper": "#FDFCFA", "ink": "#1C1B1A", "body": "#3B3835",
+        "muted": "#6A645F", "accent": "#712F38", "soft": "#F3F0ED",
+        "line": "#D7D1CC",
+        "underline": "border-bottom:1.5px solid #9F7F83;font-weight:650;",
+        "radius": "2px", "shadow": "none", "font": SERIF_FONT,
+    },
+    "formal-brief": {
+        "layout": "briefing", "name": "正式简报",
+        "paper": "#FFFFFF", "ink": "#152334", "body": "#354455",
+        "muted": "#627184", "accent": "#234E70", "soft": "#F2F5F8",
+        "line": "#CFD8E2",
+        "underline": "border-bottom:2px solid #AFC2D4;font-weight:650;",
+        "radius": "4px", "shadow": "none",
+    },
 }
+
+SOBER_LAYOUTS = {"newswire", "solemn", "briefing"}
 
 HEADING_RE = re.compile(r"^(#{1,3})\s+(.+?)\s*$")
 INLINE_RE = re.compile(
@@ -382,6 +410,53 @@ def render_hero(title, intro, theme):
             f'<p style="font-size:13px;color:#65675E;margin:0;line-height:1.8;">{intro_html}</p></section>'
             f'<section style="background:#1E1F23;padding:10px 22px;"><p style="margin:0;font-size:11px;color:#FFFFFF;font-weight:600;">{leaf("技术进步，最终要落到真实工作与生活")}</p></section></section>'
         )
+    if layout == "newswire":
+        # 新闻线：报纸栏线 + 明确的报道属性，不用卡片、渐变或投影。
+        return (
+            f'<section style="margin:0 14px 36px;border-top:4px solid {theme["accent"]};padding-top:17px;">'
+            f'<section style="display:flex;align-items:center;margin-bottom:16px;">'
+            f'<p style="margin:0 12px 0 0;font-size:10px;font-weight:800;letter-spacing:2.5px;'
+            f'color:{theme["accent"]};">{leaf("NEWS DESK · 事实报道")}</p>'
+            f'<section style="flex:1;height:1px;background:{theme["line"]};line-height:0;">{leaf(" ")}</section></section>'
+            f'<p style="margin:0 0 16px;font-size:26px;font-weight:850;line-height:1.38;'
+            f'letter-spacing:-0.35px;color:{theme["ink"]};">{title_html}</p>'
+            f'<p style="margin:0;padding:14px 0;border-top:1px solid {theme["line"]};'
+            f'border-bottom:1px solid {theme["line"]};font-size:14px;line-height:1.9;'
+            f'color:{theme["body"]};">{intro_html}</p>'
+            f'<p style="margin:10px 0 0;font-size:10px;letter-spacing:2px;color:{theme["muted"]};">'
+            f'{leaf("事实 · 进展 · 边界")}</p></section>'
+        )
+    if layout == "solemn":
+        # 沉静灰：暖灰纸面、宋体与细酒红线。视觉重量来自留白，不来自大黑块。
+        return (
+            f'<section style="margin:0 8px 38px;background:{theme["soft"]};'
+            f'border-top:6px solid {theme["ink"]};padding:26px 20px 24px;">'
+            f'<p style="margin:0 0 16px;font-size:10px;font-weight:700;letter-spacing:2.5px;'
+            f'color:{theme["accent"]};">{leaf("SPECIAL REPORT · 重大事件")}</p>'
+            f'<p style="margin:0 0 17px;font-size:25px;font-weight:700;line-height:1.48;'
+            f'color:{theme["ink"]};">{title_html}</p>'
+            f'<section style="width:44px;height:1px;background:{theme["accent"]};'
+            f'line-height:0;margin-bottom:15px;">{leaf(" ")}</section>'
+            f'<p style="margin:0;font-size:14px;line-height:2;color:{theme["body"]};">{intro_html}</p>'
+            f'</section>'
+        )
+    if layout == "briefing":
+        # 正式简报：文档页眉 + 摘要区，适合政策、机构和专题进展说明。
+        return (
+            f'<section style="margin:0 10px 36px;border:1px solid {theme["line"]};">'
+            f'<section style="background:{theme["accent"]};padding:10px 18px;display:flex;'
+            f'align-items:center;justify-content:space-between;">'
+            f'<p style="margin:0;font-size:10px;font-weight:800;letter-spacing:2.5px;color:#FFFFFF;">'
+            f'{leaf("BRIEFING · 专题简报")}</p>'
+            f'<p style="margin:0;font-size:9px;letter-spacing:1.5px;color:#FFFFFF;">'
+            f'{leaf("FACT / CONTEXT / FINDING")}</p></section>'
+            f'<section style="padding:24px 20px 22px;">'
+            f'<p style="margin:0 0 15px;font-size:25px;font-weight:800;line-height:1.42;'
+            f'color:{theme["ink"]};letter-spacing:-0.25px;">{title_html}</p>'
+            f'<p style="margin:0;padding:13px 14px;background:{theme["soft"]};'
+            f'border-left:3px solid {theme["accent"]};font-size:14px;line-height:1.9;'
+            f'color:{theme["body"]};">{intro_html}</p></section></section>'
+        )
     if layout == "plain":
         # 素白：唯一装饰是一条极浅分隔线，靠字号与留白分层。
         return (
@@ -438,6 +513,51 @@ def render_toc(headings, theme):
         return ""
     layout = theme["layout"]
     label = "本文看点"
+    if layout in SOBER_LAYOUTS:
+        labels = {
+            "newswire": "报道提要",
+            "solemn": "事件脉络",
+            "briefing": "报告目录",
+        }
+        rows = []
+        for index, heading in enumerate(items, 1):
+            if layout == "solemn":
+                row = (
+                    f'<section style="display:flex;align-items:flex-start;padding:11px 0;'
+                    f'border-bottom:1px solid {theme["line"]};">'
+                    f'<span style="display:inline-block;margin:1px 11px 0 0;padding:2px 6px;'
+                    f'border:1px solid {theme["accent"]};font-size:10px;font-weight:700;'
+                    f'color:{theme["accent"]};">{leaf(f"{index:02d}")}</span>'
+                    f'<span style="font-size:14px;font-weight:650;line-height:1.55;'
+                    f'color:{theme["ink"]};">{leaf(heading)}</span></section>'
+                )
+            elif layout == "briefing":
+                row = (
+                    f'<section style="display:flex;align-items:center;margin-bottom:6px;'
+                    f'background:{theme["soft"]};border-left:3px solid {theme["accent"]};'
+                    f'padding:10px 12px;">'
+                    f'<span style="width:29px;font-size:10px;font-weight:800;letter-spacing:1px;'
+                    f'color:{theme["accent"]};">{leaf(f"{index:02d}")}</span>'
+                    f'<span style="font-size:13.5px;font-weight:700;line-height:1.5;'
+                    f'color:{theme["ink"]};">{leaf(heading)}</span></section>'
+                )
+            else:
+                row = (
+                    f'<section style="display:flex;align-items:flex-start;padding:10px 0;'
+                    f'border-bottom:1px solid {theme["line"]};">'
+                    f'<span style="width:31px;font-size:10px;font-weight:800;letter-spacing:1px;'
+                    f'color:{theme["accent"]};">{leaf(f"{index:02d}")}</span>'
+                    f'<span style="font-size:13.5px;font-weight:700;line-height:1.55;'
+                    f'color:{theme["ink"]};">{leaf(heading)}</span></section>'
+                )
+            rows.append(row)
+        return (
+            f'<section style="margin:0 14px 38px;">'
+            f'<p style="margin:0 0 8px;font-size:10px;font-weight:700;letter-spacing:2px;'
+            f'color:{theme["muted"]};">{leaf(labels[layout])}</p>'
+            f'<section style="border-top:1px solid {theme["line"]};">{"".join(rows)}</section>'
+            f'</section>'
+        )
     if layout in {"plain", "serif-rule"}:
         # 极简两套不用卡片：编号 + 标题竖排成一份目录，靠细线分隔。
         rows = "".join(
@@ -494,6 +614,36 @@ def render_heading(heading, index, total, theme):
     number = "∞" if index == total and END_HEADING_RE.search(heading) else f"{index:02d}"
     tag = "THE END" if number == "∞" else english_tag(heading)
     layout = theme["layout"]
+    if layout == "newswire":
+        return (
+            f'<section style="margin:46px 14px 21px;border-top:2px solid {theme["ink"]};'
+            f'padding-top:12px;">'
+            f'<p style="margin:0 0 5px;font-size:9px;font-weight:800;letter-spacing:2px;'
+            f'color:{theme["accent"]};">{leaf(f"REPORT {number}")}</p>'
+            f'<p style="margin:0;font-size:19px;font-weight:800;line-height:1.5;'
+            f'color:{theme["ink"]};">{leaf(heading)}</p></section>'
+        )
+    if layout == "solemn":
+        return (
+            f'<section style="margin:48px 14px 22px;">'
+            f'<section style="display:flex;align-items:center;margin-bottom:10px;">'
+            f'<span style="display:inline-block;margin-right:11px;padding:3px 8px;'
+            f'border:1px solid {theme["accent"]};font-size:10px;font-weight:700;'
+            f'color:{theme["accent"]};">{leaf(number)}</span>'
+            f'<span style="flex:1;height:1px;background:{theme["line"]};line-height:0;">'
+            f'{leaf(" ")}</span></section>'
+            f'<p style="margin:0;font-size:19px;font-weight:700;line-height:1.6;'
+            f'color:{theme["ink"]};">{leaf(heading)}</p></section>'
+        )
+    if layout == "briefing":
+        return (
+            f'<section style="margin:46px 14px 22px;border-left:4px solid {theme["accent"]};'
+            f'padding:2px 0 2px 13px;">'
+            f'<p style="margin:0 0 4px;font-size:9px;font-weight:800;letter-spacing:2px;'
+            f'color:{theme["accent"]};">{leaf(f"SECTION {number}")}</p>'
+            f'<p style="margin:0;font-size:18px;font-weight:800;line-height:1.5;'
+            f'color:{theme["ink"]};">{leaf(heading)}</p></section>'
+        )
     if layout == "editorial":
         return (
             '<section style="margin:48px 10px 25px;display:flex;align-items:center;padding-bottom:13px;border-bottom:3px solid #DC2626;">'
@@ -772,10 +922,52 @@ def module_map(plan, sections):
 
 
 def render_follow_cta(theme):
-    """文末留存钩子：完读肯定 + 在看/转发 + 关注。所有主题共用文案，按主题取色。"""
+    """Render a topic-appropriate footer.
+
+    General themes keep the engagement CTA. News and report layouts use a
+    restrained editorial note instead: asking for likes beside casualties or
+    unresolved allegations would undermine the entire sober theme.
+    """
     layout = theme["layout"]
     accent = theme["accent"]
     emphasis_color = accent      # 各 layout 可覆盖（深底上必须换成浅色）
+    if layout in SOBER_LAYOUTS:
+        copy = {
+            "newswire": (
+                "信息说明",
+                "本文按公开信息整理，事实更新与文中判断应分开阅读。",
+                "后续进展以权威发布与可核验报道为准。",
+            ),
+            "solemn": (
+                "阅读说明",
+                "对受影响者保持克制，对尚未查清的事实保留边界。",
+                "不消费苦难，也不替调查和司法补写结论。",
+            ),
+            "briefing": (
+                "报告说明",
+                "本文区分事实、解释与判断，资料口径以文中说明为准。",
+                "信息发生变化时，应先修订事实层，再调整结论。",
+            ),
+        }
+        label, body, close = copy[layout]
+        if layout == "briefing":
+            container = (
+                f'margin:46px 14px 0;background:{theme["soft"]};'
+                f'border-left:4px solid {accent};padding:17px 18px;'
+            )
+        else:
+            container = (
+                f'margin:46px 14px 0;border-top:1px solid {accent};padding:17px 0 0;'
+            )
+        return (
+            f'<section style="{container}">'
+            f'<p style="margin:0 0 9px;font-size:10px;font-weight:800;letter-spacing:2.5px;'
+            f'color:{accent};">{leaf(label)}</p>'
+            f'<p style="margin:0 0 7px;font-size:14px;line-height:1.85;'
+            f'color:{theme["body"]};">{leaf(body)}</p>'
+            f'<p style="margin:0;font-size:13px;line-height:1.8;font-weight:700;'
+            f'color:{theme["ink"]};">{leaf(close)}</p></section>'
+        )
     if layout == "journal":
         container = (f'margin:44px 8px 0;background:{theme["ink"]};'
                      f'border-radius:{theme["radius"]};padding:18px 20px;')
@@ -820,6 +1012,19 @@ def render_follow_cta(theme):
 
 def render_end(theme):
     layout = theme["layout"]
+    if layout in SOBER_LAYOUTS:
+        labels = {
+            "newswire": "END OF REPORT",
+            "solemn": "记录结束 · 等待事实更新",
+            "briefing": "REPORT END",
+        }
+        return (
+            f'<section style="margin:46px 14px 8px;text-align:center;">'
+            f'<section style="height:1px;background:{theme["line"]};margin-bottom:13px;'
+            f'line-height:0;">{leaf(" ")}</section>'
+            f'<p style="margin:0;font-size:9px;color:{theme["muted"]};letter-spacing:3px;">'
+            f'{leaf(labels[layout])}</p></section>'
+        )
     if layout == "ticket":
         return (
             '<section style="margin:42px 20px 12px;text-align:center;border-top:2px solid #1A1A1A;padding-top:16px;">'

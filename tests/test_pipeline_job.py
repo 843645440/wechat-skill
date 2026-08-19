@@ -240,7 +240,11 @@ class PipelineJobTests(unittest.TestCase):
             job = json.loads(job_path.read_text(encoding="utf-8"))
             self.assertEqual(
                 job["image_policy"],
-                {"inline_enabled": False, "cover_backend": "offline_render"},
+                {
+                    "inline_enabled": False,
+                    "inline_max_images": 3,
+                    "cover_backend": "offline_render",
+                },
             )
 
     def test_auto_hotspot_accepts_category_timestamp_and_focus(self):

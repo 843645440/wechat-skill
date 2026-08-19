@@ -7,7 +7,9 @@ Chrome/Chromium 能启动并生成 1410×600 PNG，但目标工作区位于隐�
 ## 最小复现顺序
 
 1. 保留浏览器启动器原路径，例如 `/snap/bin/chromium`；不要 `resolve()`。
-2. 在 `$HOME` 下创建普通非隐藏暂存目录，例如 `$HOME/wechat-cover-tmp/render-XXXX/`。
+2. 在系统临时目录创建普通非隐藏暂存目录，例如
+   `${TMPDIR:-/tmp}/wechat-cover-tmp/render-XXXX/`。需要固定路径时设置
+   `WECHAT_COVER_TMPDIR`；不要依赖 `$HOME` 可写。
 3. 将以下三类路径全部放在暂存目录：
    - 输入 `cover.html`
    - `--user-data-dir` 浏览器 profile

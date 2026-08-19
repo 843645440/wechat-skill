@@ -1,0 +1,4 @@
+interface:
+  display_name: "小虎图片生成路由"
+  short_description: "按图片类型路由 xiaoyi 或 Agnes，并处理凭证降级"
+  default_prompt: "使用 $xiaohu-gen 根据图片类型选择合适后端并生成图片。"

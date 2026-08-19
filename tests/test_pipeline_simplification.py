@@ -147,6 +147,21 @@ class SimplifiedPipelineTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             job_path = self.init_job(tmp, "测试主题")
             job = pipeline_job.load_job(job_path)
+            (job_path.parent / "user-brief.md").write_text(
+                "# Brief\n\n## 主题\n测试主题\n\n## 思路\n"
+                "- 验证无来源文件仍可继续\n- 验证正文零配图可以进入草稿\n",
+                encoding="utf-8",
+            )
+            job["event_focus"] = "无来源文件和零配图仍可进入草稿"
+            job["article_shape"] = {
+                "structure_id": "conflict", "opening_type": "contrast",
+                "ending_type": "hook_return", "felt_sense": "谨慎的兴奋",
+                "tension_type": "efficiency_vs_duty", "heading_count": 5,
+                "body_band": "short",
+            }
+            job["stages"]["write"] = pipeline_job.stage_record(
+                "running", job["created_at"]
+            )
             for name, status in (("humanize", "completed"), ("illustrations", "skipped")):
                 job["stages"][name] = pipeline_job.stage_record(status, job["created_at"])
             pipeline_job.save_job(job_path, job)
@@ -154,9 +169,28 @@ class SimplifiedPipelineTests(unittest.TestCase):
             (job_path.parent / "article.md").write_text(
                 f"# 测试主题进入真实流程\n\n{body}\n", encoding="utf-8"
             )
-            result = pipeline_runtime.cmd_prepare(type("Args", (), {"job": str(job_path)})())
+            healthy = {
+                "score": 80, "grade": "B", "blocking_count": 0,
+                "problems": [],
+            }
+            with mock.patch.object(pipeline_runtime, "writing_health", return_value=healthy):
+                result = pipeline_runtime.cmd_prepare(
+                    type("Args", (), {"job": str(job_path)})()
+                )
         self.assertEqual("finish", result["next"])
         self.assertEqual(0, result["image_count"])
+
+    def test_active_pipeline_uses_xiaohu_clients_not_removed_agnes_skill(self):
+        pipeline_root = ROOT / ".agents/skills/wechat-content-pipeline"
+        active = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in (
+                pipeline_root / "scripts/gen_inline_images.py",
+                pipeline_root / "scripts/gen_cover_image.py",
+            )
+        )
+        self.assertNotIn('parent.parent / "agnes-image-gen"', active)
+        self.assertIn('parent.parent / "xiaohu-gen"', active)
 
     def test_completed_draft_is_reused_by_run_id_without_hashes(self):
         with tempfile.TemporaryDirectory() as tmp:

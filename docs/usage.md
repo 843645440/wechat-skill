@@ -12,7 +12,8 @@
 | `wechat-html-cover` | 单独调用时用 HTML/CSS 模板生成确定性封面 PNG（流水线已改用生图 API 封面） |
 | `wechat-content-pipeline` | 按用户 brief 编排写作、humanize、配图、封面、排版并创建草稿（默认不自动选题） |
 | `humanizer-zh` | 写后去 AI 味一轮改写，保留强情感声口 |
-| `baoyu-*`、`agnes-image-gen` | 流水线的正文配图与封面生图后端；也可单独调用 |
+| `xiaohu-gen` | 流水线图片后端：正文机制图走 xiaoyi，生成式封面走 Agnes |
+| `baoyu-cover-image` | 单独生成文章封面时使用，不属于默认流水线 |
 
 ## 2. 安装和加载
 
@@ -87,11 +88,11 @@ python3 scripts/wechat_publish.py --config wechat-accounts.json send \
 
 1. 接收用户 brief（主题 + 思路，硬门禁；缺失则追问，不联网找题）。
 2. `shape --auto` 按轮换计划自动锁定本篇结构（防同质，永不死锁；显式字段可覆盖）。
-3. `begin` 输出 `writing_contract` 硬门禁卡片 → 写作 `article.md`（第一人称强情感，忠实 brief，1500—4000 字）+ `digest.txt` 摘要 → `check` 自检到 ok。
+3. `begin` 验证 brief、`event_focus` 和结构后输出 `writing_contract` → 写作 `article.md`（第一人称强情感，忠实 brief，1500—4000 字），建议补 `digest.txt` 摘要 → `check` 自检到 ok。
 4. `humanizer-zh` 一轮去 AI 味改写（默认 strong）。
-5. 正文配图 0—3 张（用户已给图优先；生图失败可无图继续）。
-6. 封面按降级链取第一个可用的写入 `cover/cover.png`：用户图 → 生图 API → 离线兜底渲染（`render_cover_fallback.py`，纯 Python，无需 Key 与浏览器）→ 账号默认封面素材。
-7. `prepare` 轻量门禁（标题、字数、图数、路径安全）+ 固定随机主题；`finish` 完成排版并创建指定账号草稿，到此结束。
+5. `gen_inline_images.py --record-stage` 处理 0—3 张正文图（用户图优先；机制图走 `xiaohu:xiaoyi`；生图失败可无图继续）。
+6. `gen_cover_image.py --record-stage` 写入封面：用户图 → `xiaohu:agnes` → Pillow 离线兜底 → 账号默认封面素材。
+7. `prepare` 对 humanize 后最终稿执行 score ≥75、blocking=0 的硬门禁，再校验标题、字数、图数和路径并固定主题；`finish` 发布前重检一次，随后排版并创建指定账号草稿。
 
 云端 Agent 必须使用固定入口：`pipeline_job.py init/topic/history/shape/stage/show` 和 `pipeline_runtime.py begin/check/prepare/finish`。不得为某篇文章临时写排版脚本或视觉检测循环。`finish` 默认创建草稿；只有开发验证时才使用 `--dry-run`。
 
@@ -130,7 +131,7 @@ Agent 应落盘 `user-brief.md`，`--source provided`，不得自行换题。详
 
 封面模板可选 `signal-editorial`、`night-signal` 与 `redaction-poster`。三套模板拥有独立固定配色，不跟随正文主题，目前不按 A/B 账号写死；需要固定账号规则时再修改账号档案。
 
-只有明确希望使用生成式图片时，才单独调用 `$baoyu-cover-image`、`$baoyu-article-illustrator` 或 `$agnes-image-gen`；它们不属于默认流水线。
+只有脱离流水线单独创作封面时才调用 `$baoyu-cover-image`。完整流水线使用固定图片脚本，不直接调用后端 Skill。
 
 ## 7. 运行产物
 
@@ -146,14 +147,14 @@ work/b/current/
 ## 8. 常见阻塞
 
 - **缺主题或思路**：流水线停止并追问，不联网找题凑稿。
+- **最终稿体检未通过**：humanize 后仍须 score ≥75 且 blocking=0；按报错里的完整报告命令修稿，不补假数字刷分。
 - **字数不在 1500—4000**：`prepare` 拒绝；补真实内容或删冗余，禁止注水。
 - **正文图失败**：单图重试一次，仍失败则跳过；全部失败按无图文章继续，不阻塞草稿。
-- **没有生图 API / 没有浏览器**：不是阻塞。跑离线兜底封面：
+- **没有生图 API / 没有浏览器**：不是阻塞。运行统一封面命令，它会自动离线兜底：
 
   ```bash
-  python3 .agents/skills/wechat-content-pipeline/scripts/render_cover_fallback.py \
-    --title '封面文案|第二行' --highlight '关键数字' --kicker '账号名' \
-    --seed "$RUN_ID" --output work/a/current/cover/cover.png
+  python3 .agents/skills/wechat-content-pipeline/scripts/gen_cover_image.py \
+    --job work/a/current/job.json --record-stage
   ```
 
   需要一款中文字体；都找不到时设置 `WECHAT_COVER_FONT=<字体文件绝对路径>`。

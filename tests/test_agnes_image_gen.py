@@ -10,11 +10,19 @@ from unittest import mock
 
 SCRIPT = (
     Path(__file__).resolve().parents[1]
-    / ".agents/skills/agnes-image-gen/scripts/generate.py"
+    / ".agents/skills/xiaohu-gen/scripts/agnes_generate.py"
 )
 SPEC = importlib.util.spec_from_file_location("agnes_image_generate", SCRIPT)
 agnes = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(agnes)
+
+XIAOYI_SCRIPT = (
+    Path(__file__).resolve().parents[1]
+    / ".agents/skills/xiaohu-gen/scripts/xiaoyi_generate.py"
+)
+XIAOYI_SPEC = importlib.util.spec_from_file_location("xiaoyi_image_generate", XIAOYI_SCRIPT)
+xiaoyi = importlib.util.module_from_spec(XIAOYI_SPEC)
+XIAOYI_SPEC.loader.exec_module(xiaoyi)
 
 PNG_1X1 = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
@@ -75,6 +83,26 @@ class AgnesImageGenTests(unittest.TestCase):
         self.assertTrue(result["api_key_configured"])
         self.assertEqual(result["ratio"], "21:9")
         self.assertNotIn("test-only-key", str(result))
+
+
+class XiaoyiImageGenTests(unittest.TestCase):
+    def test_secondary_key_works_without_primary_key(self):
+        with tempfile.TemporaryDirectory() as directory:
+            prompt = Path(directory) / "prompt.md"
+            prompt.write_text("A readable process infographic", encoding="utf-8")
+            output = Path(directory) / "output.png"
+            args = SimpleNamespace(
+                prompt_file=str(prompt), output=str(output), size="16:9",
+                timeout=30, dry_run=False,
+            )
+            with mock.patch.dict(os.environ, {
+                "XIAOYI_API_KEY_PRIMARY": "",
+                "XIAOYI_API_KEY_SECONDARY": "secondary-test-key",
+            }, clear=False), mock.patch.object(
+                xiaoyi, "try_with_key", return_value=(PNG_1X1, "secondary")
+            ):
+                result = xiaoyi.run(args)
+        self.assertEqual("secondary", result["key_used"])
 
 
 if __name__ == "__main__":

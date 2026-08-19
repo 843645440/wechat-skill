@@ -94,9 +94,9 @@ STAGE_OWNERS = {
     "discover": "agent：topic 命令写入选题",
     "write": "pipeline_runtime.py begin（标记 running）/ prepare（标记 completed）",
     "humanize": "agent：stage --name humanize --status running → 改写 → --status completed",
-    "illustrations": "agent：配图或用户图就绪后 stage --name illustrations --status completed/skipped",
-    "format": "pipeline_runtime.py finish 自动固定主题并排版",
-    "cover": "agent 生成/放置 cover/cover.png，pipeline_runtime.py finish 验收",
+    "illustrations": "gen_inline_images.py --record-stage 自动完成或降级",
+    "format": "pipeline_runtime.py prepare 固定主题 / finish 确定性排版",
+    "cover": "gen_cover_image.py --record-stage 自动走用户图/生图/离线兜底",
     "draft": "pipeline_runtime.py finish 自动创建公众号草稿",
 }
 
@@ -664,6 +664,9 @@ def inline_images_command(job, job_path):
         shlex.quote(os.path.join(job_dir, artifacts.get("article", "article.md"))),
         "--imgs-dir",
         shlex.quote(os.path.join(job_dir, artifacts.get("illustrations", "imgs"))),
+        "--max", shlex.quote(str(
+            (job.get("image_policy") or {}).get("inline_max_images", 3)
+        )),
         "--seed", shlex.quote(str(job.get("run_id", ""))),
         "--job", shlex.quote(os.path.abspath(str(job_path))),
         "--record-stage",
@@ -692,8 +695,8 @@ def suggest_next_command(job, job_path):
     """给出下一条该跑的完整命令：init 之后每个子命令的 stdout 都靠它形成不读文档的命令链。
 
     只依据 job.json 已记录的状态推断，和 pipeline_runtime.py 里 begin → check → humanize
-    → illustrations → prepare → finish 的固定顺序一致；agent 手动记账的阶段只有
-    humanize 和 illustrations，其余阶段由 pipeline_runtime.py 自动设置（见 STAGE_OWNERS）。
+    → illustrations → cover → prepare → finish 的固定顺序一致；agent 只需手动记账
+    humanize，图片脚本使用 --record-stage 自动记账，其余阶段由运行器设置。
     """
     stages = job["stages"]
     draft = stages["draft"]
@@ -743,7 +746,7 @@ def suggest_next_command(job, job_path):
     if stages["illustrations"]["status"] == "pending":
         return (
             inline_images_command(job, job_path)
-            + "  # 退出码恒为 0，自己记账 running→completed/skipped，跑完直接看下一条 next_command"
+            + "  # 退出码恒为 0，--record-stage 自动记账；跑完直接看 stdout 的 next_command"
         )
     if stages["illustrations"]["status"] == "running":
         # 只有手工标过 running 才会走到这里；--record-stage 路径不经过这一支。
@@ -756,7 +759,7 @@ def suggest_next_command(job, job_path):
     if stages["cover"]["status"] in ("pending", "running"):
         return (
             cover_command(job, job_path)
-            + "  # 退出码恒为 0，自己记账；用户图优先→生图→离线兜底，保证有封面"
+            + "  # 退出码恒为 0，--record-stage 自动记账；用户图优先→生图→离线兜底"
         )
     return runtime_script_command(job_path, "prepare")
 
@@ -895,6 +898,7 @@ def cmd_init(args):
         "account": args.account,
         "image_policy": {
             "inline_enabled": inline_enabled,
+            "inline_max_images": illustrations.get("max_images", 3),
             "cover_backend": cover_backend,
         },
         "run_id": secrets.token_hex(12),

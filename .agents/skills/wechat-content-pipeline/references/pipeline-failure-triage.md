@@ -16,6 +16,13 @@
 - `prepare` 报字数错误时，补真实的人群、流程、成本或限制，或删冗余；禁止重复注水。
 - humanize 只执行一轮，不要用第二轮全文改写凑字。
 
+## 写作质量
+
+- `check` 是写作期反馈；`prepare` 和 `finish` 都会检查 humanize 后最终稿。
+- 低于 75 分、存在 high/blocking 问题，或内置 scorer 不可用时，都会失败关闭。
+- 按报错给出的 `score_draft.py --markdown` 命令逐项修复；不要重跑 humanize 刷分，也不要补假数据。
+- 若报缺 brief、`event_focus` 或 `article_shape`，回到 stdout 的 `next_command` 补齐，不要手改阶段状态绕过。
+
 ## 正文配图
 
 - 正文允许 0—3 张，目标尽量至少 1 张。
@@ -30,9 +37,9 @@
 - **已取消 HTML/Chrome 封面**；封面写入 `cover/cover.png`（见 `ai-cover-generation.md`）。
 - `finish` 只做机械检查（存在/非空/魔数），**不做视觉校验**。
 - 按降级链取第一个可用后端：用户图 → 生图 API → **离线兜底渲染** → 账号默认 `thumb_media_id`。
-- **「没有生图能力」不是失败**：缺 `AGNES_API_KEY`、缺浏览器时直接跑
-  `scripts/render_cover_fallback.py`（纯 Pillow，需要一款中文字体）；
-  `check` 会把这条命令拼好放进 `hints`。
+- **「没有生图能力」不是失败**：统一运行 `gen_cover_image.py --job <job.json> --record-stage`；
+  缺 `AGNES_API_KEY` 时脚本自动落到 `render_cover_fallback.py`（纯 Pillow，需要一款中文字体）。
+  `check` 会把这条完整命令放进 `hints`。
 - 兜底渲染报「找不到可渲染中文的字体」时，设置 `WECHAT_COVER_FONT=<字体文件绝对路径>` 重跑。
 - 生图 API/落盘失败最多重试两次；四档全不可用时才 `skipped`，且必须有默认 `thumb_media_id`。
 - 封面文件扩展名与真实格式不一致不算错误：发布器按魔数识别并规范化 MIME。

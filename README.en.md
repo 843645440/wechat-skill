@@ -6,11 +6,11 @@
 
 **Reusable Skills for topic discovery, writing, native HTML information design, layout, and multi-account drafts**
 
-6 curated themes + theme generator · code blocks / images / GIFs · auto section numbers & keyword marks · two-gate quality checks
+11 curated themes + theme generator · code blocks / images / GIFs · auto section numbers & keyword marks · two-gate quality checks
 
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-Skill-blue)](https://claude.ai/code)
-[![Themes](https://img.shields.io/badge/themes-6%20+%20generator-059669)](references/theme-index.md)
+[![Themes](https://img.shields.io/badge/themes-11%20+%20generator-059669)](references/theme-index.md)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 [![Agents](https://img.shields.io/badge/Claude%20Code%20·%20Codex%20·%20Cursor-supported-8b5cf6.svg)](#-quick-start)
 
@@ -24,7 +24,7 @@ A project-level WeChat content toolkit for AI agents (Claude Code / Codex / Curs
 
 ## ✨ Features
 
-- **6 curated themes**: Moyu Green (default) · Red & White · Graphite Minimal · Zen Whitespace · Moyu Ticket · Olive Journal — each a self-contained thick component library (design tokens + dozens of components + visual-hierarchy table + article-type recipe table).
+- **11 curated themes** spanning card-rich layouts, low-noise long-form, news reporting, solemn coverage, and formal briefings.
 - **Theme generator**: none fit? Describe a style in one line or drop a reference image, and generate a fresh component library saved for reuse (see `references/theme-generator.md`).
 - **Full content support**: code blocks (dark/light, monospace), images, GIFs (with an animated badge), inline code, quotes, lists, product badges.
 - **Smart layout**: auto section numbering (last chapter ∞ / ///), 1–3 keyword underlines per paragraph, intro card & TOC distilled from the body, de-duplicated signature.
@@ -51,12 +51,15 @@ A project-level WeChat content toolkit for AI agents (Claude Code / Codex / Curs
 | Data recap / annual report | Moyu Green or Olive Journal; data cards + tables |
 | Zen / minimal essay | Zen Whitespace; generous whitespace + centered serif quotes |
 | Editorial notes / deep review | Olive Journal; editor's note + sections + dark summary box |
+| News updates / fact checks | News Wire; report deck + ruled sections + editorial note |
+| Fatal incidents / accident reviews | Solemn Gray; serif reading + restrained event structure |
+| Policy / institutional reports | Formal Brief; document header + summary box + SECTION hierarchy |
 | Word / PDF draft → WeChat | auto-normalize format → then pick a theme by topic |
 | A style beyond the built-ins | Theme generator: make one from a line or an image |
 
-## 🎨 6 Curated Themes
+## 🎨 11 Curated Themes
 
-One long-form article laid out in all 4 themes (full-fidelity screenshots):
+Classic-theme screenshots are shown below; open the gallery for all 11 interactive previews:
 
 <table>
 <tr>
@@ -69,7 +72,7 @@ One long-form article laid out in all 4 themes (full-fidelity screenshots):
 </tr>
 </table>
 
-> 📚 **All 4 themes → [docs/all-themes.md](docs/all-themes.md)**　|　or open `docs/gallery/index.html` for the interactive full HTML.
+> 📚 **Theme guide → [docs/all-themes.md](docs/all-themes.md)**　|　or open `docs/gallery/index.html` for the interactive full HTML.
 
 ### Theme cheat-sheet
 
@@ -77,10 +80,15 @@ One long-form article laid out in all 4 themes (full-fidelity screenshots):
 |---|---|---|
 | ![](https://placehold.co/12/059669/059669.png) `#059669` | Moyu Green (default) | Tutorials, reviews, checklists, tool roundups |
 | ![](https://placehold.co/12/DC2626/DC2626.png) `#DC2626` | Red & White | Deep analysis, opinions, strong takes |
-| ![](https://placehold.co/12/52525B/52525B.png) `#52525B` | Graphite Minimal | Design, tech commentary, premium brand |
-| ![](https://placehold.co/12/4A5D52/4A5D52.png) `#4A5D52` | Zen Whitespace | Zen, minimal living, reflective essays |
 | ![](https://placehold.co/12/059669/059669.png) `#059669` | Moyu Ticket | Tool comparisons, creative reviews (ticket motif) |
 | ![](https://placehold.co/12/1e1f23/1e1f23.png) `#1e1f23` | Olive Journal | Editorial notes, deep reviews, case recaps |
+| ![](https://placehold.co/12/8C8378/8C8378.png) `#8C8378` | Plain White | Essays and low-noise long-form |
+| ![](https://placehold.co/12/111111/111111.png) `#111111` | Ink Rule | Serious topics, reviews, historical recaps |
+| ![](https://placehold.co/12/2E7D8C/2E7D8C.png) `#2E7D8C` | Deep Pool | Investigations and industry observation |
+| ![](https://placehold.co/12/1B5E8C/1B5E8C.png) `#1B5E8C` | Color Block | Strongly structured opinion pieces |
+| ![](https://placehold.co/12/273746/273746.png) `#273746` | News Wire | News updates and fact checks |
+| ![](https://placehold.co/12/712F38/712F38.png) `#712F38` | Solemn Gray | Fatal incidents and public-safety reviews |
+| ![](https://placehold.co/12/234E70/234E70.png) `#234E70` | Formal Brief | Policy, institutional, and topical reports |
 
 > English slug, library file and underline CSS for each theme: see [`references/theme-index.md`](references/theme-index.md). Need another style? Have the AI generate one with the [theme generator](references/theme-generator.md).
 
@@ -138,7 +146,7 @@ Source gate flags `white-space:pre` (blank bloat), full-border dashed frames in 
 ```
 wechat-skill/
 ├── SKILL.md                 # layout workflow (agent entry)
-├── references/              # 6 theme libs + generator + shared lib + theme-index + eval-cases
+├── references/              # 11-theme index + theme notes + generator + eval-cases
 ├── scripts/                 # validate_gzh_html.py + component_lint.py
 ├── assets/                  # sample-article.md + theme-previews/
 ├── docs/usage.md            # Chinese setup and cloud-agent usage guide
@@ -159,7 +167,7 @@ wechat-skill/
 
 ### Theme generation — one line or one reference image
 
-Not enough with the built-in 6? Have the AI make one. Driven by the second workflow in [`references/theme-generator.md`](references/theme-generator.md):
+Not enough with the built-in 11? Have the AI make one. Driven by the second workflow in [`references/theme-generator.md`](references/theme-generator.md):
 
 1. **Collect preferences** (asked all at once): theme description required (or a reference image); name / colors / font / radius / shadow / use-case auto-filled if blank.
 2. **Generate a block library**: 45–75 blocks of full inline-style HTML saved to `assets/theme-previews/{id}.html` — review the whole page at once in a browser.

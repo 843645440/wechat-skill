@@ -418,7 +418,15 @@ def probe_dom(browser, html_uri, profile, timeout):
 
 def screenshot(browser, html_path, output, timeout):
     output.parent.mkdir(parents=True, exist_ok=True)
-    staging_root = Path.home() / "wechat-cover-tmp"
+    # Chrome/Snap 不能从隐藏工作区稳定截图，但 HOME 在容器与受限运行器里也常不可写。
+    # 默认用系统临时目录；需要固定位置时可用 WECHAT_COVER_TMPDIR 覆盖。
+    configured_tmp = os.environ.get("WECHAT_COVER_TMPDIR", "").strip()
+    staging_base = (
+        Path(configured_tmp).expanduser()
+        if configured_tmp
+        else Path(tempfile.gettempdir())
+    )
+    staging_root = staging_base / "wechat-cover-tmp"
     staging_root.mkdir(mode=0o700, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix="render-", dir=staging_root))
     staged_html = staging / "cover.html"

@@ -55,6 +55,9 @@ def mark_result(job_path, name, result):
     status = result.get("status")
     if status == "completed":
         detail = f"backend={result.get('backend', 'unknown')}"
+        provider = result.get("provider")
+        if provider:
+            detail += f";provider={str(provider).replace(';', ',')[:80]}"
         inserted = result.get("inserted")
         if inserted is not None:
             detail += f";count={inserted}"

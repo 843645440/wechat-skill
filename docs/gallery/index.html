@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>wechat-skill · 6 套主题排版预览</title>
+<title>wechat-skill · 11 套主题排版预览</title>
 <style>
   body{margin:0;background:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif;color:#1f2937}
   header{padding:32px 24px 8px;max-width:1480px;margin:0 auto}
@@ -22,9 +22,9 @@
 </head>
 <body>
 <header>
-  <h1>wechat-skill · 4 套主题排版预览</h1>
-  <p class="sub">同一篇文章《做了些爆款 Skills 以后，我对 Skills 的看法》用 4 套精选主题各排一遍。每个画框约等于公众号手机宽度，可在框内滚动查看全文。</p>
-  <p class="sub">全部通过合规校验：无 <code>div/class/style</code> 标签、文字 <code>span leaf</code> 包裹、标点全角。不够用时可让 AI 用主题生成器现生成一套。</p>
+  <h1>wechat-skill · 11 套主题排版预览</h1>
+  <p class="sub">同一篇样稿用 11 套注册主题各排一遍。每个画框约等于公众号手机宽度，可在框内滚动查看全文。</p>
+  <p class="sub">新闻线、沉静灰、正式简报是新增的新闻 / 报道组；全部正文 HTML 均通过公众号合规校验。</p>
 </header>
 <div class="grid" id="grid"></div>
 <footer>甲木 × 摸鱼小李 联名共建 · 主题清单见 references/theme-index.md</footer>
@@ -34,6 +34,13 @@
     ["红白色系","#DC2626","red-white.html",""],
     ["摸鱼票据风","#059669","moyu-ticket.html",""],
     ["橄榄手记","#1e1f23","olive-journal.html",""],
+    ["素白","#8C8378","plain-white.html","低噪音"],
+    ["墨线","#111111","ink-rule.html","衬线"],
+    ["深潭","#2E7D8C","deep-pool.html","调查"],
+    ["色块","#1B5E8C","color-block.html","观点"],
+    ["新闻线","#273746","news-wire.html","新闻"],
+    ["沉静灰","#712F38","solemn-gray.html","沉重新闻"],
+    ["正式简报","#234E70","formal-brief.html","报告"],
   ];
   const grid=document.getElementById('grid');
   THEMES.forEach(function(t){

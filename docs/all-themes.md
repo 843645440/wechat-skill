@@ -1,8 +1,8 @@
-# 全部 4 套主题效果预览 · All 4 Themes
+# 11 套主题效果预览 · All 11 Themes
 
-同一篇长文（《做了些爆款 Skills 以后，我对 Skills 的看法》），用 6 套精选主题各排一遍的真实长图（含引言卡、编号章节、金句、名词旁注等完整组件）。
+同一篇长文用 11 套注册主题各排一遍。下面保留 4 套经典主题的首屏长图；全部主题的可滚动 HTML 统一收录在 [gallery](gallery/index.html)。
 
-> The same long-form article laid out in all 6 curated themes. Back to [README](../README.md).
+> The same long-form article laid out in all 11 curated themes. Back to [README](../README.md).
 
 <table>
 <tr>
@@ -17,4 +17,12 @@
 
 ---
 
-> 以上为每套排版的首屏长图；完整可交互 HTML 见 [`gallery/index.html`](gallery/index.html)（克隆后浏览器打开，无需服务器）。每套主题的主色 / 适用场景 / 英文标识见 [`../references/theme-index.md`](../references/theme-index.md)。需要别的风格可用[主题生成器](../references/theme-generator.md)现生成一套。
+新增的新闻 / 正式报道组：
+
+| 主题 | HTML 预览 | 适用场景 |
+|---|---|---|
+| 新闻线 | [news-wire.html](gallery/news-wire.html) | 新闻进展、事实核查 |
+| 沉静灰 | [solemn-gray.html](gallery/solemn-gray.html) | 伤亡事件、事故复盘 |
+| 正式简报 | [formal-brief.html](gallery/formal-brief.html) | 政策、机构、专题报告 |
+
+> 完整可交互 HTML 见 [`gallery/index.html`](gallery/index.html)（克隆后浏览器打开，无需服务器）。每套主题的主色 / 适用场景 / 英文标识见 [`../references/theme-index.md`](../references/theme-index.md)。需要别的风格可用主题生成器继续扩展。

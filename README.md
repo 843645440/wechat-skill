@@ -6,11 +6,11 @@
 
 **把用户命题写作、原生 HTML 信息设计、排版和多账号草稿串成可复用工作流**
 
-6 套精选主题 + 主题生成器 · 代码块/图片/GIF · 自动章节编号与关键词标记 · 双关卡质量校验
+11 套精选主题 + 主题生成器 · 代码块/图片/GIF · 自动章节编号与关键词标记 · 双关卡质量校验
 
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-Skill-blue)](https://claude.ai/code)
-[![Themes](https://img.shields.io/badge/themes-6%20+%20generator-059669)](references/theme-index.md)
+[![Themes](https://img.shields.io/badge/themes-11%20+%20generator-059669)](references/theme-index.md)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 [![Agents](https://img.shields.io/badge/Claude%20Code%20·%20Codex%20·%20Cursor-supported-8b5cf6.svg)](#-快速开始)
 
@@ -24,7 +24,7 @@
 
 ## ✨ 核心特性
 
-- **4 套精选主题**：摸鱼绿（默认）· 红白 · 摸鱼票据 · 橄榄手记 —— 每套都是自成体系的厚组件库（设计变量 + 数十个精细组件 + 视觉层级表 + 文章类型配方表）。
+- **11 套精选主题**：覆盖卡片型、低噪音长文、新闻报道和正式简报；其中新闻线、沉静灰、正式简报专门处理事实进展、伤亡事件与机构报告。
 - **主题生成器**：不满足现成主题？用一句话描述或一张参考图，生成一套全新组件库并保存本地复用（见 `references/theme-generator.md`）。
 - **内容全兼容**：代码块（深/浅色，等宽不折行）、图片、GIF（带动图角标）、行内代码、引用、列表、产品徽章。
 - **智能排版**：章节自动编号（末章 ∞ / ///）、每段主动标 1–3 个关键词下划线、从正文提炼引言卡与目录、作者签名去重合并。
@@ -38,7 +38,7 @@
 
 ## 👀 效果预览
 
-4 套主题各排同一篇长文（真实长图，含引言卡、编号章节、金句、名词旁注等完整组件）：
+以下为经典主题长图；全部主题可在本地 gallery 中交互预览：
 
 <table>
 <tr>
@@ -55,7 +55,7 @@
 </tr>
 </table>
 
-> 📚 **4 套完整长图 → [docs/all-themes.md](docs/all-themes.md)**　｜　克隆后浏览器打开 `docs/gallery/index.html` 可看可交互的完整 HTML。
+> 📚 **主题说明 → [docs/all-themes.md](docs/all-themes.md)**　｜　克隆后浏览器打开 `docs/gallery/index.html` 可看可交互的完整 HTML。
 
 ## ✅ 适合 / ❌ 不适合
 
@@ -72,10 +72,13 @@
 | 教程 / 操作指南 | 摸鱼绿；step-label + 代码块 + 编号列表 |
 | 数据复盘 / 年度报告 | 摸鱼绿 或 橄榄手记；数据卡 + 表格 |
 | 内刊 / 深度评测 / 案例复盘 | 橄榄手记；编者按 + 分节 + 暗色摘要框 |
+| 新闻进展 / 事实核查 | 新闻线；报道提要 + REPORT 分节 + 信息说明 |
+| 伤亡事件 / 事故复盘 | 沉静灰；宋体长读 + 事件脉络 + 克制编辑尾注 |
+| 政策 / 机构 / 专题报告 | 正式简报；文档页眉 + 摘要框 + SECTION 分节 |
 | Word / PDF 稿转公众号 | 先自动格式归一化 → 再按题材选主题 |
 | 想要现成之外的风格 | 主题生成器：一句话或参考图现造一套 |
 
-## 🎨 4 套精选主题
+## 🎨 11 套精选主题
 
 覆盖绝大多数公众号题材，每套都打磨到「拿来即用」：
 
@@ -85,6 +88,13 @@
 | **红白色系** | 深度分析、观点、力量感话题（经典编辑风） |
 | **摸鱼票据风** | 工具对比、创意评测（票据视觉隐喻） |
 | **橄榄手记** | 内刊手记、深度评测、案例复盘（编辑部内刊质感） |
+| **素白** | 随笔、长文与低视觉噪音阅读 |
+| **墨线** | 严肃议题、书评、历史复盘 |
+| **深潭** | 深度调查、行业观察 |
+| **色块** | 观点明确、需要强章节识别的分析 |
+| **新闻线** | 新闻解读、事件进展、事实核查 |
+| **沉静灰** | 伤亡事件、事故复盘、纪念与公共安全议题 |
+| **正式简报** | 政策说明、机构动态、专题报告、阶段总结 |
 
 > 主色、下划线色值等**完整速查表见文末 [附录](#-完整主题速查表)**；不够用就让 AI [生成新主题](#-faq)。
 
@@ -125,16 +135,16 @@ npx skills add https://github.com/843645440/wechat-skill
 
 > 使用 `$wechat-content-pipeline`，根据这个选题为 A 账号完成写作、随机主题排版、同主题原生信息模块和封面，并写入草稿箱：……
 
-完整流水线由 `pipeline_runtime.py begin/prepare/finish` 固定执行确定性阶段。Agent 不应为单篇文章创建临时渲染器；封面用生图 API 落盘即可，**不做视觉审图**（草稿箱人工核对）。
+完整流水线由 `pipeline_job.py` 的状态命令和 `pipeline_runtime.py begin/check/prepare/finish` 固定编排。Agent 不应为单篇文章创建临时渲染器；正文图与封面分别走固定脚本，**不做视觉审图**（草稿箱人工核对）。
 
 流水线默认**用户命题**：由你提供主题与大致思路（brief），缺失时追问，不自动联网选题。每个账号只复用一个内部交接区 `work/<account>/current/`，不是文章档案库；每次 `init` 生成新 `run_id`，同账号同日可产多篇。
 
 1. **接收 brief** — 主题 + 思路是硬门禁；读近 7 天历史做结构轮换（`shape`），防同质限流。
-2. **写作** — 生成 `article.md`（第一人称强情感、忠实 brief、1500—4000 字），随后 `humanizer-zh` 一轮去 AI 味。
-3. **正文配图** — 0—3 张，用户图优先；生图失败可无图继续，不阻塞草稿。
-4. **封面** — 用户图或生图 API 写入 `cover/cover.png`；失败回退账号默认封面素材。
+2. **写作** — `begin` 先验证 brief、`event_focus` 与结构；生成 `article.md`（第一人称强情感、忠实 brief、1500—4000 字），随后 `humanizer-zh` 一轮去 AI 味。
+3. **正文配图** — `gen_inline_images.py` 处理 0—3 张；用户图优先，机制图走 `xiaohu:xiaoyi`，失败可无图继续。
+4. **封面** — `gen_cover_image.py` 自动走用户图 → `xiaohu:agnes` → Pillow 离线兜底 → 账号默认素材。
 5. **随机主题与一次排版** — 随机固定一套主题，由固定脚本一次生成正文 HTML；信息模块异常直接降级纯正文。
-6. **轻量检查** — 标题、字数、图数、路径安全与占位符；图片按真实字节识别格式上传，**不做视觉/OCR 审图**。
+6. **最终门禁** — `prepare` 与 `finish` 都检查 humanize 后稿件 score ≥75、blocking=0，并校验标题、字数、图数、路径与占位符；图片按真实字节识别格式上传，**不做视觉/OCR 审图**。
 7. **自动建草稿** — 写入指定账号草稿箱，到此结束；同一 `run_id` 成功后不重复发送；人工只在草稿箱审核，流水线不公开发布。
 
 ## 🧩 公众号平台限制（已内置兜底）
@@ -194,7 +204,7 @@ WECHAT_B_APP_SECRET
 - 云端执行器的公网出口 IP 已分别加入两个公众号的接口 IP 白名单；动态出口环境应配置固定 NAT、固定代理或中转服务。
 - 运行环境能够通过 HTTPS 访问 `api.weixin.qq.com`。
 - 已安装 Python 3，Agent 能读取根 `SKILL.md` 和 `.agents/skills/`，并能写入 `work/<account>/current/`。
-- 已安装 Chrome 或 Chromium，仅用于把封面 HTML 截图成 PNG；自定义路径时设置 `WECHAT_COVER_BROWSER`。
+- 完整流水线不需要 Chrome。只有单独调用 `wechat-html-cover` 时才需要 Chrome/Chromium；自定义路径时设置 `WECHAT_COVER_BROWSER`。
 - 云端 Agent 本身具有可用的大模型能力；模型授权由 Agent 平台提供，本仓库不读取通用 LLM API Key。
 
 公众号类型和认证状态可能影响可用接口。首次部署时应在两个公众号后台分别确认接口权限，不能只验证其中一个账号。
@@ -203,13 +213,7 @@ WECHAT_B_APP_SECRET
 
 微信草稿必须有封面，每个账号至少满足以下一种方案：
 
-1. **HTML 确定性封面（默认）**：项目使用 `wechat-html-cover`，提供 `signal-editorial`（编辑信号风）、`night-signal`（深色科技风）和 `redaction-poster`（黑红信息海报）三套模板。固定脚本从最终文章自动生成两行或三行标题、重点词和安全字号，再通过 Chrome/Chromium 生成 PNG。封面视觉不跟随正文主题，三套模板目前也不绑定账号。它不调用图片模型，不需要图片 API Key，也不进行 AI 视觉检测。固定输出为：
-
-   ```text
-   封面：1410 × 600
-   ```
-
-   标题和布局由浏览器排版，PNG 只检查签名和精确尺寸；单次硬超时 45 秒，技术故障最多重试一次。正文的观点、对比、流程和数据直接使用公众号原生 HTML，不转图片。
+1. **流水线封面脚本（默认）**：`gen_cover_image.py` 从最终标题生成封面并自动记账。账号策略为 `image_generate` 时先走 `xiaohu:agnes`，失败自动使用 Pillow 离线渲染；策略为 `offline_render` 时直接离线渲染。两种路径都不需要 Chrome，也不做 AI 视觉检测。
 
 2. **固定封面降级方案**：不启用自动生图时，为账号配置已有的永久封面素材 ID：
 
@@ -218,14 +222,14 @@ WECHAT_A_THUMB_MEDIA_ID
 WECHAT_B_THUMB_MEDIA_ID
 ```
 
-永久素材 ID 属于具体公众号，A/B 不能混用。没有 HTML 封面且没有对应默认素材 ID 时，草稿门禁会停止上传。Agnes 和 Baoyu 图片 Skill 只供独立、明确调用；完整定时流水线不会使用，也不会自动回退到 AI 生图。
+永久素材 ID 属于具体公众号，A/B 不能混用。生成式封面与离线兜底都失败且没有对应默认素材 ID 时，草稿门禁会停止上传。`wechat-html-cover` 和 `baoyu-cover-image` 仍可独立调用，但不属于默认流水线。
 
 ### 【按场景】其他能力
 
 - **自动抓取热点**：定时任务不提供主题时，Agent 必须具有联网搜索能力。平台原生搜索不需要在本仓库配置 Key；自行接入第三方搜索时使用其凭证。
 - **最新事实核验**：涉及实时事件、数据或企业公告时需要联网，即使任务已经提供主题。
 - **浏览器路径**：封面渲染器会自动查找 Chrome、Chromium 和 Playwright Chromium；找不到时通过 `WECHAT_COVER_BROWSER` 指定可执行文件。
-- **可选 AI 生图**：只有单独调用 `agnes-image-gen`、`baoyu-cover-image` 或 `baoyu-article-illustrator` 时才需要相应后端及凭证；默认流水线不使用。
+- **可选 AI 生图**：账号 `cover.backend=image_generate` 时封面需要 `AGNES_API_KEY`；用户明确要求正文生图时 xiaoyi 使用 `XIAOYI_API_KEY_PRIMARY/SECONDARY`。缺失时正文无图继续、封面自动离线兜底。
 - **Token 缓存**：默认写入 `~/.cache/wechat-skill`；目录需可写。无持久磁盘时可使用发布命令的 `--no-token-cache`。
 - **内容档案**：可在 `config/wechat-content-profiles.json` 调整 A/B 的受众和热点类别，但必须保留随机主题和草稿箱终点。
 - **定时任务**：时间、时区和账号别名配置在 Agent 平台，不写进 Skill。建议明确使用 `Asia/Shanghai`，早间任务传 `a`，晚间任务传 `b`。
@@ -235,7 +239,7 @@ WECHAT_B_THUMB_MEDIA_ID
 - 不需要手动配置微信 `access_token`。
 - 不需要微信公众号登录 Cookie、扫码登录、回调 URL、消息校验 Token 或 EncodingAESKey。
 - 不需要小程序 AppID/AppSecret。
-- 原生 HTML 信息模块和默认 HTML 封面都不需要 Agnes、OpenAI、Google 或其他图片 API Key。
+- 原生 HTML 信息模块和默认 `offline_render` 封面不需要图片 API Key。
 - 公开仓库只读克隆不需要 GitHub Token；只有推送修改或仓库改为私有时才需要仓库凭证。
 - Skill 内不需要 cron、早晚时间或轮询配置。
 
@@ -274,8 +278,8 @@ wechat-skill/
 ├── config/                     # A/B 账号的非敏感内容档案
 ├── SKILL.md                    # 排版工作流主文档（Agent 入口）
 ├── references/
-│   ├── theme-index.md          # 6 套主题索引（主色/适用/下划线，单一来源）
-│   ├── theme-*.md              # 6 套主题组件库（theme-moyu-green.md 等）
+│   ├── theme-index.md          # 11 套主题的人类可读索引（脚本 THEMES 是单一真相源）
+│   ├── theme-*.md              # 新闻 / 正式报道等主题设计说明
 │   ├── theme-generator.md      # 主题生成器（按描述/参考图生成新主题）
 │   ├── common-components.md    # 跨主题通用增量组件（代码块/图片/小标签）
 │   ├── format-normalize.md     # 格式归一化（docx/pdf/纯文本 → Markdown）
@@ -304,11 +308,11 @@ wechat-skill/
 - **克制用色** — 主色只在锚点出现（全文 ≤5 处），大面积白底 + 灰阶，彩色只做点缀。
 - **灰阶承重** — 约 90% 的文字交给一套中性灰阶，色彩不承担正文阅读，避免花哨。
 
-## 🧠 方法论：不止 6 套，自己造主题
+## 🧠 方法论：不止 11 套，自己造主题
 
 ### 主题生成：一句话 / 一张参考图，现造一套新主题
 
-内置 6 套不够用时不必等更新——让 AI 现造一套。背后是 [`references/theme-generator.md`](references/theme-generator.md) 定义的第二条工作流：
+内置 11 套不够用时不必等更新——让 AI 现造一套。背后是 [`references/theme-generator.md`](references/theme-generator.md) 定义的第二条工作流：
 
 1. **收集偏好**（一次问全，不逐条追问）：主题描述必填（或给参考图），名称 / 主色 / 背景 / 正文色 / 强调色 / 装饰色 / 字体 / 圆角 / 阴影 / 适用场景可留空自动补全。
 2. **生成区块库**：AI 产出 45~75 个区块的完整 HTML 组件库，存到 `assets/theme-previews/{id}.html`，浏览器整页一次浏览确认风格（不逐块问）。
@@ -380,6 +384,13 @@ A：跑 `scripts/validate_gzh_html.py`，报 ERROR 就回到装配步骤修；�
 | ![](https://placehold.co/12/DC2626/DC2626.png) `#DC2626` | 红白色系 | 深度分析、观点、力量感话题 |
 | ![](https://placehold.co/12/059669/059669.png) `#059669` | 摸鱼票据风 | 工具对比、创意评测（票据视觉隐喻） |
 | ![](https://placehold.co/12/1e1f23/1e1f23.png) `#1e1f23` | 橄榄手记 | 内刊手记、深度评测、案例复盘 |
+| ![](https://placehold.co/12/8C8378/8C8378.png) `#8C8378` | 素白 | 长文、随笔、低噪音阅读 |
+| ![](https://placehold.co/12/111111/111111.png) `#111111` | 墨线 | 严肃议题、书评、历史复盘 |
+| ![](https://placehold.co/12/2E7D8C/2E7D8C.png) `#2E7D8C` | 深潭 | 深度调查、行业观察 |
+| ![](https://placehold.co/12/1B5E8C/1B5E8C.png) `#1B5E8C` | 色块 | 观点明确的分析 |
+| ![](https://placehold.co/12/273746/273746.png) `#273746` | 新闻线 | 新闻解读、事件进展、事实核查 |
+| ![](https://placehold.co/12/712F38/712F38.png) `#712F38` | 沉静灰 | 伤亡事件、事故复盘、公共安全 |
+| ![](https://placehold.co/12/234E70/234E70.png) `#234E70` | 正式简报 | 政策说明、机构动态、专题报告 |
 
 > 每套主题的英文标识、组件库文件、下划线 CSS 见 [`references/theme-index.md`](references/theme-index.md)。
 > 需要别的风格？让 AI 用 [主题生成器](#-faq) 现生成一套。

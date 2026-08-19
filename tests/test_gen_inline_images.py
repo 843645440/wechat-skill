@@ -96,7 +96,7 @@ class UserProvidedTest(unittest.TestCase):
             before = article_path.read_text(encoding="utf-8")
 
             called = []
-            gen.call_agnes_backend = lambda *a, **kw: called.append(1) or True
+            gen.call_image_backend = lambda *a, **kw: called.append(1) or True
             result = gen.run(make_args(article_path, imgs_dir))
 
             self.assertEqual(result["status"], "completed")
@@ -113,7 +113,7 @@ class UserProvidedTest(unittest.TestCase):
             before = article_path.read_text(encoding="utf-8")
 
             called = []
-            gen.call_agnes_backend = lambda *a, **kw: called.append(1) or True
+            gen.call_image_backend = lambda *a, **kw: called.append(1) or True
             result = gen.run(make_args(article_path, imgs_dir))
 
             self.assertEqual(result["status"], "completed")
@@ -123,12 +123,28 @@ class UserProvidedTest(unittest.TestCase):
 
 
 class NoBackendTest(unittest.TestCase):
+    def test_disabled_job_policy_skips_before_backend(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            article_path, imgs_dir = make_article(tmp)
+            job_path = Path(tmp) / "job.json"
+            job_path.write_text(json.dumps({
+                "image_policy": {"inline_enabled": False}
+            }), encoding="utf-8")
+            called = []
+            gen.call_image_backend = lambda *a, **kw: called.append(1) or True
+            result = gen.run(make_args(
+                article_path, imgs_dir, job=str(job_path), force_generate=False
+            ))
+            self.assertEqual("skipped", result["status"])
+            self.assertIn("inline_enabled=false", result["reason"])
+            self.assertEqual([], called)
+
     def test_generation_failure_leaves_article_untouched(self):
         with tempfile.TemporaryDirectory() as tmp:
             article_path, imgs_dir = make_article(tmp)
             before = article_path.read_text(encoding="utf-8")
 
-            gen.call_agnes_backend = lambda *a, **kw: False
+            gen.call_image_backend = lambda *a, **kw: False
             result = gen.run(make_args(article_path, imgs_dir))
 
             self.assertEqual(result["status"], "skipped")
@@ -148,7 +164,7 @@ class NoBackendTest(unittest.TestCase):
                 tmp, text="# 标题\n\n太短了。\n"
             )
             called = []
-            gen.call_agnes_backend = lambda *a, **kw: called.append(1) or True
+            gen.call_image_backend = lambda *a, **kw: called.append(1) or True
             result = gen.run(make_args(article_path, imgs_dir))
             self.assertEqual(result["status"], "skipped")
             self.assertEqual(called, [])
@@ -198,7 +214,7 @@ class SuccessfulGenerationTest(unittest.TestCase):
                 Path(output_path).write_bytes(b"\x89PNG\r\n\x1a\nfake-image-bytes")
                 return True
 
-            gen.call_agnes_backend = fake_backend
+            gen.call_image_backend = fake_backend
             result = gen.run(make_args(article_path, imgs_dir))
 
             self.assertEqual(result["status"], "completed")

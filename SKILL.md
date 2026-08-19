@@ -90,7 +90,7 @@ python3 scripts/wrap_preview.py "<上面的 html>"
 - 只需要写作 → 转交 `wechat-tech-insight-writer`，不要在本 Skill 代写正文。
 - 从选题到草稿箱一条龙 → 转交 `wechat-content-pipeline`，用它的 `pipeline_job.py` / `pipeline_runtime.py` 命令链，不要在本 Skill 另写排版或封面实现。
 - 流水线排障 → 先读 `work/<account>/current/job.json`，再读 `.agents/skills/wechat-content-pipeline/references/pipeline-failure-triage.md`。
-- 正文配图 → `.agents/skills/wechat-content-pipeline/scripts/gen_inline_images.py`（一条命令，用户给图优先、生不出就不配图）。封面 → 用户图 → 生图 → `render_cover_fallback.py` 兜底。
+- 正文配图 → `.agents/skills/wechat-content-pipeline/scripts/gen_inline_images.py`（用户图优先；机制图走 `xiaohu:xiaoyi`；失败可无图）。封面 → `gen_cover_image.py` 一条命令自动走用户图 → `xiaohu:agnes` → Pillow 离线兜底。
 - 审计草稿恢复以 `run_id` 为幂等边界：同时核对 job 阶段、`draft-result.json` 的账号、动作、`run_id` 和 `draft_media_id`；`running`/`uncertain` 禁止自动重发。
 
 ## 可选：多账号草稿与发布
@@ -112,7 +112,7 @@ IP 白名单错误（40164）：报告出口 IP，等用户加白后**只重跑�
 - 代码块用「每行一个 `<p style="margin:0">`」，**绝不用 `white-space:pre`**；缩进用 `&nbsp;`。
 - `<img>` 用 `max-width:100%;height:auto;display:block;margin:0 auto`，**不用 `width:100%`**（会把小图拉糊）；只有表格/封面卡/流程图才用 `width:100%`。
 
-改 `render_article.py` 后必须四套主题各渲染一遍 + `validate_gzh_html.py` 到 0 ERROR + 跑
+改 `render_article.py` 后必须把全部注册主题各渲染一遍 + `validate_gzh_html.py` 到 0 ERROR + 跑
 `python3 -m unittest discover -s tests`。加新主题见 `references/theme-index.md`。
 
 > 触发与主题选择的回归用例见 `references/eval-cases.md`。

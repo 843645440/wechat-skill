@@ -19,8 +19,8 @@
 - `topic_discovery.enabled`：默认 `false`。仅 `true` 且用户明确要求时才允许 `auto-hotspot`。
 - `topic_discovery.categories` / `max_age_hours`：仅自动选题例外路径使用。
 - `theme_strategy`：必须为 `random`，候选项来自根主题索引。
-- `illustrations`：用户未给正文图时启用 xiaohu 生图（加载 xiaohu-gen skill）；用户已给图则 `backend=user_provided`。
-- `cover_backend`：用户未给封面时用 xiaohu（**已停用 HTML/Chrome 封面**）。
+- `illustrations`：`enabled=false` 默认无正文图；用户给图仍由 `gen_inline_images.py` 识别。用户明确要求生图时加 `--force-generate`，机制型图固定走 `xiaohu:xiaoyi`。
+- `cover.backend`：`image_generate` 先走 `xiaohu:agnes` 再离线兜底；`offline_render` 直接离线兜底。流水线已停用 HTML/Chrome 封面。
 - `cover.aspect`：建议 `16:9`。
 - `cover.subject_focus`：生图时用品牌名文字 + 品牌色 + 场景；默认不画完整官方 Logo。
 - `publishing.target`：必须为 `draft`。

@@ -26,8 +26,8 @@ work/<account>/current/
 1. `discover`：使用给定主题，或发现并记录 48 小时内热点；自动热点必须带 `event_focus` / `hook` / `tension` / `reader_stakes`。
 2. `write`：完成 `article.md`（第一人称强情感；写作前须 `shape`；陌生主体按需简介；非新闻汇报/同质模具）。
 3. `humanize`：用 `humanizer-zh` 一轮改写，默认 strong；保留强情感与结构差异。
-4. `format`：固定随机主题并生成 `article.html`（由 finish 执行）。
-5. `illustrations`：0—3 张正文图；失败可 `skipped`。
+4. `illustrations`：`gen_inline_images.py --record-stage` 处理 0—3 张正文图；失败可 `skipped`。
+5. `format`：`prepare` 通过 humanize 后最终体检并固定随机主题，`finish` 生成 `article.html`。
 6. `cover`：写入 `cover/cover.png`（不再 HTML 截图）；按降级链 用户图 → 生图 API → `render_cover_fallback.py` 离线渲染 → 账号默认 thumb，全不可用才失败。
 7. `draft`：创建指定账号草稿。
 
@@ -45,7 +45,11 @@ work/<account>/current/
 
 ## 正文与图片
 
-`article.md` 第一行是唯一一级标题（≤32 字，信息锚点 + 点击钩子），不包含写作计划或待办。`job.json` 可含 `hook` / `tension` / `reader_stakes` 与 **`article_shape`**（`structure_id` / `opening_type` / `ending_type` / `felt_sense` / `tension_type` / `heading_count` / `body_band`）。写作必须吃进。账号 `topic-history.json` 同时服务事件去重与结构轮换。正文图由 xiaohu-gen skill 生成（加载 skill 后按路由规则选后端），提示词保存在 `prompts/`，图片保存在 `imgs/`。
+`article.md` 第一行是唯一一级标题（≤32 字，信息锚点 + 点击钩子），不包含写作计划或待办。`job.json` 可含 `hook` / `tension` / `reader_stakes` 与 **`article_shape`**（`structure_id` / `opening_type` / `ending_type` / `felt_sense` / `tension_type` / `heading_count` / `body_band`）。写作必须吃进。账号 `topic-history.json` 同时服务事件去重与结构轮换。正文图统一由 `gen_inline_images.py` 处理；机制/流程/对比型图按 xiaohu 路由走 xiaoyi，提示词保存在 `imgs/prompts/`，图片保存在 `imgs/`。
+
+`begin` 会验证 provided 选题已有非空 `user-brief.md`、`event_focus` 和完整 `article_shape`。
+`prepare` 与 `finish` 都会重跑写作体检，要求 score ≥75 且 high/blocking 为 0；结果写入
+`stages.write.details`，避免 humanize 或 prepare 后人工编辑绕过质量门禁。
 
 正文允许 0—3 张图。缺失或损坏图片可删除对应引用/HTML 标签后继续；路径越界、微信认证失败、有效图片上传失败仍是硬错误。图片上传时以真实文件字节和解码结果决定 MIME 与文件名，不依赖扩展名。
 

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Run the deterministic half of the WeChat content pipeline.
 
-The agent supplies topic judgment, article.md, optional Baoyu illustrations,
-and AI-generated cover image (cover/cover.png). HTML cover rendering is retired.
-This runner owns state transitions, theme selection, body rendering, cover accept,
-a lightweight draft gate and optional draft creation.
+The agent supplies topic judgment and article.md. Deterministic helpers handle
+optional illustrations and the cover degradation chain. HTML cover rendering is
+retired. This runner owns state transitions, final writing-quality gates, theme
+selection, body rendering, cover acceptance, and optional draft creation.
 """
 
 import argparse
@@ -31,16 +31,21 @@ TITLE_RE = re.compile(r"^#\s+(.+?)\s*$", re.MULTILINE)
 MARKDOWN_IMAGE_RE = re.compile(r"!\[[^\]]*\]\(([^)]+)\)")
 FENCE_RE = re.compile(r"```.*?```", re.DOTALL)
 MARKDOWN_NOISE_RE = re.compile(r"[#>*_`~\[\]()!|\\\-]+")
+BRIEF_IDEAS_RE = re.compile(
+    r"^##\s+思路\s*$\n(?P<body>.*?)(?=^##\s+|\Z)",
+    re.MULTILINE | re.DOTALL,
+)
 TRANSIENT_RE = re.compile(
     r"TLS|EOF|connection reset|timed? out|timeout|HTTP\s+5\d\d|微信 API 请求失败",
     re.IGNORECASE,
 )
 MIN_BODY_CHARS = 1500
 MAX_BODY_CHARS = 4000
+WRITING_PASS_SCORE = 75
 
-# 写作体检（wechat-viral-writer）。check 负责结构合法性，它负责「有没有人读得下去」。
-# 之所以直接挂进 check 而不是另开一条命令：模型已经会跑 check，多一条命令就多一个
-# 会被忘掉的步骤。软依赖——Skill 不在时 check 照常工作，只是少一段反馈。
+# 写作体检（wechat-viral-writer）。check 提前反馈，prepare 和 finish 则把 humanize 后的
+# 最终稿分数与 high 级问题作为硬门禁，防止「check 通过 → humanize 改坏 → 直接发布」。
+# check 保持软依赖以便排障；prepare/finish 对仓库内置 scorer 缺失或异常时失败关闭。
 VIRAL_SCORER = (
     SCRIPT_DIR.parent.parent / "wechat-viral-writer" / "scripts" / "score_draft.py"
 )
@@ -148,6 +153,52 @@ def writing_health(article_path):
         return None
 
 
+def writing_report_command(article_path):
+    return f"python3 {VIRAL_SCORER} --article {article_path} --markdown"
+
+
+def require_writing_quality(article_path):
+    """Enforce the final, post-humanize writing gate and return an audit summary."""
+    health = writing_health(article_path)
+    report_command = writing_report_command(article_path)
+    if not isinstance(health, dict):
+        raise RuntimeFailure(
+            "最终稿写作体检不可用，不能确认 humanize 后的稿件质量。"
+            f"请先运行：{report_command}"
+        )
+    score = health.get("score")
+    high = [
+        item for item in (health.get("problems") or [])
+        if isinstance(item, dict) and item.get("severity") == "high"
+    ]
+    blocking_count = health.get("blocking_count", len(high))
+    if not isinstance(blocking_count, int):
+        blocking_count = len(high)
+    if not isinstance(score, (int, float)):
+        raise RuntimeFailure(
+            "最终稿写作体检没有返回有效 score。"
+            f"请检查完整报告：{report_command}"
+        )
+    if score < WRITING_PASS_SCORE or blocking_count > 0 or high:
+        examples = "；".join(
+            str(item.get("what") or item.get("fix") or "high 级问题")
+            for item in high[:2]
+        )
+        detail = f"；{examples}" if examples else ""
+        raise RuntimeFailure(
+            f"最终稿写作体检未通过：score={score}（要求 ≥{WRITING_PASS_SCORE}），"
+            f"blocking={max(blocking_count, len(high))}{detail}。"
+            f"humanize 后必须重跑并修复：{report_command}"
+        )
+    return {
+        "score": score,
+        "grade": health.get("grade"),
+        "blocking_count": 0,
+        "pass_line": WRITING_PASS_SCORE,
+        "checked_after_humanize": True,
+    }
+
+
 def job_paths(job_path):
     job = pipeline_job.load_job(job_path)
     job_dir = Path(job_path).resolve().parent
@@ -228,7 +279,46 @@ def require_content(artifacts, job=None):
     return title
 
 
+def require_writing_inputs(job):
+    """Reject the two common command-chain bypasses before writing starts."""
+    if not str(job.get("event_focus") or "").strip():
+        raise RuntimeFailure(
+            "选题尚未固化 event_focus：先按 next_command 运行 pipeline_job.py topic"
+        )
+    shape = job.get("article_shape")
+    if not isinstance(shape, dict) or not all(
+        shape.get(key) not in (None, "")
+        for key in ("structure_id", "opening_type", "ending_type")
+    ):
+        raise RuntimeFailure(
+            "文章结构尚未锁定：先运行 pipeline_job.py shape --auto"
+        )
+    discover = job.get("stages", {}).get("discover", {})
+    source = job.get("topic_source") or (discover.get("details") or {}).get("source")
+    if source != "provided":
+        return
+    brief_path = Path(job["job_dir"]) / "user-brief.md"
+    try:
+        brief = brief_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise RuntimeFailure(
+            f"缺少用户 brief：请先按 references/user-brief.md 写入 {brief_path}"
+        ) from exc
+    match = BRIEF_IDEAS_RE.search(brief)
+    ideas = re.sub(r"[\s#*\-]+", "", match.group("body")) if match else ""
+    if len(ideas) < 10:
+        raise RuntimeFailure(
+            "user-brief.md 的「## 思路」为空或过短；至少写入可展开的论点、"
+            "时间线、素材或大纲，禁止只给一句题目"
+        )
+
+
 def require_prepare_stages(job):
+    if job["stages"]["discover"]["status"] != "completed":
+        raise RuntimeFailure("prepare 前必须完成阶段 discover")
+    require_writing_inputs(job)
+    if job["stages"]["write"]["status"] not in ("running", "completed"):
+        raise RuntimeFailure("prepare 前必须通过 begin 启动阶段 write")
     if job["stages"]["humanize"]["status"] != "completed":
         raise RuntimeFailure("prepare 前必须完成阶段 humanize")
     if job["stages"]["illustrations"]["status"] not in ("completed", "skipped"):
@@ -350,7 +440,8 @@ def writing_contract(job):
         "sections": f"用 {shape.get('heading_count', '3—5')} 个 ## 小节；"
         "每节结尾留一个未解勾子；全文至少 1 句可转发的判断句",
         "images": "正文图 0—3 张，路径必须在工作区内（imgs/xx）；有说明才写 alt",
-        "digest": "另写一句 ≤50 字摘要到 digest.txt（分享卡副标题，补标题第二钩子，不复述标题）",
+        "digest": "强烈建议另写一句 ≤50 字摘要到 digest.txt（分享卡副标题，补标题第二钩子，"
+                  "不复述标题）；缺失时微信截取正文开头，不阻塞草稿",
         # 体检的判据必须提前告诉写作方。让模型先写完再被扣分，等于每篇都多返工一轮；
         # 这些阈值又都是写之前就能满足的，没有理由藏到 check 才说。
         "readability_gates": {
@@ -364,8 +455,9 @@ def writing_contract(job):
             "takeaway": "至少两种读者可带走的东西（判断标准/适用边界/可执行步骤/"
                         "可转述结论），且最后四分之一必须有落点；结尾回扣开头",
             "banned_ending": "禁「让我们拭目以待」「时间会给出答案」「你怎么看」",
-            "scored_by": "check 会自动跑体检（wechat-viral-writer/scripts/score_draft.py），"
-                         "满分 100，及格 75，high 级问题必须清零。"
+            "scored_by": "check 会自动跑体检（wechat-viral-writer/scripts/score_draft.py）；"
+                         "prepare/finish 会重检 humanize 后最终稿。满分 100，及格 75，"
+                         "high 级问题必须清零。"
                          "⚠️ 不许为了刷分塞假数字、假案例、假亲历",
         },
         "length_plan": "先排篇幅再动笔：开头 150 字 + 小节 N×250 字 + 结尾 150 字。"
@@ -383,6 +475,7 @@ def cmd_begin(args):
     job, _ = job_paths(args.job)
     if job["stages"]["discover"]["status"] != "completed":
         raise RuntimeFailure("必须先确定并记录选题")
+    require_writing_inputs(job)
     if job["stages"]["write"]["status"] not in ("running", "completed"):
         mark(args.job, "write", "running", "开始写作")
     return {
@@ -502,20 +595,18 @@ def cmd_check(args):
         writing = {
             "score": health.get("score"),
             "grade": health.get("grade"),
-            "pass_line": 75,
+            "pass_line": WRITING_PASS_SCORE,
             "dimensions": {k: v["score"] for k, v in
                            (health.get("dimensions") or {}).items()},
-            "report_command": (
-                f"python3 {VIRAL_SCORER} --article {article_path} --markdown"
-            ),
+            "report_command": writing_report_command(article_path),
         }
         for item in health.get("problems", []):
             line = f"[写作·{item['dim']}] 第 {item.get('line', 0)} 行：" \
                    f"{item['what']} → {item['fix']}"
             (problems if item["severity"] == "high" else hints).append(line)
-        if health.get("score") is not None and health["score"] < 75:
+        if health.get("score") is not None and health["score"] < WRITING_PASS_SCORE:
             problems.append(
-                f"[写作] 体检 {health['score']} 分 < 75（{health.get('grade')}）："
+                f"[写作] 体检 {health['score']} 分 < {WRITING_PASS_SCORE}（{health.get('grade')}）："
                 f"按上面的写作问题逐条改，改完重跑 check。"
                 f"完整报告：{writing['report_command']}"
             )
@@ -549,9 +640,16 @@ def _cmd_prepare(args):
     job, artifacts = job_paths(args.job)
     require_prepare_stages(job)
     title = require_content(artifacts, job)
+    quality = require_writing_quality(artifacts["article"])
     image_count = require_illustrations(job, artifacts)
     mark(
-        args.job, "write", "completed", "正文已写入",
+        args.job, "write", "completed", "正文与最终写作体检均已通过",
+        details={
+            "quality_score": quality["score"],
+            "quality_grade": quality.get("grade") or "",
+            "quality_blocking_count": quality["blocking_count"],
+            "quality_checked_after_humanize": "true",
+        },
         artifacts={"article": artifacts["article"]},
     )
     theme = choose_theme(args.job)
@@ -563,6 +661,7 @@ def _cmd_prepare(args):
         ),
         "image_count": image_count,
         "body_chars": count_body_chars(artifacts["article"].read_text(encoding="utf-8")),
+        "writing_quality": quality,
     }
 
 
@@ -612,28 +711,29 @@ def _cover_file_usable(path):
 
 
 def accept_cover(job_path, job, artifacts, config_path):
-    """Use agent-generated cover image; do not call HTML cover renderer."""
+    """Accept the fixed cover-chain output; do not call the HTML cover renderer."""
     cover_path = artifacts["cover"]
     cover_stage = job["stages"].get("cover", {})
     if cover_stage.get("status") == "completed" and _cover_file_usable(cover_path):
+        backend = (cover_stage.get("details") or {}).get("backend") or "local_file"
         return {
             "status": "completed",
-            "backend": "image_generate",
+            "backend": backend,
             "reused": True,
         }, True
 
     mark(job_path, "cover", "running", "验收生图封面")
     if _cover_file_usable(cover_path):
         mark(
-            job_path, "cover", "completed", "生图封面已就绪",
+            job_path, "cover", "completed", "本地封面文件已就绪",
             {
-                "backend": "image_generate",
+                "backend": "local_file",
                 # 不要求 Agent 视觉审图；人工在草稿箱核对
                 "visual_check": "none",
             },
             {"cover": cover_path},
         )
-        return {"status": "completed", "backend": "image_generate", "reused": False}, True
+        return {"status": "completed", "backend": "local_file", "reused": False}, True
 
     has_default = default_thumb_available(config_path, job["account"])
     if has_default:
@@ -641,7 +741,7 @@ def accept_cover(job_path, job, artifacts, config_path):
             job_path, "cover", "skipped", "无可用生图封面，使用账号默认封面",
             {
                 "default_thumb_media_id": "true",
-                "backend": "image_generate",
+                "backend": "account_default",
             },
         )
         return {"status": "skipped", "reason": "default-thumb"}, False
@@ -649,7 +749,7 @@ def accept_cover(job_path, job, artifacts, config_path):
     mark(
         job_path, "cover", "failed",
         "缺少 cover/cover.png 生图封面，且无默认 thumb_media_id",
-        {"backend": "image_generate"},
+        {"backend": "none"},
     )
     raise RuntimeFailure(
         "封面未生成：请用生图 API 写入 cover/cover.png，"
@@ -789,9 +889,23 @@ def _cmd_finish(args):
     existing_draft = verified_draft_result(job, artifacts)
     if existing_draft:
         return draft_resume_response(job, existing_draft)
+    # prepare 后文件仍可能被人工编辑；finish 再验一次，保证真正送入渲染器的是合格稿。
+    require_content(artifacts, job)
+    quality = require_writing_quality(artifacts["article"])
+    mark(
+        args.job, "write", "completed", "发布前最终写作体检通过",
+        details={
+            "quality_score": quality["score"],
+            "quality_grade": quality.get("grade") or "",
+            "quality_blocking_count": quality["blocking_count"],
+            "quality_checked_after_humanize": "true",
+        },
+        artifacts={"article": artifacts["article"]},
+    )
+    job, artifacts = job_paths(args.job)
     render_result = render_body(args.job, job, artifacts, roots)
     job, artifacts = job_paths(args.job)
-    # HTML 封面已停用：只验收 Agent 生图产物 cover/cover.png
+    # HTML 封面已停用：只验收固定降级链产物 cover/cover.png
     cover_result, generated_cover = accept_cover(
         args.job, job, artifacts, config_path
     )
@@ -836,6 +950,7 @@ def _cmd_finish(args):
             artifacts["article"].read_text(encoding="utf-8")
         )),
         "cover": cover_result.get("status"),
+        "writing_quality": quality,
         "draft": draft_result, "resumed": False,
         "stage_timings_ms": {
             name: item.get("duration_ms") for name, item in final_job["stages"].items()
@@ -853,7 +968,7 @@ def build_parser():
     begin.add_argument("--job", required=True)
     check = sub.add_parser("check", help="写作后自检：列出全部问题与修法，不改状态")
     check.add_argument("--job", required=True)
-    prepare = sub.add_parser("prepare", help="核验正文、固定主题并等待唯一信息计划")
+    prepare = sub.add_parser("prepare", help="核验最终稿质量与产物契约，并固定排版主题")
     prepare.add_argument("--job", required=True)
     finish = sub.add_parser("finish", help="一次完成排版、验收生图封面、校验和草稿")
     finish.add_argument("--job", required=True)

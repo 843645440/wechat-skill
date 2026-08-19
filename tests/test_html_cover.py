@@ -256,7 +256,10 @@ class HtmlCoverTests(unittest.TestCase):
             render_html_cover.os.replace = original_replace
             render_html_cover.probe_dom = original_probe
 
-        self.assertIn(Path.home() / "wechat-cover-tmp", captured["browser_output"].parents)
+        self.assertIn(
+            Path(tempfile.gettempdir()) / "wechat-cover-tmp",
+            captured["browser_output"].parents,
+        )
         self.assertNotIn(Path.home() / ".hermes", captured["browser_output"].parents)
         self.assertEqual((captured["browser_output"], target), captured["replace"])
 

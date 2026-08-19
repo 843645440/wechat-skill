@@ -8,7 +8,7 @@ Markdown」这几步 agent 判断压成一次调用，防止弱模型在这一�
    `--imgs-dir` 里已经放了图片文件 → 直接 `backend=user_provided`，
    `status=completed`，不生图、不覆盖、不删用户的图。
 2. **没有用户图 → 尝试生图**：用确定性启发式挑 0-3 个插入位，套同一个固定
-   prompt 模板（不做美学分支决策），调用 agnes-image-gen 后端生成 PNG。
+   prompt 模板（不做美学分支决策），调用 xiaohu-gen 的 xiaoyi 后端生成 PNG。
 3. **生成成功 → 用生成的**：成功几张就插几张，`backend=image_generate`。
 4. **生成失败/没有后端 → 不配图**：`status=skipped`，`article.md` 原样不
    动，这是正常结果，不是失败——上游流水线不应该因为这个退出非 0。
@@ -30,9 +30,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _stage_record  # noqa: E402 - 同目录内部模块，必须在 sys.path 之后导入
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-# agnes-image-gen 是本仓库统一的生图后端；本脚本只负责选位置、写 prompt、
-# 插回 Markdown，绝不自己拼 HTTP 请求。
-AGNES_GENERATE = SCRIPT_DIR.parent.parent / "agnes-image-gen" / "scripts" / "generate.py"
+# 正文图固定为机制/流程/对比型信息图，按 xiaohu-gen 的路由契约应走 xiaoyi。
+# 本脚本只负责选位置、写 prompt、插回 Markdown，绝不自己拼 HTTP 请求。
+XIAOYI_GENERATE = (
+    SCRIPT_DIR.parent.parent / "xiaohu-gen" / "scripts" / "xiaoyi_generate.py"
+)
 
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
 # 必须能被 render_article.py 的 IMAGE_RE 解析：独占一行、路径不含空格。
@@ -43,7 +45,7 @@ TABLE_ROW_RE = re.compile(r"^\s*\|.*\|\s*$")
 MD_STRIP_RE = re.compile(r"[#*`\[\]()_>]")
 
 MIN_SECTION_CHARS = 60  # 少于这个字数的章节不值得配图
-DEFAULT_TIMEOUT = 45  # 传给 agnes 后端的单张超时（秒），保持整条命令可控
+DEFAULT_TIMEOUT = 200  # 与 xiaohu-gen 的 xiaoyi 单 key 超时契约一致
 
 # 单一固定 prompt 模板：弱模型不需要、也不应该做风格/美学分支决策。
 PROMPT_TEMPLATE = """{title} — inline illustration {index}/{total}: {heading}
@@ -208,22 +210,21 @@ def choose_positions(article_text, max_images):
 
 
 # ---------------------------------------------------------------------------
-# 3. 生图后端调用（唯一允许调用外部命令的地方，且只调用 agnes-image-gen）
+# 3. 生图后端调用（唯一允许调用外部命令的地方）
 # ---------------------------------------------------------------------------
 
-def call_agnes_backend(prompt_path, output_path, timeout=DEFAULT_TIMEOUT):
-    """调用 agnes-image-gen/scripts/generate.py；失败一律返回 False。
+def call_image_backend(prompt_path, output_path, timeout=DEFAULT_TIMEOUT):
+    """调用 xiaohu-gen/scripts/xiaoyi_generate.py；失败一律返回 False。
 
     测试里会整体 monkeypatch 这个函数，不打真实网络请求。
     """
-    if not AGNES_GENERATE.is_file():
+    if not XIAOYI_GENERATE.is_file():
         return False
     cmd = [
-        sys.executable, str(AGNES_GENERATE),
+        sys.executable, str(XIAOYI_GENERATE),
         "--prompt-file", str(prompt_path),
         "--output", str(output_path),
-        "--size", "1K",
-        "--ratio", "16:9",
+        "--size", "16:9",
         "--timeout", str(max(5, timeout - 5)),
     ]
     try:
@@ -243,9 +244,9 @@ def call_agnes_backend(prompt_path, output_path, timeout=DEFAULT_TIMEOUT):
 
 
 def generate_one(prompt_path, output_path, timeout):
-    """带一次重试，呼应 baoyu 集成文档「失败单张重试 1 次」。"""
+    """单张失败只重试一次；仍失败则跳过该图。"""
     for _ in range(2):
-        if call_agnes_backend(prompt_path, output_path, timeout=timeout):
+        if call_image_backend(prompt_path, output_path, timeout=timeout):
             return True
         if output_path.exists():
             try:
@@ -281,6 +282,18 @@ def run(args):
     if find_user_provided(article_text, article_dir, imgs_dir):
         return {"status": "completed", "backend": "user_provided",
                 "inserted": 0, "positions": []}
+
+    if args.job and not getattr(args, "force_generate", False):
+        try:
+            job = json.loads(Path(args.job).read_text(encoding="utf-8"))
+            inline_enabled = (job.get("image_policy") or {}).get("inline_enabled")
+        except (OSError, ValueError):
+            inline_enabled = None
+        if inline_enabled is False:
+            return {
+                "status": "skipped", "backend": "none", "inserted": 0,
+                "reason": "按账号策略 inline_enabled=false 跳过正文生图",
+            }
 
     title, chosen = choose_positions(article_text, args.max)
     if not chosen:
@@ -339,6 +352,7 @@ def run(args):
         for sec in sorted(inserted, key=lambda s: s["index"])
     ]
     return {"status": "completed", "backend": "image_generate",
+            "provider": "xiaohu:xiaoyi",
             "inserted": len(inserted), "positions": positions}
 
 
@@ -353,6 +367,10 @@ def build_parser():
     parser.add_argument("--job", default="", help="job.json 路径，缺省 seed 时用它兜底")
     parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT,
                         help="单张生图超时秒数")
+    parser.add_argument(
+        "--force-generate", action="store_true",
+        help="用户明确要求生图时覆盖账号 inline_enabled=false；用户给图不需要此参数",
+    )
     parser.add_argument(
         "--record-stage", action="store_true",
         help="连同 illustrations 阶段一起记账（running → completed/skipped），"

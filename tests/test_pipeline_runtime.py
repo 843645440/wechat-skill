@@ -146,7 +146,17 @@ class PipelineRuntimeTests(unittest.TestCase):
             "account": "a",
             "run_id": "run-test-1",
             "topic": topic,
+            "event_focus": "测试主题发生了一个需要解释的核心变化",
             "topic_source": "provided",
+            "article_shape": {
+                "structure_id": "conflict",
+                "opening_type": "contrast",
+                "ending_type": "hook_return",
+                "felt_sense": "发紧",
+                "tension_type": "efficiency_vs_duty",
+                "heading_count": 5,
+                "body_band": "short",
+            },
             "state": "initialized",
             "artifacts": {
                 "article": "article.md",
@@ -159,10 +169,19 @@ class PipelineRuntimeTests(unittest.TestCase):
         }
         path = job_dir / "job.json"
         path.write_text(json.dumps(job, ensure_ascii=False), encoding="utf-8")
+        (job_dir / "user-brief.md").write_text(
+            "# Brief\n\n## 主题\n测试主题\n\n## 思路\n"
+            "- 解释核心变化发生的机制\n- 写清谁承担成本以及适用边界\n",
+            encoding="utf-8",
+        )
         return path
 
     def complete_agent_stages(self, job_path, illustration_status="completed"):
         job = pipeline_runtime.pipeline_job.load_job(job_path)
+        if job["stages"]["write"]["status"] == "pending":
+            job["stages"]["write"] = pipeline_runtime.pipeline_job.stage_record(
+                "running", job["created_at"], "write started"
+            )
         job["stages"]["humanize"] = pipeline_runtime.pipeline_job.stage_record(
             "completed", job["created_at"], "humanize complete", {"intensity": "strong"}
         )
@@ -221,6 +240,21 @@ class PipelineRuntimeTests(unittest.TestCase):
         self.assertEqual("completed", current["stages"]["write"]["status"])
         self.assertNotIn("fact-check", current["stages"])
 
+    def test_begin_rejects_missing_brief_and_unlocked_shape(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            job_path = self.make_job(tmp)
+            (job_path.parent / "user-brief.md").unlink()
+            with self.assertRaisesRegex(pipeline_runtime.RuntimeFailure, "缺少用户 brief"):
+                pipeline_runtime.cmd_begin(self.args(job_path))
+
+        with tempfile.TemporaryDirectory() as tmp:
+            job_path = self.make_job(tmp)
+            job = pipeline_runtime.pipeline_job.load_job(job_path)
+            job.pop("article_shape")
+            pipeline_runtime.pipeline_job.save_job(job_path, job)
+            with self.assertRaisesRegex(pipeline_runtime.RuntimeFailure, "结构尚未锁定"):
+                pipeline_runtime.cmd_begin(self.args(job_path))
+
     def test_prepare_accepts_zero_images_and_no_sources(self):
         with tempfile.TemporaryDirectory() as tmp:
             job_path = self.make_job(tmp)
@@ -228,9 +262,50 @@ class PipelineRuntimeTests(unittest.TestCase):
             self.complete_agent_stages(job_path, "skipped")
             self.write_article(job_path)
             result = pipeline_runtime.cmd_prepare(self.args(job_path))
+            prepared = pipeline_runtime.pipeline_job.load_job(job_path)
         self.assertEqual(0, result["image_count"])
         self.assertEqual("finish", result["next"])
+        self.assertGreaterEqual(result["writing_quality"]["score"], 75)
+        self.assertTrue(result["writing_quality"]["checked_after_humanize"])
+        self.assertEqual(
+            "true",
+            prepared["stages"]["write"]["details"]["quality_checked_after_humanize"],
+        )
         self.assertFalse((job_path.parent / "sources.md").exists())
+
+    def test_prepare_rechecks_quality_after_humanize(self):
+        """humanize 可能改坏节奏；prepare 必须检查最终稿，而不是相信更早的 check。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            job_path = self.make_job(tmp)
+            self.complete_agent_stages(job_path, "skipped")
+            (job_path.parent / "article.md").write_text(
+                "# 关于行业发展的一些观察与思考\n\n"
+                + "这件事情引发了广泛的关注，相关方面表示将持续推进后续工作。" * 60,
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                pipeline_runtime.RuntimeFailure, "最终稿写作体检未通过"
+            ):
+                pipeline_runtime.cmd_prepare(self.args(job_path))
+
+    def test_finish_rechecks_article_changed_after_prepare(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            job_path = self.make_job(tmp)
+            self.complete_agent_stages(job_path, "skipped")
+            self.write_article(job_path)
+            pipeline_runtime.cmd_prepare(self.args(job_path))
+            (job_path.parent / "article.md").write_text(
+                "# 关于行业发展的一些观察与思考\n\n"
+                + "这件事情引发了广泛的关注，相关方面表示将持续推进后续工作。" * 60,
+                encoding="utf-8",
+            )
+            with mock.patch.object(
+                pipeline_runtime, "render_body",
+                side_effect=AssertionError("质量门禁前不应渲染"),
+            ), self.assertRaisesRegex(
+                pipeline_runtime.RuntimeFailure, "最终稿写作体检未通过"
+            ):
+                pipeline_runtime.cmd_finish(self.args(job_path))
 
     def test_prepare_accepts_three_images_and_rejects_four(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -294,6 +369,21 @@ class PipelineRuntimeTests(unittest.TestCase):
                 )
             self.assertFalse(result["reused"])
             run.assert_called_once()
+
+    def test_accept_cover_preserves_recorded_backend(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            job_path = self.make_job(tmp)
+            job, artifacts = pipeline_runtime.job_paths(job_path)
+            artifacts["cover"].write_bytes(b"\x89PNG\r\n\x1a\n" + b"0" * 64)
+            job["stages"]["cover"] = pipeline_runtime.pipeline_job.stage_record(
+                "completed", job["created_at"], details={"backend": "offline_render"}
+            )
+            pipeline_runtime.pipeline_job.save_job(job_path, job)
+            result, generated = pipeline_runtime.accept_cover(
+                job_path, job, artifacts, ROOT / "wechat-accounts.json"
+            )
+        self.assertEqual("offline_render", result["backend"])
+        self.assertTrue(generated)
 
     def test_verified_draft_requires_matching_run_id(self):
         with tempfile.TemporaryDirectory() as tmp:

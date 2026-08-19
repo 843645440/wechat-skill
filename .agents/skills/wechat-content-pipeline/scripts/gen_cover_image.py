@@ -7,7 +7,7 @@
 1. **用户已给封面**：`cover/cover.png` 已存在且非空 → `backend=user_provided`，
    原样保留，绝不覆盖。
 2. **生图**：从 `article.md` 取一级标题，套固定 prompt 模板（品牌名文字 + 场景，
-   不画完整商标 Logo，符合账号档案要求），调 agnes-image-gen 生成 16:9 封面 →
+   不画完整商标 Logo，符合账号档案要求），调 xiaohu-gen 的 Agnes 后端生成 16:9 封面 →
    `backend=image_generate`。
 3. **生图失败 → 离线兜底**：直接调 `render_cover_fallback.py` 用标题排一张确定性
    封面 → `backend=offline_render`。这一步不需要网络、不需要 API key、不需要浏览器。
@@ -32,7 +32,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _stage_record  # noqa: E402 - 同目录内部模块，必须在 sys.path 之后导入
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-AGNES_GENERATE = SCRIPT_DIR.parent.parent / "agnes-image-gen" / "scripts" / "generate.py"
+AGNES_GENERATE = (
+    SCRIPT_DIR.parent.parent / "xiaohu-gen" / "scripts" / "agnes_generate.py"
+)
 COVER_FALLBACK = SCRIPT_DIR / "render_cover_fallback.py"
 
 H1_RE = re.compile(r"^#\s+(.+?)\s*$", re.MULTILINE)
@@ -187,6 +189,7 @@ def run(args):
         )
         if ok:
             return {"status": "completed", "backend": "image_generate",
+                    "provider": "xiaohu:agnes",
                     "cover": str(cover_path), "title": title}
 
     # 3. 离线兜底 —— 封面是硬门禁，这一步不能省。

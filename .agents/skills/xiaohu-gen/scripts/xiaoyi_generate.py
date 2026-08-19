@@ -223,6 +223,7 @@ def run(args):
     # Try primary key first
     last_error = None
     used_key_label = None
+    data = None
     if primary_key:
         try:
             data, used_key_label = try_with_key(

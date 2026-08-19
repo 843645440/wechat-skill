@@ -103,8 +103,8 @@ class ArticleRendererTests(unittest.TestCase):
                     self.assertGreater(leaf_count, 10)
                     self.assertIn(labels[kind], output)
 
-    def test_every_theme_ends_with_a_follow_cta(self):
-        """涨关注的留存钩子：所有主题文末必须有在看/转发/关注引导，且仍然合规。"""
+    def test_every_theme_ends_with_a_topic_appropriate_footer(self):
+        """通用主题可留存，严肃新闻主题必须改用克制的编辑说明。"""
         _, sections = renderer.parse_article(ARTICLE)
         for theme_name, theme in renderer.THEMES.items():
             with self.subTest(theme=theme_name):
@@ -115,6 +115,17 @@ class ArticleRendererTests(unittest.TestCase):
                 errors, warnings, _ = validator.validate(output)
                 self.assertEqual([], errors)
                 self.assertEqual([], warnings)
+                if theme["layout"] in renderer.SOBER_LAYOUTS:
+                    label = {
+                        "newswire": "信息说明",
+                        "solemn": "阅读说明",
+                        "briefing": "报告说明",
+                    }[theme["layout"]]
+                    self.assertIn(label, output)
+                    self.assertIn("事实", output)
+                    for token in ("在看", "转发", "星标"):
+                        self.assertNotIn(token, output)
+                    continue
                 for token in ("写在最后", "在看", "转发", "关注", "星标"):
                     self.assertIn(token, output)
                 # 从 CTA 容器的 <section 开头切，而不是从「写在最后」切：
@@ -146,6 +157,10 @@ class ArticleRendererTests(unittest.TestCase):
             "ink-rule": ("本文看点", "Songti SC", "background:#111111"),
             "deep-pool": ("DEEP DIVE", "background:#16202B", "#6FBCC9"),
             "color-block": ("DEEP DIVE", "background:#1B5E8C", "color:#1B5E8C"),
+            # 新闻 / 正式报道组
+            "news-wire": ("NEWS DESK", "报道提要", "REPORT 01"),
+            "solemn-gray": ("SPECIAL REPORT", "事件脉络", "阅读说明"),
+            "formal-brief": ("BRIEFING", "报告目录", "SECTION 01"),
         }
         for theme_name, tokens in expected.items():
             with self.subTest(theme=theme_name):
@@ -157,6 +172,20 @@ class ArticleRendererTests(unittest.TestCase):
                 for token in tokens:
                     self.assertIn(token, output)
                 self.assertGreater(output.count("<section"), 8)
+
+    def test_sober_themes_avoid_promotional_visuals_and_copy(self):
+        _, sections = renderer.parse_article(ARTICLE)
+        for theme_name in ("news-wire", "solemn-gray", "formal-brief"):
+            with self.subTest(theme=theme_name):
+                theme = renderer.THEMES[theme_name]
+                output = renderer.render_document(
+                    "测试标题", sections,
+                    {"version": 1, "theme": theme_name, "modules": []}, theme,
+                )
+                self.assertNotIn("linear-gradient", output)
+                self.assertNotIn("只取决于两件事", output)
+                self.assertNotIn("顺手", output)
+                self.assertIn(theme["accent"], output)
 
     def test_semantic_markdown_table_and_highlight_render_in_all_themes(self):
         article = """# 三家企业公布模型价格，采购人员先核对口径
