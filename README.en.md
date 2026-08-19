@@ -1,5 +1,3 @@
-> 🤝 **A joint project by Jiamu × [Moyu Xiaoli (摸鱼小李)](https://mp.weixin.qq.com/s/EMahAzgfAbRQrYukWE7_IQ)** — the components, theme design and quality bar are shaped by both authors' hands-on WeChat publishing practice. Special thanks to Xiaoli.
-
 <div align="center">
 
 # wechat-skill · WeChat Content Skill Toolkit
@@ -111,4 +109,4 @@ Chinese [usage guide](docs/usage.md) covers credentials, IP allowlists, and pipe
 
 You remain responsible for legality, facts, and review. Archive pieces only restate official conclusions and are not legal advice.
 
-**AGPL-3.0 © 2026 Jiamu × Moyu Xiaoli.** Attribution required. Derivatives, forks, and network/SaaS use of a modified version must publish complete source under AGPL-3.0 (or compatible). No closed-source distribution. See [LICENSE](LICENSE).
+Licensed under **GNU AGPL-3.0**. Keep the original copyright notice in [LICENSE](LICENSE). Derivatives, forks, and network/SaaS use of a modified version must publish complete source under AGPL-3.0 (or compatible). No closed-source distribution.
