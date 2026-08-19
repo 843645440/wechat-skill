@@ -13,7 +13,7 @@ description: 编排中文微信公众号文章：用户提供主题与大致思�
 - 唯一自动选题例外是已明确启用的 `wechat-public-event-archive`。它必须先产出通过校验的 `source-dossier.json` 和完整 `user-brief.md`，本流水线仍按 `--source provided` 接收。
 - 只创建草稿，不公开发布。不得把 API 密钥、token 或素材 ID 写进文章和日志。
 - 只用下列固定命令和 `init` 声明的工作区文件；不新建临时脚本、单篇渲染器、封面 JSON 或视觉审图循环。
-- `optional-skills/` 中的独立封面、原生信息模块扩展不属于本流水线，除非用户明确单独调用。
+- `optional-skills/` 的完整说明仍按需加载；主流水线只复用其中的确定性 HTML 封面渲染器与信息模块校验器，不读取整份扩展 Skill。
 
 ## 执行原则
 
@@ -51,14 +51,15 @@ python3 <PIPELINE>/scripts/pipeline_job.py stage \
   --job <job.json> --name humanize --status completed \
   --detail 'intensity=<strong|restrained>'
 
-# 7. 正文图与封面。两条命令都自动降级并记账。
+# 7. 先固定主题，再生成证据绑定的原生信息模块；随后处理可选正文图与封面。
+python3 <PIPELINE>/scripts/pipeline_job.py choose-theme --job <job.json>
+python3 <PIPELINE>/scripts/build_inline_visuals.py --job <job.json>
 python3 <PIPELINE>/scripts/gen_inline_images.py \
   --article <article.md> --imgs-dir <imgs_dir> --seed <run_id> \
   --job <job.json> --record-stage
 python3 <PIPELINE>/scripts/gen_cover_image.py --job <job.json> --record-stage
 
-# 8. 固定主题、终检并创建草稿。
-python3 <PIPELINE>/scripts/pipeline_job.py choose-theme --job <job.json>
+# 8. 终检并创建草稿。
 python3 <PIPELINE>/scripts/pipeline_runtime.py prepare --job <job.json>
 python3 <PIPELINE>/scripts/pipeline_runtime.py finish \
   --job <job.json> --config <ROOT>/wechat-accounts.json
@@ -88,9 +89,10 @@ python3 <PIPELINE>/scripts/pipeline_runtime.py finish \
 ### 媒体与草稿
 
 - 素材方式先服从用户 brief；没有指示时服从账号档案。用户图优先且不覆盖。
-- 正文图只走 `gen_inline_images.py`：无候选位、无 Key、超时或生成失败都可记为 `skipped`，无图继续。
-- 封面只走 `gen_cover_image.py`：用户图 → `xiaohu:agnes` → Pillow 离线兜底 → 账号默认素材。封面最终不可用才阻塞。
-- 主题由 `choose-theme` 从渲染器的 `THEMES` 中按 `run_id` 稳定选择；公共事件上游可限定为 `solemn-gray`、`news-wire`、`formal-brief`。
+- 原生信息模块由 `build_inline_visuals.py` 生成或校验。公共事件最多一张“公开事实脉络”，全部文案必须来自最终正文；普通文章默认不加。无效计划自动降级为空。
+- AI 正文图只走 `gen_inline_images.py`：用户图优先；公共事件强制跳过 AI 图，其他题材无 Key、超时或失败都可 `skipped`。
+- 封面只走 `gen_cover_image.py`：用户图优先；公共事件/正式报道走准确标题 HTML；普通观点稿按紧凑艺术指导走 `xiaohu:agnes` 无文字主视觉；随后依次降级到 HTML、Pillow、账号默认素材。
+- 主题由 `choose-theme` 按 `run_id` 稳定选择；检测到公共事件档案或正式报道时自动限定为 `solemn-gray`、`news-wire`、`formal-brief`。
 - `finish` 默认创建草稿；只有开发验证才使用 `--dry-run`。不得直接调用独立发布命令绕过门禁。
 
 ## 幂等与完成判定

@@ -204,7 +204,7 @@ WECHAT_B_APP_SECRET
 - 云端执行器的公网出口 IP 已分别加入两个公众号的接口 IP 白名单；动态出口环境应配置固定 NAT、固定代理或中转服务。
 - 运行环境能够通过 HTTPS 访问 `api.weixin.qq.com`。
 - 已安装 Python 3，Agent 能读取根 `SKILL.md` 和 `.agents/skills/`，并能写入 `work/<account>/current/`。
-- 完整流水线不需要 Chrome。只有安装并单独调用可选的 `wechat-html-cover` 时才需要 Chrome/Chromium；自定义路径时设置 `WECHAT_COVER_BROWSER`。
+- 正式报道封面会优先使用 Chrome/Chromium 生成准确标题；没有浏览器会自动降级到 Pillow，不阻塞完整流水线。自定义路径时设置 `WECHAT_COVER_BROWSER`。
 - 云端 Agent 本身具有可用的大模型能力；模型授权由 Agent 平台提供，本仓库不读取通用 LLM API Key。
 
 公众号类型和认证状态可能影响可用接口。首次部署时应在两个公众号后台分别确认接口权限，不能只验证其中一个账号。
@@ -213,7 +213,7 @@ WECHAT_B_APP_SECRET
 
 微信草稿必须有封面，每个账号至少满足以下一种方案：
 
-1. **流水线封面脚本（默认）**：`gen_cover_image.py` 从最终标题生成封面并自动记账。账号策略为 `image_generate` 时先走 `xiaohu:agnes`，失败自动使用 Pillow 离线渲染；策略为 `offline_render` 时直接离线渲染。两种路径都不需要 Chrome，也不做 AI 视觉检测。
+1. **流水线封面脚本（默认）**：`gen_cover_image.py` 从最终标题和题材自动路由并记账。正式报道用 HTML 准确排标题；普通观点稿可用 `xiaohu:agnes` 生成无文字主视觉；失败后依次降级到 HTML 和 Pillow。全程不做 AI 视觉检测。
 
 2. **固定封面降级方案**：不启用自动生图时，为账号配置已有的永久封面素材 ID：
 
@@ -222,7 +222,7 @@ WECHAT_A_THUMB_MEDIA_ID
 WECHAT_B_THUMB_MEDIA_ID
 ```
 
-永久素材 ID 属于具体公众号，A/B 不能混用。生成式封面与离线兜底都失败且没有对应默认素材 ID 时，草稿门禁会停止上传。`wechat-html-cover` 和 `baoyu-cover-image` 位于 `optional-skills/`，安装后可独立调用，但不属于默认流水线。
+永久素材 ID 属于具体公众号，A/B 不能混用。HTML、生成式封面与离线兜底都失败且没有对应默认素材 ID 时，草稿门禁会停止上传。可选 Skill 不进入默认发现索引，但主流水线会直接复用其中的确定性渲染脚本和压缩设计策略。
 
 ### 【按场景】其他能力
 
@@ -239,7 +239,7 @@ WECHAT_B_THUMB_MEDIA_ID
 - 不需要手动配置微信 `access_token`。
 - 不需要微信公众号登录 Cookie、扫码登录、回调 URL、消息校验 Token 或 EncodingAESKey。
 - 不需要小程序 AppID/AppSecret。
-- 固定脚本生成的正文 HTML 和默认 `offline_render` 封面不需要图片 API Key。
+- 原生正文 HTML、HTML 封面和 `offline_render` 的 Pillow 兜底不需要图片 API Key。
 - 公开仓库只读克隆不需要 GitHub Token；只有推送修改或仓库改为私有时才需要仓库凭证。
 - Skill 内不需要 cron、早晚时间或轮询配置。
 
@@ -299,7 +299,7 @@ hermes cron create "0 9 * * *" \
 - **约束优于自由** — 预设主题色板 + 固定组件先保住输出下限，不让模型每次现场发挥、风格飘忽。
 - **样式粘贴不掉** — 全内联样式 + 每个文字节点 `<span leaf="">` 包裹，专门规避公众号会过滤的写法，粘进去不塌。
 - **质量靠脚本不靠自觉** — 双关卡（源头 `component_lint` + 产物 `validate_gzh_html`）确定性检查平台红线和标点，不靠模型「记得住」。
-- **正文不再走图片链路** — 结构化内容直接成为当前主题的公众号原生 HTML，中文和编号由浏览器正常排版，不需要生图、OCR、视觉检测或修图循环。
+- **正式内容不走想象图链路** — 公共事件的结构化内容直接成为当前主题的公众号原生 HTML，封面准确排最终标题；不需要生图、OCR、视觉检测或修图循环。
 - **换模型不走样** — 排版逻辑全沉淀在组件库和脚本里，不依赖某家模型，Claude / GPT / Gemini / 国产模型都能跑出一致效果。
 - **Agent 友好** — 输入输出全是纯文本 Markdown / HTML，任何 Agent 都能读、写、改、验，天然适配 Claude Code / Codex / Cursor。
 

@@ -106,6 +106,7 @@ class PipelineJobTests(unittest.TestCase):
         self.assertNotIn("validate", second_job["stages"])
         self.assertNotIn("sources", second_job["artifacts"])
         self.assertNotIn("preview", second_job["artifacts"])
+        self.assertEqual("inline-visuals.json", second_job["artifacts"]["inline_visuals"])
 
     def test_init_prints_job_contract_with_absolute_paths_next_command_and_no_credentials(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -180,6 +181,8 @@ class PipelineJobTests(unittest.TestCase):
             self.assertEqual(48, discovery["max_age_hours"])
             self.assertNotIn("window_hours", discovery)
             self.assertNotIn("fallback_hours", discovery)
+            self.assertEqual("adaptive", profile["cover"]["backend"])
+            self.assertEqual("2.35:1", profile["cover"]["aspect"])
 
     def test_auto_hotspot_rejected_when_user_brief_only(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -245,6 +248,18 @@ class PipelineJobTests(unittest.TestCase):
                     "inline_max_images": 3,
                     "cover_backend": "offline_render",
                 },
+            )
+
+    def test_init_accepts_adaptive_cover_policy(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            job_path = self.init_job(
+                tmp, illustrations_enabled=False, cover_backend="adaptive",
+                cover_aspect="2.35:1",
+            )
+            job = json.loads(job_path.read_text(encoding="utf-8"))
+            self.assertEqual("adaptive", job["image_policy"]["cover_backend"])
+            self.assertEqual(
+                "inline-visuals.json", job["artifacts"]["inline_visuals"]
             )
 
     def test_auto_hotspot_accepts_category_timestamp_and_focus(self):
@@ -476,6 +491,21 @@ class PipelineJobTests(unittest.TestCase):
         self.assertTrue(picks <= set(themes), picks)
         # 24 个不同 run_id 不该全落在同一套主题上，否则「跨文章轮换」就失效了。
         self.assertGreater(len(picks), 1, picks)
+
+    def test_choose_theme_limits_formal_report_to_sober_set(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            job_path = self.init_job(tmp, topic="某案公开事实复盘")
+            (job_path.parent / "source-dossier.json").write_text("{}", encoding="utf-8")
+            args = pipeline_job.build_parser().parse_args(
+                ["choose-theme", "--job", str(job_path)]
+            )
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                pipeline_job.cmd_choose_theme(args)
+            self.assertIn(
+                output.getvalue().strip(),
+                {"solemn-gray", "news-wire", "formal-brief"},
+            )
 
     def test_gate_accepts_zero_images_and_rejects_pending_images(self):
         with tempfile.TemporaryDirectory() as tmp:

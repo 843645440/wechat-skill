@@ -20,9 +20,9 @@
 - `topic_discovery.categories` / `max_age_hours`：仅自动选题例外路径使用。
 - `theme_strategy`：必须为 `random`，候选项来自根主题索引。
 - `illustrations`：`enabled=false` 默认无正文图；用户给图仍由 `gen_inline_images.py` 识别。用户明确要求生图时加 `--force-generate`，机制型图固定走 `xiaohu:xiaoyi`。
-- `cover.backend`：`image_generate` 先走 `xiaohu:agnes` 再离线兜底；`offline_render` 直接离线兜底。流水线已停用 HTML/Chrome 封面。
-- `cover.aspect`：建议 `16:9`。
-- `cover.subject_focus`：生图时用品牌名文字 + 品牌色 + 场景；默认不画完整官方 Logo。
+- `cover.backend`：建议 `adaptive`——正式报道走准确标题 HTML，普通观点稿走无文字 `xiaohu:agnes` 主视觉；`image_generate` 与 `offline_render` 可做账号级强制策略，但正式报道仍禁用 AI 现场插画。
+- `cover.aspect`：建议 `2.35:1`。
+- `cover.subject_focus`：普通稿生图使用类型/色板/渲染/情绪维度，不画文字、数字、完整 Logo 或水印。
 - `publishing.target`：必须为 `draft`。
 
 主路径为用户命题（见 `user-brief.md`）。生图仅在用户未提供图片时启用。排版主题仍随机。

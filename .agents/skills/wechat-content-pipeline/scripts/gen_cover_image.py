@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
-"""封面一条命令：把整条封面降级链压成一次调用，杜绝「封面缺失卡在 finish」。
+"""封面一条命令：按内容类型路由，再走完整降级链。
 
 封面和正文配图有一个根本区别：**正文图可以没有，封面不能没有**。finish 把
 `cover/cover.png` 当硬门禁，所以这里的降级链必须一直走到能出图为止：
 
 1. **用户已给封面**：`cover/cover.png` 已存在且非空 → `backend=user_provided`，
    原样保留，绝不覆盖。
-2. **生图**：从 `article.md` 取一级标题，套固定 prompt 模板（品牌名文字 + 场景，
-   不画完整商标 Logo，符合账号档案要求），调 xiaohu-gen 的 Agnes 后端生成 16:9 封面 →
-   `backend=image_generate`。
-3. **生图失败 → 离线兜底**：直接调 `render_cover_fallback.py` 用标题排一张确定性
+2. **正式报道/公共事件**：用 HTML 模板准确排标题，绝不生成案件现场插画 →
+   `backend=html_render`。
+3. **普通观点稿**：把 Baoyu 的封面维度压成确定性艺术指导，调 xiaohu-gen 的
+   Agnes 后端生成无文字的 2.35:1 主视觉 → `backend=image_generate`。
+4. **前路由失败 → 离线兜底**：先尝试准确标题 HTML，再用
+   `render_cover_fallback.py` 排一张确定性
    封面 → `backend=offline_render`。这一步不需要网络、不需要 API key、不需要浏览器。
-4. 兜底也失败才 `status=failed`，此时只有账号配了默认 `thumb_media_id` 才能继续。
+5. 兜底也失败才 `status=failed`，此时只有账号配了默认 `thumb_media_id` 才能继续。
 
 之所以要有这个脚本：这条链原本散在 ai-cover-generation.md 和 check 的 hints 里，
 需要 agent 自己判断走到第几档、自己拼 prompt、自己在失败后想起还有兜底命令。这些
@@ -30,39 +32,23 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _stage_record  # noqa: E402 - 同目录内部模块，必须在 sys.path 之后导入
+import visual_policy  # noqa: E402
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 AGNES_GENERATE = (
     SCRIPT_DIR.parent.parent / "xiaohu-gen" / "scripts" / "agnes_generate.py"
 )
 COVER_FALLBACK = SCRIPT_DIR / "render_cover_fallback.py"
+PROJECT_ROOT = SCRIPT_DIR.parents[3]
+HTML_COVER_DIR = PROJECT_ROOT / "optional-skills" / "wechat-html-cover"
+BUILD_HTML_SPEC = HTML_COVER_DIR / "scripts" / "build_cover_spec.py"
+RENDER_HTML_COVER = HTML_COVER_DIR / "scripts" / "render_cover.py"
 
 H1_RE = re.compile(r"^#\s+(.+?)\s*$", re.MULTILINE)
 MD_STRIP_RE = re.compile(r"[#*`\[\]()_>]")
 # 固定 80s：生图快就用生图，超了就走离线兜底，不为了多抢一张图把整条流水线拖长。
 # 降级是正常结果，不是故障——但降级原因会写进结果的 generate_failed_because。
 DEFAULT_TIMEOUT = 80
-
-# 单一固定模板：与 gen_inline_images.py 同一套视觉语言，保证同一篇文章的封面和
-# 正文图看起来是一家的。不做风格分支——弱模型不该在这里做美学决策。
-PROMPT_TEMPLATE = """WeChat article cover, 16:9 landscape, editorial illustration.
-
-Warm cream paper background (#F5F0E8), black hand-drawn outlines with a slight
-wobble (#1A1A1A), soft pastel color blocks (light blue #A8D8EA, mint green
-#B5E5CF, lavender #D5C6E0, peach #FFD5C2), coral red (#E8655A) used sparingly
-for a single emphasis point. Flat hand-drawn editorial style, generous negative
-space, one clear focal subject.
-
-SUBJECT: a visual metaphor for — {title}
-CONTEXT: {topic}
-
-HARD CONSTRAINTS:
-- Do NOT render any company logo, trademark, or brand emblem.
-- Do NOT render long sentences or paragraphs of text.
-- No watermark, no signature, no photographic or 3D-realistic imagery.
-- Leave the upper-left area relatively clean for a title overlay.
-"""
-
 
 def plain_text(value):
     return MD_STRIP_RE.sub("", value).strip()
@@ -156,6 +142,63 @@ def try_fallback(title, kicker, seed, cover_path, ratio):
     return has_usable_cover(cover_path)
 
 
+def try_html_cover(article_path, title, kicker, theme, cover_path, timeout):
+    """Render an exact-title cover through the compact optional renderer.
+
+    Calling its deterministic scripts does not load the optional Skill manual
+    into model context.  The manual stays opt-in; the reliable renderer is a
+    normal runtime dependency with a Pillow fallback.
+    """
+    if not BUILD_HTML_SPEC.is_file() or not RENDER_HTML_COVER.is_file():
+        return False, "HTML 封面渲染器未安装", {}
+    cover_dir = cover_path.parent
+    cover_dir.mkdir(parents=True, exist_ok=True)
+    spec_path = cover_dir / "cover.spec.json"
+    html_path = cover_dir / "cover.html"
+    build_cmd = [
+        sys.executable, str(BUILD_HTML_SPEC),
+        "--article", str(article_path),
+        "--theme", theme,
+        "--template", "signal-editorial",
+        "--eyebrow", kicker or "专题报道",
+        "--output", str(spec_path),
+    ]
+    try:
+        built = subprocess.run(
+            build_cmd, capture_output=True, text=True, timeout=min(timeout, 30)
+        )
+    except (subprocess.SubprocessError, OSError) as exc:
+        return False, f"HTML 封面规格生成失败：{type(exc).__name__}: {exc}", {}
+    if built.returncode != 0:
+        detail = (built.stderr or built.stdout).strip().splitlines()
+        return False, "HTML 封面规格失败：" + (detail[-1][:200] if detail else "无输出"), {}
+    render_cmd = [
+        sys.executable, str(RENDER_HTML_COVER),
+        "--spec", str(spec_path),
+        "--output", str(cover_path),
+        "--html-output", str(html_path),
+        "--timeout", str(max(5, min(timeout, 60))),
+    ]
+    try:
+        rendered = subprocess.run(
+            render_cmd, capture_output=True, text=True, timeout=max(10, min(timeout + 5, 70))
+        )
+    except subprocess.TimeoutExpired:
+        return False, f"HTML 封面渲染超时（>{timeout}s）", {}
+    except (subprocess.SubprocessError, OSError) as exc:
+        return False, f"HTML 封面渲染失败：{type(exc).__name__}: {exc}", {}
+    if rendered.returncode != 0 or not has_usable_cover(cover_path):
+        detail = (rendered.stderr or rendered.stdout).strip().splitlines()
+        return False, "HTML 封面渲染失败：" + (detail[-1][:200] if detail else "无输出"), {}
+    return True, "", {
+        "template": "signal-editorial",
+        "theme": theme,
+        "spec": str(spec_path),
+        "html": str(html_path),
+        "title": title,
+    }
+
+
 def run(args):
     job = json.loads(Path(args.job).read_text(encoding="utf-8"))
     job_dir = Path(job["job_dir"]).resolve()
@@ -172,32 +215,76 @@ def run(args):
     title = read_title(article_path, job.get("topic", "") or "封面")
     kicker = account_label(job)
     seed = str(job.get("run_id", "") or "seed")
+    mode = visual_policy.content_mode(job, job_dir)
+    theme = visual_policy.selected_theme(
+        job, "formal-brief" if mode == "formal-report" else "plain-white"
+    )
 
-    # 2. 生图（image_policy.cover_backend=offline_render 或 --skip-generate 时跳过）
-    policy = job.get("image_policy") or {}
-    skip_generate = args.skip_generate or policy.get("cover_backend") == "offline_render"
-    if policy.get("cover_backend") == "offline_render":
-        generate_reason = "按账号策略 cover_backend=offline_render 跳过"
+    # 2. 正式事件只走准确标题封面，不虚构现场视觉。
+    if mode == "formal-report":
+        ok, html_reason, meta = try_html_cover(
+            article_path, title, kicker, theme, cover_path, args.timeout
+        )
+        if ok:
+            return {
+                "status": "completed", "backend": "html_render",
+                "cover": str(cover_path), "content_mode": mode, **meta,
+            }
+        generate_reason = "正式报道禁用 AI 插画；" + html_reason
     else:
+        generate_reason = "尚未尝试生成"
+
+    # 3. 普通观点稿按紧凑艺术指导生图。offline_render/--skip-generate 跳过。
+    policy = job.get("image_policy") or {}
+    backend = policy.get("cover_backend", "image_generate")
+    skip_generate = (
+        mode == "formal-report"
+        or args.skip_generate
+        or backend == "offline_render"
+    )
+    if backend == "offline_render" and mode != "formal-report":
+        generate_reason = "按账号策略 cover_backend=offline_render 跳过"
+    elif args.skip_generate and mode != "formal-report":
         generate_reason = "按 --skip-generate 跳过"
     if not skip_generate:
-        prompt_text = PROMPT_TEMPLATE.format(
-            title=title, topic=job.get("event_focus") or job.get("topic") or title
+        direction = visual_policy.editorial_art_direction(
+            title, job.get("event_focus") or job.get("topic") or title
+        )
+        visual_policy.write_art_direction(
+            job_dir / "prompts" / "cover-direction.json", direction
         )
         ok, generate_reason = try_generate(
-            prompt_text, cover_path, job_dir / "prompts", args.ratio, args.timeout
+            direction["prompt"], cover_path, job_dir / "prompts", "2.35:1", args.timeout
         )
         if ok:
             return {"status": "completed", "backend": "image_generate",
                     "provider": "xiaohu:agnes",
-                    "cover": str(cover_path), "title": title}
+                    "cover": str(cover_path), "title": title,
+                    "content_mode": mode,
+                    "art_direction": {
+                        key: value for key, value in direction.items() if key != "prompt"
+                    }}
 
-    # 3. 离线兜底 —— 封面是硬门禁，这一步不能省。
+    # 4. 生图或正式路由失败时，先尝试准确标题 HTML。
+    if mode != "formal-report":
+        ok, html_reason, meta = try_html_cover(
+            article_path, title, kicker, theme, cover_path, args.timeout
+        )
+        if ok:
+            return {
+                "status": "completed", "backend": "html_render",
+                "cover": str(cover_path), "content_mode": mode,
+                "generate_failed_because": generate_reason, **meta,
+            }
+        generate_reason = f"{generate_reason}；{html_reason}"
+
+    # 5. Pillow 离线兜底 —— 封面是硬门禁，这一步不能省。
     #    降级本身是正常结果，但一定要把「为什么降级」带出来：静默降级会让
     #    「今天生图挂了」和「这台机器根本没配 key」看起来一模一样。
     if try_fallback(title, kicker, seed, cover_path, args.ratio):
         return {"status": "completed", "backend": "offline_render",
                 "cover": str(cover_path), "title": title,
+                "content_mode": mode,
                 "note": "已用离线兜底渲染",
                 "generate_failed_because": generate_reason}
 
@@ -214,7 +301,7 @@ def build_parser():
         description="封面一条命令：用户图优先 → 生图 → 离线兜底，保证 finish 有封面可用",
     )
     parser.add_argument("--job", required=True, help="job.json 路径")
-    parser.add_argument("--ratio", default="16:9",
+    parser.add_argument("--ratio", default="2.35:1",
                         choices=["16:9", "2.35:1", "20:9", "3:2"])
     parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT,
                         help="生图超时秒数")

@@ -26,6 +26,16 @@ PALETTES = {
     "zen-whitespace": {"background": "#FAFCFA", "paper": "#FFFFFF", "ink": "#2B2B2B", "muted": "#737B76", "accent": "#4A5D52", "accent-dark": "#34423A", "soft": "#D6E4DC", "line": "rgba(74,93,82,0.24)", "radius": "8px"},
     "moyu-ticket": {"background": "#FFFEF8", "paper": "#FFFFFF", "ink": "#1A1A1A", "muted": "#555555", "accent": "#059669", "accent-dark": "#1A1A1A", "soft": "#A7F3D0", "line": "rgba(26,26,26,0.28)", "radius": "2px"},
     "olive-journal": {"background": "#EEEFE9", "paper": "#FDFDF8", "ink": "#23251D", "muted": "#65675E", "accent": "#ED7B2F", "accent-dark": "#1E1F23", "soft": "#D4C9B8", "line": "rgba(77,79,70,0.32)", "radius": "6px"},
+    # Current pipeline themes.  The cover templates own their main visual
+    # language; these variables keep the standalone renderer compatible with
+    # the body-theme registry and provide restrained fallback accents.
+    "plain-white": {"background": "#FAFAF9", "paper": "#FFFFFF", "ink": "#1A1A1A", "muted": "#6B625A", "accent": "#8C8378", "accent-dark": "#4F4943", "soft": "#E8E6E3", "line": "rgba(140,131,120,0.28)", "radius": "2px"},
+    "ink-rule": {"background": "#F7F7F5", "paper": "#FFFFFF", "ink": "#111111", "muted": "#5F5F5F", "accent": "#111111", "accent-dark": "#000000", "soft": "#D8D8D8", "line": "rgba(17,17,17,0.28)", "radius": "2px"},
+    "deep-pool": {"background": "#EAF2F3", "paper": "#FFFFFF", "ink": "#102A32", "muted": "#506A70", "accent": "#2E7D8C", "accent-dark": "#143F48", "soft": "#B9DDE2", "line": "rgba(46,125,140,0.28)", "radius": "10px"},
+    "color-block": {"background": "#EDF3F8", "paper": "#FFFFFF", "ink": "#10283B", "muted": "#536675", "accent": "#1B5E8C", "accent-dark": "#103B59", "soft": "#BFD7E7", "line": "rgba(27,94,140,0.28)", "radius": "6px"},
+    "news-wire": {"background": "#F3F5F6", "paper": "#FFFFFF", "ink": "#18242D", "muted": "#5B6872", "accent": "#273746", "accent-dark": "#17232D", "soft": "#D5DCE1", "line": "rgba(39,55,70,0.30)", "radius": "2px"},
+    "solemn-gray": {"background": "#F2EFEC", "paper": "#FCFBF9", "ink": "#272321", "muted": "#68605B", "accent": "#712F38", "accent-dark": "#451C22", "soft": "#D9C7C8", "line": "rgba(113,47,56,0.28)", "radius": "2px"},
+    "formal-brief": {"background": "#EDF2F6", "paper": "#FFFFFF", "ink": "#172B3A", "muted": "#586B79", "accent": "#234E70", "accent-dark": "#15364F", "soft": "#C9DBE8", "line": "rgba(35,78,112,0.28)", "radius": "3px"},
 }
 TEMPLATE_PALETTES = {
     "signal-editorial": {

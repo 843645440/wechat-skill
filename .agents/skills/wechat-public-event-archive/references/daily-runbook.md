@@ -51,7 +51,7 @@ python3 <PIPELINE>/scripts/pipeline_job.py init \
 - 按来源 ID 标注的时间线、主要事实和处理结果。
 - 必须写到：结论状态、治理影响、公开信息边界。
 - 不要写：猎奇细节、推测动机、被害人隐私、行动号召、防骗清单、关注转发段。
-- 配图：正文不配图；封面使用流水线离线方案。
+- 配图：不生成 AI 正文图；允许流水线从正文原句生成一张原生 HTML“公开事实脉络”；封面使用准确标题的 HTML 正式方案。
 
 写作开始前验证 dossier：
 
@@ -74,14 +74,15 @@ python3 <ARCHIVE>/scripts/archive_state.py validate-dossier \
 运行 `check`，最多进行两轮针对性修正；仍未达到 score 75 或仍有 high/blocking
 问题时停止，不为过关添加虚构数字或情节。
 
-按原流水线完成 humanize、正文图阶段和封面。正文图应自然 `skipped`。在 `prepare` 前限定主题：
+Humanize 后先限定正式主题，再建立原生事实脉络、完成正文图阶段和封面。正文 AI 图应自然 `skipped`：
 
 ```bash
 python3 <PIPELINE>/scripts/pipeline_job.py choose-theme --job <job.json> \
   --theme solemn-gray --theme news-wire --theme formal-brief
+python3 <PIPELINE>/scripts/build_inline_visuals.py --job <job.json>
 ```
 
-随后运行 `prepare` 和 `finish`。只允许 `draft`，不调用独立发布命令。
+随后按主流水线运行 `gen_inline_images.py`、`gen_cover_image.py`、`prepare` 和 `finish`。只允许 `draft`，不调用独立发布命令。
 
 ## 6. 状态收尾
 

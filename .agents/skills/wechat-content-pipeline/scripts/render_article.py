@@ -3,6 +3,7 @@
 
 import argparse
 import html
+import importlib.util
 import json
 import os
 import re
@@ -1043,7 +1044,7 @@ def render_end(theme):
 
 
 def render_document(title, sections, plan_or_theme, theme=None):
-    """Render body images by default; accept a legacy plan only for standalone callers."""
+    """Render the article, optionally inserting validated native HTML modules."""
     if theme is None:
         theme = plan_or_theme
         anchors = {}
@@ -1109,11 +1110,37 @@ def validate_plan_shape(plan, theme):
         raise RenderError("信息模块不能超过 3 个")
 
 
+def validate_plan_content(plan, source, theme):
+    """Require evidence/anchors to be literal article text before rendering."""
+    project_root = Path(__file__).resolve().parents[4]
+    validator_path = (
+        project_root / "optional-skills" / "wechat-inline-visuals"
+        / "scripts" / "validate_plan.py"
+    )
+    if not validator_path.is_file():
+        raise RenderError("原生信息模块校验器未安装，已降级为纯正文")
+    spec = importlib.util.spec_from_file_location(
+        "render_inline_plan_validator", validator_path
+    )
+    validator = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(validator)
+    raw = validator.coerce_plan(plan, fallback_theme=theme)
+    try:
+        validator.validate_plan(raw, source, set(THEMES))
+    except validator.PlanError as exc:
+        raise RenderError(str(exc)) from exc
+    return raw
+
+
 def parse_args():
-    parser = argparse.ArgumentParser(description="一次生成丰富主题正文与正文配图")
+    parser = argparse.ArgumentParser(description="一次生成丰富主题正文与原生信息模块")
     parser.add_argument("--article", required=True)
     parser.add_argument("--theme", choices=tuple(THEMES), required=True)
     parser.add_argument("--output", required=True)
+    parser.add_argument(
+        "--inline-plan",
+        help="可选 inline-visuals.json；无效模块自动降级为纯正文",
+    )
     return parser.parse_args()
 
 
@@ -1124,7 +1151,26 @@ def main():
     try:
         source = article_path.read_text(encoding="utf-8")
         title, sections = parse_article(source)
-        rendered = render_document(title, sections, THEMES[args.theme])
+        plan = {"version": 1, "theme": args.theme, "modules": []}
+        inline_degraded = False
+        inline_reason = ""
+        if args.inline_plan:
+            try:
+                plan = json.loads(Path(args.inline_plan).read_text(encoding="utf-8"))
+                plan = coerce_plan_shape(plan, args.theme)
+                validate_plan_shape(plan, args.theme)
+                plan = validate_plan_content(plan, source, args.theme)
+            except (OSError, json.JSONDecodeError, RenderError) as exc:
+                plan = {"version": 1, "theme": args.theme, "modules": []}
+                inline_degraded = True
+                inline_reason = str(exc)
+        try:
+            rendered = render_document(title, sections, plan, THEMES[args.theme])
+        except (RenderError, KeyError, TypeError, IndexError) as exc:
+            plan = {"version": 1, "theme": args.theme, "modules": []}
+            rendered = render_document(title, sections, plan, THEMES[args.theme])
+            inline_degraded = True
+            inline_reason = str(exc)
         atomic_text(output_path, rendered + "\n")
     except (OSError, RenderError) as exc:
         print(json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False), file=sys.stderr)
@@ -1134,6 +1180,10 @@ def main():
         "image_count": sum(
             1 for section in sections for block in section["blocks"] if block["kind"] == "image"
         ),
+        "module_count": len(plan["modules"]),
+        "module_kinds": [item.get("kind") for item in plan["modules"]],
+        "inline_degraded": inline_degraded,
+        "inline_degrade_reason": inline_reason,
         "duration_ms": round((time.monotonic() - started) * 1000),
     }
     print(json.dumps(result, ensure_ascii=False))

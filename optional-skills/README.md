@@ -1,6 +1,6 @@
 # 可选 Skill
 
-这里保存不属于默认公众号流水线的独立扩展。目录位于 `.agents/skills/` 之外，因此 Agent 默认只看到名称更少、职责更清楚的核心 Skill，也不会为这些扩展加载说明。
+这里保存不进入默认 Skill 索引的独立扩展。目录位于 `.agents/skills/` 之外，因此 Agent 默认只看到名称更少、职责更清楚的核心 Skill，也不会为这些扩展加载说明。
 
 | Skill | 何时安装 |
 |---|---|
@@ -8,7 +8,7 @@
 | `wechat-html-cover` | 明确需要 Chrome/Chromium 确定性生成 1410×600 中文封面 |
 | `baoyu-cover-image` | 明确需要脱离主流水线单独创作 AI 文章封面 |
 
-主流水线已有 `gen_inline_images.py` 与 `gen_cover_image.py`，自动日更不需要安装这里的任何内容。
+主流水线会直接调用 `wechat-inline-visuals` 的校验脚本和 `wechat-html-cover` 的确定性渲染脚本，并把 `baoyu-cover-image` 的设计维度固化在小型策略中；这只消耗脚本运行资源，不会把三份 `SKILL.md` 送进模型上下文。自动日更无需把任何目录复制回 `.agents/skills/`。
 
 ## 启用一个扩展
 

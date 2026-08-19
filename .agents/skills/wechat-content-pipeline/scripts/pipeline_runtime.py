@@ -666,14 +666,18 @@ def render_body(job_path, job, artifacts, roots):
     if not theme:
         raise RuntimeFailure("prepare 尚未固定排版主题")
     mark(job_path, "format", "running", "开始确定性排版", {"theme": theme})
-    try:
-        render_result = run_json([
+    command = [
             sys.executable,
             str(roots["pipeline"] / "scripts" / "render_article.py"),
             "--article", str(artifacts["article"]),
             "--theme", theme,
             "--output", str(artifacts["html"]),
-        ])
+    ]
+    inline_plan = artifacts.get("inline_visuals")
+    if inline_plan and inline_plan.is_file():
+        command.extend(("--inline-plan", str(inline_plan)))
+    try:
+        render_result = run_json(command)
     except RuntimeFailure as exc:
         mark(job_path, "format", "failed", str(exc)[:180], {"theme": theme})
         raise
@@ -682,6 +686,11 @@ def render_body(job_path, job, artifacts, roots):
         {
             "theme": theme,
             "renderer": "pipeline-runtime",
+            "module_count": render_result.get("module_count", 0),
+            "module_kinds": ",".join(render_result.get("module_kinds", [])) or "none",
+            "inline_degraded": str(
+                bool(render_result.get("inline_degraded", False))
+            ).lower(),
         },
         {"html": artifacts["html"]},
     )

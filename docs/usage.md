@@ -15,7 +15,7 @@
 | `humanizer-zh` | 写后去 AI 味；声口服从 brief，正式报道保持克制 |
 | `xiaohu-gen` | 流水线图片后端：正文机制图走 xiaoyi，生成式封面走 Agnes |
 
-`wechat-inline-visuals`、`wechat-html-cover`、`baoyu-cover-image` 位于 `optional-skills/`。它们不会被自动发现，也不会被主流水线读取；只有明确需要独立能力时才安装其中一个，见 [`optional-skills/README.md`](../optional-skills/README.md)。
+`wechat-inline-visuals`、`wechat-html-cover`、`baoyu-cover-image` 位于 `optional-skills/`。它们不会被自动发现；主流水线只调用前两者的确定性脚本，并把 Baoyu 的设计维度压成小型运行策略，不加载三份完整 Skill。只有明确需要独立能力时才安装其中一个，见 [`optional-skills/README.md`](../optional-skills/README.md)。
 
 ## 2. 安装和加载
 
@@ -47,7 +47,7 @@ export WECHAT_B_APP_ID='公众号 B 的 AppID'
 export WECHAT_B_APP_SECRET='公众号 B 的 AppSecret'
 ```
 
-仅安装并单独使用 `wechat-html-cover` 时需要浏览器（流水线封面走生图 API，不需要）。封面渲染器会自动查找 Chrome、Chromium 或 Playwright Chromium。只有自动发现失败时才设置：
+正式报道的流水线封面和单独使用 `wechat-html-cover` 时需要浏览器。没有浏览器会自动降级到 Pillow，不阻塞草稿。封面渲染器会自动查找 Chrome、Chromium 或 Playwright Chromium。只有自动发现失败时才设置：
 
 ```bash
 export WECHAT_COVER_BROWSER='/path/to/chrome-or-chromium'
@@ -92,9 +92,10 @@ python3 scripts/wechat_publish.py --config wechat-accounts.json send \
 2. `shape --auto` 按轮换计划自动锁定本篇结构（防同质，永不死锁；显式字段可覆盖）。
 3. `begin` 验证 brief、`event_focus` 和结构后输出 `writing_contract` → 写作忠实 brief 的 `article.md`（1500—4000 字），建议补 `digest.txt` 摘要 → `check` 自检到 ok。普通观点稿可用账号强情感声口；公共事件档案覆盖为克制正式。
 4. `humanizer-zh` 一轮去 AI 味，强度与声口服从 brief。
-5. `gen_inline_images.py --record-stage` 处理 0—3 张正文图（用户图优先；机制图走 `xiaohu:xiaoyi`；生图失败可无图继续）。
-6. `gen_cover_image.py --record-stage` 写入封面：用户图 → `xiaohu:agnes` → Pillow 离线兜底 → 账号默认封面素材。
-7. `prepare` 对 humanize 后最终稿执行 score ≥75、blocking=0 的硬门禁，再校验标题、字数、图数和路径并固定主题；`finish` 发布前重检一次，随后排版并创建指定账号草稿。
+5. `choose-theme` 先固定主题；`build_inline_visuals.py` 为公共事件生成至多一张只引用正文原句的 HTML 事实脉络，普通稿默认为空。
+6. `gen_inline_images.py --record-stage` 处理 0—3 张正文图（用户图优先；公共事件禁用 AI 图；其他题材显式开启后走 `xiaohu:xiaoyi`）。
+7. `gen_cover_image.py --record-stage` 自适应写入封面：正式报道走准确标题 HTML，普通观点稿走无文字 `xiaohu:agnes` 主视觉，再降级到 HTML、Pillow、账号默认素材。
+8. `prepare` 对 humanize 后最终稿执行 score ≥75、blocking=0 的硬门禁并校验标题、字数、图数和路径；`finish` 发布前重检一次，随后排版并创建指定账号草稿。
 
 云端 Agent 必须使用固定入口：`pipeline_job.py init/topic/history/shape/stage/show` 和 `pipeline_runtime.py begin/check/prepare/finish`。不得为某篇文章临时写排版脚本或视觉检测循环。`finish` 默认创建草稿；只有开发验证时才使用 `--dry-run`。
 
@@ -133,7 +134,7 @@ Agent 应落盘 `user-brief.md`，`--source provided`，不得自行换题。详
 
 封面模板可选 `signal-editorial`、`night-signal` 与 `redaction-poster`。三套模板拥有独立固定配色，不跟随正文主题，目前不按 A/B 账号写死；需要固定账号规则时再修改账号档案。
 
-只有脱离流水线单独创作封面时才调用 `$baoyu-cover-image`。完整流水线使用固定图片脚本，不读取这些可选 Skill。
+只有脱离流水线单独创作封面时才调用 `$baoyu-cover-image`。完整流水线不读取这些可选 Skill 的说明，但会复用 HTML 渲染/校验脚本与压缩后的封面设计维度。
 
 ## 7. 运行产物
 
@@ -144,7 +145,7 @@ work/a/current/
 work/b/current/
 ```
 
-产物包括 `article.md`、`imgs/`、`prompts/`、`cover/cover.png`、`article.html` 和 `draft-result.json`。每次 `init` 生成新的 `run_id`；同账号同日可多篇。微信草稿箱不受影响。
+产物包括 `article.md`、`inline-visuals.json`、`imgs/`、`prompts/`、`cover/cover.png`、`article.html` 和 `draft-result.json`。每次 `init` 生成新的 `run_id`；同账号同日可多篇。微信草稿箱不受影响。
 
 ## 8. 常见阻塞
 
@@ -152,7 +153,7 @@ work/b/current/
 - **最终稿体检未通过**：humanize 后仍须 score ≥75 且 blocking=0；按报错里的完整报告命令修稿，不补假数字刷分。
 - **字数不在 1500—4000**：`prepare` 拒绝；补真实内容或删冗余，禁止注水。
 - **正文图失败**：单图重试一次，仍失败则跳过；全部失败按无图文章继续，不阻塞草稿。
-- **没有生图 API / 没有浏览器**：不是阻塞。运行统一封面命令，它会自动离线兜底：
+- **没有生图 API / 没有浏览器**：不是阻塞。运行统一封面命令，它会自动降级到 Pillow：
 
   ```bash
   python3 .agents/skills/wechat-content-pipeline/scripts/gen_cover_image.py \

@@ -62,6 +62,13 @@ class Args:
 
 
 class CoverFallbackChainTests(unittest.TestCase):
+    def setUp(self):
+        self.original_html = cover.try_html_cover
+        cover.try_html_cover = lambda *a, **kw: (False, "测试环境无浏览器", {})
+
+    def tearDown(self):
+        cover.try_html_cover = self.original_html
+
     def test_user_provided_cover_is_never_overwritten(self):
         with tempfile.TemporaryDirectory() as tmp:
             job_path, job_dir = make_job(tmp)
@@ -181,6 +188,77 @@ class CoverFallbackChainTests(unittest.TestCase):
                 cover.try_generate, cover.try_fallback = orig_gen, orig_fb
 
             self.assertEqual(captured["title"], "测试选题")
+
+    def test_formal_report_never_calls_image_generator(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            job_path, job_dir = make_job(tmp, title="# 某案公开事实复盘\n\n正文。\n")
+            (job_dir / "source-dossier.json").write_text("{}", encoding="utf-8")
+            calls = []
+
+            def html_ok(article, title, kicker, theme, output, timeout):
+                calls.append(("html", theme, title))
+                Path(output).parent.mkdir(parents=True, exist_ok=True)
+                Path(output).write_bytes(b"html-cover")
+                return True, "", {"template": "signal-editorial", "theme": theme}
+
+            cover.try_html_cover = html_ok
+            original_generate = cover.try_generate
+            cover.try_generate = lambda *a, **kw: self.fail("正式报道不应调用 AI 生图")
+            try:
+                result = cover.run(Args(job_path))
+            finally:
+                cover.try_generate = original_generate
+
+            self.assertEqual("html_render", result["backend"])
+            self.assertEqual("formal-report", result["content_mode"])
+            self.assertIn(result["theme"], {"formal-brief", "news-wire", "solemn-gray"})
+            self.assertEqual("html", calls[0][0])
+
+    def test_editorial_generation_uses_art_direction_without_text(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            job_path, job_dir = make_job(
+                tmp, title="# AI 模型进入真实工作流\n\n正文。\n"
+            )
+            captured = {}
+
+            def generate(prompt, output, prompts_dir, ratio, timeout):
+                captured.update(prompt=prompt, ratio=ratio)
+                Path(output).parent.mkdir(parents=True, exist_ok=True)
+                Path(output).write_bytes(b"generated")
+                return True, ""
+
+            original_generate = cover.try_generate
+            cover.try_generate = generate
+            try:
+                result = cover.run(Args(job_path))
+            finally:
+                cover.try_generate = original_generate
+
+            self.assertEqual("image_generate", result["backend"])
+            self.assertEqual("2.35:1", captured["ratio"])
+            self.assertIn("absolutely no text", captured["prompt"])
+            self.assertNotIn("soft pastel color blocks", captured["prompt"])
+            self.assertTrue((job_dir / "prompts/cover-direction.json").is_file())
+
+    def test_editorial_generation_failure_can_use_exact_title_html(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            job_path, _ = make_job(tmp)
+
+            def html_ok(article, title, kicker, theme, output, timeout):
+                Path(output).parent.mkdir(parents=True, exist_ok=True)
+                Path(output).write_bytes(b"html-cover")
+                return True, "", {"template": "signal-editorial", "theme": theme}
+
+            cover.try_html_cover = html_ok
+            original_generate = cover.try_generate
+            cover.try_generate = lambda *a, **kw: (False, "no key")
+            try:
+                result = cover.run(Args(job_path))
+            finally:
+                cover.try_generate = original_generate
+
+            self.assertEqual("html_render", result["backend"])
+            self.assertIn("no key", result["generate_failed_because"])
 
 
 if __name__ == "__main__":

@@ -306,6 +306,17 @@ echo "world"
         with self.assertRaisesRegex(renderer.RenderError, "一级标题"):
             renderer.parse_article("只有正文。")
 
+    def test_inline_plan_content_must_be_grounded_in_article(self):
+        plan = plan_for("process", "formal-brief")
+        plan["modules"][0]["evidence"] = ["这句话并不存在于正文。"]
+        with self.assertRaisesRegex(renderer.RenderError, "证据不是文章原文"):
+            renderer.validate_plan_content(plan, ARTICLE, "formal-brief")
+
+    def test_inline_plan_content_validator_accepts_grounded_plan(self):
+        plan = plan_for("process", "formal-brief")
+        validated = renderer.validate_plan_content(plan, ARTICLE, "formal-brief")
+        self.assertEqual("process", validated["modules"][0]["kind"])
+
     def test_render_keeps_every_source_paragraph(self):
         _, sections = renderer.parse_article(ARTICLE)
         output = renderer.render_document(

@@ -359,6 +359,10 @@ class PipelineRuntimeTests(unittest.TestCase):
                 "completed", job["created_at"], details={"theme": "moyu-green"}
             )
             artifacts["html"].write_text("stale", encoding="utf-8")
+            artifacts["inline_visuals"].write_text(
+                json.dumps({"version": 1, "theme": "moyu-green", "modules": []}),
+                encoding="utf-8",
+            )
             pipeline_runtime.pipeline_job.save_job(job_path, job)
             with mock.patch.object(
                 pipeline_runtime, "run_json",
@@ -369,6 +373,9 @@ class PipelineRuntimeTests(unittest.TestCase):
                 )
             self.assertFalse(result["reused"])
             run.assert_called_once()
+            command = run.call_args.args[0]
+            self.assertIn("--inline-plan", command)
+            self.assertIn(str(artifacts["inline_visuals"]), command)
 
     def test_accept_cover_preserves_recorded_backend(self):
         with tempfile.TemporaryDirectory() as tmp:

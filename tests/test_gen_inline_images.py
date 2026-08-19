@@ -123,6 +123,29 @@ class UserProvidedTest(unittest.TestCase):
 
 
 class NoBackendTest(unittest.TestCase):
+    def test_formal_report_uses_native_html_even_when_force_generate_is_set(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            article_path, imgs_dir = make_article(tmp)
+            job_path = Path(tmp) / "job.json"
+            job_path.write_text(json.dumps({
+                "job_dir": str(Path(tmp)),
+                "topic": "某案判决复盘",
+                "image_policy": {"inline_enabled": True},
+            }), encoding="utf-8")
+            (Path(tmp) / "source-dossier.json").write_text("{}", encoding="utf-8")
+            called = []
+            original = gen.call_image_backend
+            gen.call_image_backend = lambda *a, **kw: called.append(1) or True
+            try:
+                result = gen.run(make_args(
+                    article_path, imgs_dir, job=str(job_path), force_generate=True
+                ))
+            finally:
+                gen.call_image_backend = original
+            self.assertEqual("skipped", result["status"])
+            self.assertEqual("native_html", result["backend"])
+            self.assertEqual([], called)
+
     def test_disabled_job_policy_skips_before_backend(self):
         with tempfile.TemporaryDirectory() as tmp:
             article_path, imgs_dir = make_article(tmp)

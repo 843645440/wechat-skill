@@ -28,6 +28,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _stage_record  # noqa: E402 - 同目录内部模块，必须在 sys.path 之后导入
+import visual_policy  # noqa: E402
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 # 正文图固定为机制/流程/对比型信息图，按 xiaohu-gen 的路由契约应走 xiaoyi。
@@ -283,12 +284,20 @@ def run(args):
         return {"status": "completed", "backend": "user_provided",
                 "inserted": 0, "positions": []}
 
-    if args.job and not getattr(args, "force_generate", False):
+    job = {}
+    if args.job:
         try:
             job = json.loads(Path(args.job).read_text(encoding="utf-8"))
-            inline_enabled = (job.get("image_policy") or {}).get("inline_enabled")
         except (OSError, ValueError):
-            inline_enabled = None
+            job = {}
+    if job and visual_policy.content_mode(job, Path(args.job).resolve().parent) == "formal-report":
+        return {
+            "status": "skipped", "backend": "native_html", "inserted": 0,
+            "reason": "正式报道禁用 AI 正文插画；改用证据绑定的原生 HTML 信息模块",
+        }
+
+    if args.job and not getattr(args, "force_generate", False):
+        inline_enabled = (job.get("image_policy") or {}).get("inline_enabled")
         if inline_enabled is False:
             return {
                 "status": "skipped", "backend": "none", "inserted": 0,

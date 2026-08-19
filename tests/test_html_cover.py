@@ -47,6 +47,13 @@ class HtmlCoverTests(unittest.TestCase):
         self.assertEqual(result["theme"], "olive-journal")
         self.assertEqual(result["template"], "redaction-poster")
 
+    def test_validate_spec_accepts_current_formal_themes(self):
+        for theme in ("solemn-gray", "news-wire", "formal-brief"):
+            with self.subTest(theme=theme):
+                spec = self.spec()
+                spec["theme"] = theme
+                self.assertEqual(theme, render_html_cover.validate_spec(spec)["theme"])
+
     def test_validate_spec_accepts_all_templates(self):
         for template in render_html_cover.TEMPLATES:
             spec = self.spec()

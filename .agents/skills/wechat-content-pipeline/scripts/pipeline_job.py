@@ -517,6 +517,7 @@ def load_job(path):
         job["stages"].setdefault(name, stage_record("pending"))
     for removed in ("sources", "preview"):
         job.get("artifacts", {}).pop(removed, None)
+    job.setdefault("artifacts", {}).setdefault("inline_visuals", "inline-visuals.json")
     if not job.get("run_id"):
         account = re.sub(r"[^a-zA-Z0-9_-]", "-", str(job.get("account", "unknown")))
         created = re.sub(r"[^a-zA-Z0-9_-]", "-", str(job.get("created_at", "unknown")))
@@ -673,6 +674,15 @@ def inline_images_command(job, job_path):
     ])
 
 
+def inline_visuals_command(job_path):
+    """Native HTML reading aid; public-event mode builds one evidence-bound timeline."""
+    return " ".join([
+        "python3",
+        shlex.quote(os.path.join(PIPELINE_ROOT, "scripts", "build_inline_visuals.py")),
+        "--job", shlex.quote(os.path.abspath(str(job_path))),
+    ])
+
+
 def cover_command(job, job_path):
     """封面的唯一入口：用户图优先 → 生图 → 离线兜底，并记账 cover 阶段。
 
@@ -732,7 +742,7 @@ def suggest_next_command(job, job_path):
         return runtime_script_command(job_path, "begin")
     if write_status == "completed":
         return runtime_script_command(job_path, "finish")
-    # write == running：按 humanize → illustrations → prepare 的固定顺序推进
+    # write == running：按 humanize → 主题 → 原生信息模块 → 配图 → 封面推进
     if stages["humanize"]["status"] == "pending":
         return (
             runtime_script_command(job_path, "check")
@@ -743,6 +753,14 @@ def suggest_next_command(job, job_path):
             job_path, "stage", "--name", "humanize", "--status", "completed",
             "--detail", "intensity=strong",
         )
+    if not stages["format"].get("details", {}).get("theme"):
+        return job_script_command(job_path, "choose-theme")
+    inline_plan = os.path.join(
+        os.path.abspath(job["job_dir"]),
+        job.get("artifacts", {}).get("inline_visuals", "inline-visuals.json"),
+    )
+    if not os.path.isfile(inline_plan):
+        return inline_visuals_command(job_path)
     if stages["illustrations"]["status"] == "pending":
         return (
             inline_images_command(job, job_path)
@@ -794,6 +812,9 @@ def build_job_contract(job, job_path, profile, rebuilt_existing):
             "article_path": _p(artifacts.get("article", "article.md")),
             "digest_path": _p("digest.txt"),
             "imgs_dir": _p(artifacts.get("illustrations", "imgs")),
+            "inline_visuals_path": _p(
+                artifacts.get("inline_visuals", "inline-visuals.json")
+            ),
             "cover_path": _p(artifacts.get("cover", "cover/cover.png")),
             "html_path": _p(artifacts.get("html", "article.html")),
             "draft_result_path": _p(artifacts.get("draft_result", "draft-result.json")),
@@ -841,8 +862,8 @@ def cmd_init(args):
             or not 1 <= illustrations["max_images"] <= 3
         ))
         or cover.get("enabled") is not True
-        # 封面两种合法策略：image_generate 先生图再兜底；offline_render 直接离线兜底。
-        or cover_backend not in ("image_generate", "offline_render")
+        # adaptive 按题材路由；另两项保留为账号级强制策略。
+        or cover_backend not in ("adaptive", "image_generate", "offline_render")
         or cover.get("aspect") not in ("16:9", "2.35:1", "20:9", "3:2")
         or profile.get("publishing", {}).get("target") != "draft"
         or not isinstance(profile.get("audience"), str)
@@ -853,7 +874,7 @@ def cmd_init(args):
         raise JobError(
             "账号内容档案不合法：随机主题与草稿箱终点为必需；正文配图开启时需 "
             "Baoyu/gen_inline_images + image_generate + 1-3 张，关闭时默认不配图；"
-            "封面 backend 仅支持 image_generate 或 offline_render"
+            "封面 backend 仅支持 adaptive、image_generate 或 offline_render"
         )
     job_dir = resolve_work_dir(project_root, args.work_dir, args.account)
     existed_before = os.path.isdir(job_dir)
@@ -908,6 +929,7 @@ def cmd_init(args):
         "artifacts": {
             "article": "article.md",
             "illustrations": "imgs",
+            "inline_visuals": "inline-visuals.json",
             "cover": "cover/cover.png",
             "html": "article.html",
             "draft_result": "draft-result.json",
@@ -1196,6 +1218,17 @@ def cmd_choose_theme(args):
             f"主题未注册：{', '.join(unknown)}；可用：{', '.join(registered)}"
         )
     themes = requested or registered
+    if not requested:
+        if SCRIPT_DIR not in sys.path:
+            sys.path.insert(0, SCRIPT_DIR)
+        from visual_policy import content_mode
+        if content_mode(job, job.get("job_dir")) == "formal-report":
+            formal = [
+                item for item in ("solemn-gray", "news-wire", "formal-brief")
+                if item in registered
+            ]
+            if formal:
+                themes = formal
     # 由 run_id 派生，而非 secrets.choice：跨文章仍然轮换（run_id 每次都不同），
     # 但同一个 run 重跑必然选到同一套主题，恢复场景下不会换皮。
     digest = hashlib.sha256(str(job.get("run_id", "")).encode("utf-8")).digest()
