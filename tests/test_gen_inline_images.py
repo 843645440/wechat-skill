@@ -106,21 +106,17 @@ class UserProvidedTest(unittest.TestCase):
             self.assertEqual(called, [])
             self.assertEqual(article_path.read_text(encoding="utf-8"), before)
 
-    def test_preexisting_images_in_imgs_dir_win_without_generation(self):
+    def test_unreferenced_imgs_do_not_count_as_user_provided(self):
         with tempfile.TemporaryDirectory() as tmp:
             article_path, imgs_dir = make_article(tmp)
             imgs_dir.mkdir()
-            (imgs_dir / "already-there.jpg").write_bytes(b"fake-jpeg")
-            before = article_path.read_text(encoding="utf-8")
-
+            (imgs_dir / ".DS_Store").write_bytes(b"junk")
+            (imgs_dir / "orphan.png").write_bytes(b"\x89PNG\r\n\x1a\nfake")
             called = []
             gen.call_image_backend = lambda *a, **kw: called.append(1) or True
             result = gen.run(make_args(article_path, imgs_dir))
-
-            self.assertEqual(result["status"], "completed")
-            self.assertEqual(result["backend"], "user_provided")
-            self.assertEqual(called, [])
-            self.assertEqual(article_path.read_text(encoding="utf-8"), before)
+            self.assertNotEqual(result.get("backend"), "user_provided")
+            self.assertTrue(called)
 
 
 class NoBackendTest(unittest.TestCase):
@@ -246,7 +242,7 @@ class SuccessfulGenerationTest(unittest.TestCase):
             article_path, imgs_dir = make_article(tmp)
 
             def fake_backend(prompt_path, output_path, timeout=None):
-                Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+                os.makedirs(Path(output_path).parent, exist_ok=True)
                 Path(output_path).write_bytes(b"\x89PNG\r\n\x1a\nfake-image-bytes")
                 return True
 

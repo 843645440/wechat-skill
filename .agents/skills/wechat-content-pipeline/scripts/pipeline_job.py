@@ -16,6 +16,17 @@ from urllib.parse import urlparse
 
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+def ensure_dir(path):
+    """Create a directory. Uses os.makedirs so exist_ok works under WorkBuddy's pathlib shim."""
+    path = os.fspath(path)
+    try:
+        os.makedirs(path, exist_ok=True)
+    except OSError:
+        if not os.path.isdir(path):
+            raise
+    return path
 # Skill 根目录（scripts/ 的上一级），与 pipeline_runtime.py 的 command_roots()["pipeline"] 一致；
 # 用绝对路径拼后续命令，弱模型不必自己算「向上三级」。
 PIPELINE_ROOT = os.path.dirname(SCRIPT_DIR)
@@ -78,6 +89,17 @@ TENSION_TYPES = (
     "other",
 )
 BODY_BANDS = ("short", "mid", "long")
+# 新闻/快评信息密、事件线短 → short；机制、产业、对比多 → long。
+# 这只影响 shape 的目标带宽，硬门禁仍是 2500—5000。
+NEWS_SHORT_STRUCTURES = {"quick_take", "event_read"}
+DENSE_LONG_STRUCTURES = {
+    "tech_explain",
+    "industry_game",
+    "company_compete",
+    "non_invest_finance",
+    "workflow_day",
+    "conflict",
+}
 SHAPE_KEYS = (
     "structure_id",
     "opening_type",
@@ -93,17 +115,22 @@ SHAPE_KEYS = (
 STAGE_OWNERS = {
     "discover": "agent：topic 命令写入选题",
     "write": "pipeline_runtime.py begin（标记 running）/ prepare（标记 completed）",
-    "humanize": "agent：stage --name humanize --status running → 改写 → --status completed",
+    "humanize": "agent：改写 article.md 一轮后 stage --name humanize --status completed",
     "illustrations": "gen_inline_images.py --record-stage 自动完成或降级",
     "format": "pipeline_runtime.py prepare 固定主题 / finish 确定性排版",
     "cover": "gen_cover_image.py --record-stage 自动走用户图/生图/离线兜底",
     "draft": "pipeline_runtime.py finish 自动创建公众号草稿",
 }
 
-# 写作正文字数硬门禁的展示副本；唯一数字来源是 pipeline_runtime.py 的 MIN/MAX_BODY_CHARS，
-# 这里只用于 job_contract 里给账号档案摘要提供参考区间，两边改动需同步。
-JOB_MIN_BODY_CHARS = 1500
-JOB_MAX_BODY_CHARS = 4000
+# 写作正文字数硬门禁。pipeline_runtime 从这里取值，改这一处即可。
+JOB_MIN_BODY_CHARS = 2500
+JOB_MAX_BODY_CHARS = 5000
+# body_band 闭区间；边界值（3300/4200）允许落在相邻两档。
+BODY_BAND_RANGES = {
+    "short": (2500, 3300),
+    "mid": (3300, 4200),
+    "long": (4200, 5000),
+}
 LANES = ("brief", "manuscript")
 
 # 防御性脱敏：账号内容档案本不应包含凭证（AppID/AppSecret/token 存在 wechat-accounts.json，
@@ -227,7 +254,15 @@ def record_topic_history(job, value, event_focus, selected_at=None, story=None):
         if key in story and story[key] not in (None, ""):
             new_entry[key] = story[key]
     topics = history["topics"]
-    if not any(
+    run_id = job.get("run_id")
+    replaced = False
+    if run_id:
+        for entry in reversed(topics):
+            if isinstance(entry, dict) and entry.get("run_id") == run_id:
+                entry.update(new_entry)
+                replaced = True
+                break
+    if not replaced and not any(
         isinstance(entry, dict)
         and entry.get("topic") == value
         and entry.get("selected_at") == selected_at
@@ -250,9 +285,10 @@ def compute_rotation_plan(entries):
             selected = None
         timed.append((selected or dt.datetime.min.replace(tzinfo=dt.timezone.utc), entry))
     timed.sort(key=lambda item: item[0], reverse=True)
-    last7 = [e for _, e in timed[:7]]
-    last5 = [e for _, e in timed[:5]]
-    last3 = [e for _, e in timed[:3]]
+    shaped = [(stamp, entry) for stamp, entry in timed if entry.get("structure_id")]
+    last7 = [e for _, e in shaped[:7]]
+    last5 = [e for _, e in shaped[:5]]
+    last3 = [e for _, e in shaped[:3]]
 
     structure_counts = {}
     for entry in last7:
@@ -318,7 +354,7 @@ def compute_rotation_plan(entries):
             "tension_type": "近5篇同一 tension_type 最多2次",
             "felt_sense": "近3篇主情绪尽量不雷同",
             "heading_count": "2–5 轮换，禁止连三篇相同个数",
-            "body_band": "short/mid/long 轮换",
+            "body_band": "short/mid/long 轮换；新闻/快评偏短，机制/产业偏长，都落在 2500—5000",
         },
         "blocked_structures": blocked_structures,
         "recent_structures": recent_structures,
@@ -390,6 +426,15 @@ def validate_shape_against_history(entries, shape, *, enforce=True):
 FELT_SENSE_POOL = ("烦", "发紧", "不安", "无力", "讽刺", "谨慎的兴奋", "振奋", "欣慰")
 
 
+def preferred_body_band(structure_id, *, formal_report=False):
+    """按结构信息密度给目标带宽，不按排版主题选。"""
+    if formal_report or structure_id in NEWS_SHORT_STRUCTURES:
+        return "short"
+    if structure_id in DENSE_LONG_STRUCTURES:
+        return "long"
+    return "mid"
+
+
 def auto_shape_from_history(entries, run_id, overrides=None):
     """按轮换计划确定性生成一个合法 shape（弱模型免选型）。
 
@@ -428,14 +473,29 @@ def auto_shape_from_history(entries, run_id, overrides=None):
     )
     bands = [b for b in BODY_BANDS if b != last_band] or list(BODY_BANDS)
 
+    structure_id = overrides.get("structure_id") or rng.choice(structures)
+    preferred_band = preferred_body_band(structure_id)
+    if preferred_band in bands:
+        body_band = preferred_band
+    else:
+        body_band = rng.choice(bands)
+
+    if body_band == "short":
+        want_heads = (3, 4)
+    elif body_band == "long":
+        want_heads = (5,)
+    else:
+        want_heads = (4, 5)
+    preferred_heads = [h for h in want_heads if h in heads] or heads
+
     shape = {
-        "structure_id": rng.choice(structures),
+        "structure_id": structure_id,
         "opening_type": rng.choice(openings),
         "ending_type": rng.choice(endings),
         "felt_sense": rng.choice(felts),
         "tension_type": rng.choice(tensions),
-        "heading_count": rng.choice(heads),
-        "body_band": rng.choice(bands),
+        "heading_count": rng.choice(preferred_heads),
+        "body_band": body_band,
     }
     shape.update(overrides)
     return shape
@@ -717,9 +777,9 @@ def runtime_script_command(job_path, subcommand, *extra):
 def suggest_next_command(job, job_path):
     """给出下一条该跑的完整命令：init 之后每个子命令的 stdout 都靠它形成不读文档的命令链。
 
-    只依据 job.json 已记录的状态推断，和 pipeline_runtime.py 里 begin → check → humanize
-    → illustrations → cover → prepare → finish 的固定顺序一致；agent 只需手动记账
-    humanize，图片脚本使用 --record-stage 自动记账，其余阶段由运行器设置。
+    只依据 job.json 已记录的状态推断，和 pipeline_runtime.py 里
+    begin → check → humanize → prepare → finish 的固定顺序一致。
+    主题、信息模块、无图跳过配图由 prepare 自动完成；封面由 finish 验收。
     """
     stages = job["stages"]
     draft = stages["draft"]
@@ -760,42 +820,20 @@ def suggest_next_command(job, job_path):
         return runtime_script_command(job_path, "begin")
     if write_status == "completed":
         return runtime_script_command(job_path, "finish")
-    # write == running：按 humanize → 主题 → 原生信息模块 → 配图 → 封面推进
+    # write == running：check → humanize 一轮 → prepare（主题/模块/无图跳过）→ finish
     if stages["humanize"]["status"] == "pending":
         return (
             runtime_script_command(job_path, "check")
-            + "  # 写完先自检；通过后 stage --name humanize --status running"
+            + "  # 写完先自检；通过后改写 article.md 一轮，再 "
+            + job_script_command(
+                job_path, "stage", "--name", "humanize", "--status", "completed",
+                "--detail", "intensity=strong",
+            )
         )
     if stages["humanize"]["status"] == "running":
         return job_script_command(
             job_path, "stage", "--name", "humanize", "--status", "completed",
             "--detail", "intensity=strong",
-        )
-    if not stages["format"].get("details", {}).get("theme"):
-        return job_script_command(job_path, "choose-theme")
-    inline_plan = os.path.join(
-        os.path.abspath(job["job_dir"]),
-        job.get("artifacts", {}).get("inline_visuals", "inline-visuals.json"),
-    )
-    if not os.path.isfile(inline_plan):
-        return inline_visuals_command(job_path)
-    if stages["illustrations"]["status"] == "pending":
-        return (
-            inline_images_command(job, job_path)
-            + "  # 退出码恒为 0，--record-stage 自动记账；跑完直接看 stdout 的 next_command"
-        )
-    if stages["illustrations"]["status"] == "running":
-        # 只有手工标过 running 才会走到这里；--record-stage 路径不经过这一支。
-        return job_script_command(
-            job_path, "stage", "--name", "illustrations", "--status", "completed",
-            "--detail", "backend=<user_provided|image_generate>",
-        )
-    # 封面是 finish 的硬门禁，必须排在 prepare 之前显式给出——漏掉这一步会一路
-    # 走到 finish 才因为「封面缺失」失败，那时再回头补是最贵的。
-    if stages["cover"]["status"] in ("pending", "running"):
-        return (
-            cover_command(job, job_path)
-            + "  # 退出码恒为 0，--record-stage 自动记账；用户图优先→生图→离线兜底"
         )
     return runtime_script_command(job_path, "prepare")
 
@@ -1255,14 +1293,15 @@ def cmd_choose_theme(args):
     if not requested:
         if SCRIPT_DIR not in sys.path:
             sys.path.insert(0, SCRIPT_DIR)
-        from visual_policy import content_mode
+        from visual_policy import FORMAL_THEMES, content_mode
         if content_mode(job, job.get("job_dir")) == "formal-report":
-            formal = [
-                item for item in ("solemn-gray", "news-wire", "formal-brief")
-                if item in registered
-            ]
+            formal = [item for item in FORMAL_THEMES if item in registered]
             if formal:
                 themes = formal
+        else:
+            editorial = [item for item in registered if item not in FORMAL_THEMES]
+            if editorial:
+                themes = editorial
     # 由 run_id 派生，而非 secrets.choice：跨文章仍然轮换（run_id 每次都不同），
     # 但同一个 run 重跑必然选到同一套主题，恢复场景下不会换皮。
     digest = hashlib.sha256(str(job.get("run_id", "")).encode("utf-8")).digest()
@@ -1278,12 +1317,7 @@ def cmd_stage(args):
     job = load_job(args.job)
     item = job["stages"][args.name]
     timestamp = now_iso()
-    if (
-        args.name in ("humanize", "illustrations")
-        and args.status == "completed"
-        and item.get("status") == "pending"
-    ):
-        raise JobError(f"阶段 {args.name} 完成前必须先标记 running")
+    # humanize / illustrations 允许 pending → completed/skipped，避免 Agent 漏掉 running。
     if args.status == "pending":
         item.update(
             {
@@ -1319,6 +1353,15 @@ def cmd_stage(args):
     item.setdefault("details", {}).update(
         parse_pairs(args.detail, "--detail")
     )
+    if args.name == "humanize" and args.status == "completed":
+        article = os.path.join(
+            job["job_dir"], job.get("artifacts", {}).get("article", "article.md")
+        )
+        try:
+            with open(article, "rb") as handle:
+                item["details"]["article_sha256"] = hashlib.sha256(handle.read()).hexdigest()
+        except OSError:
+            item["details"]["article_sha256"] = ""
     job["artifacts"].update(
         parse_pairs(args.artifact, "--artifact", True, args.job)
     )
@@ -1355,7 +1398,12 @@ def validate_illustration_stage(job):
 def cmd_gate(args):
     job = load_job(args.job)
     for stage_name in ("discover", "write", "humanize", "format"):
-        if job["stages"][stage_name]["status"] != "completed":
+        status = job["stages"][stage_name]["status"]
+        if stage_name == "humanize" and not humanize_enabled(job):
+            if status not in ("completed", "skipped"):
+                raise JobError("成稿模式未开启去 AI 味时，humanize 必须为 skipped")
+            continue
+        if status != "completed":
             raise JobError(f"阶段 {stage_name} 尚未完成")
     validate_illustration_stage(job)
     validate_ready_html(args.job, job)
@@ -1375,7 +1423,46 @@ def cmd_show(args):
     # 只加进这次打印的副本；cmd_show 从不写回 job.json，next_command 不会被持久化。
     output = dict(job)
     output["next_command"] = suggest_next_command(job, args.job)
+    output["summary"] = job_summary(job, args.job)
     print(json.dumps(output, ensure_ascii=False, indent=2))
+
+
+def job_summary(job, job_path):
+    job_dir = os.path.dirname(os.path.realpath(os.path.abspath(job_path)))
+    article = os.path.join(job_dir, job.get("artifacts", {}).get("article", "article.md"))
+    body_chars = None
+    h2 = None
+    image_refs = 0
+    try:
+        text = open(article, encoding="utf-8").read()
+        image_refs = len(re.findall(r"!\[[^\]]*\]\(([^)]+)\)", text))
+        h2 = sum(1 for line in text.splitlines() if re.match(r"^##\s+", line))
+    except OSError:
+        text = ""
+    shape = job.get("article_shape") or {}
+    cover = job["stages"].get("cover") or {}
+    mode = None
+    try:
+        from visual_policy import content_mode
+        mode = content_mode(job, job.get("job_dir") or job_dir)
+    except Exception:
+        mode = None
+    return {
+        "state": job.get("state"),
+        "lane": job_lane(job),
+        "theme": (job["stages"].get("format") or {}).get("details", {}).get("theme"),
+        "content_mode": mode,
+        "body_band": shape.get("body_band"),
+        "heading_count_shape": shape.get("heading_count"),
+        "heading_count_article": h2,
+        "image_refs": image_refs,
+        "illustrations": job["stages"]["illustrations"]["status"],
+        "cover_backend": (cover.get("details") or {}).get("backend"),
+        "draft": job["stages"]["draft"]["status"],
+        "stages": {
+            name: job["stages"][name]["status"] for name in STAGES
+        },
+    }
 
 
 def build_parser():

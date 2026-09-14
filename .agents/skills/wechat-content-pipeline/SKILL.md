@@ -30,6 +30,7 @@ python3 <PIPELINE>/scripts/pipeline_job.py init \
   [--lane brief|manuscript] [--humanize|--no-humanize]
 
 # 2. 把主题、思路、边界和素材偏好写入 <work_dir>/user-brief.md。
+#    思路小节标题也认 论点/时间线/大纲/要点/素材。init 会清空工作区，brief 必须后写。
 #    公共事件档案同时写 <work_dir>/source-dossier.json，并先由上游校验。
 
 # 3. 固化选题、读取近文轮换并锁定结构。
@@ -45,23 +46,15 @@ python3 <PIPELINE>/scripts/pipeline_runtime.py begin --job <job.json>
 # 5. 写作体检。按 problems 修到 status=ok；需要逐条修法时运行输出中的 report_command。
 python3 <PIPELINE>/scripts/pipeline_runtime.py check --job <job.json>
 
-# 6. Humanize：只改 article.md 一轮。
-python3 <PIPELINE>/scripts/pipeline_job.py stage \
-  --job <job.json> --name humanize --status running
+# 6. Humanize：只改 article.md 一轮，然后记一次 completed。
 python3 <PIPELINE>/scripts/pipeline_job.py stage \
   --job <job.json> --name humanize --status completed \
   --detail 'intensity=<strong|restrained>'
 
-# 7. 先固定主题，再生成证据绑定的原生信息模块；随后处理可选正文图与封面。
-python3 <PIPELINE>/scripts/pipeline_job.py choose-theme --job <job.json>
-python3 <PIPELINE>/scripts/build_inline_visuals.py --job <job.json>
-python3 <PIPELINE>/scripts/gen_inline_images.py \
-  --article <article.md> --imgs-dir <imgs_dir> --seed <run_id> \
-  --job <job.json> --record-stage
-python3 <PIPELINE>/scripts/gen_cover_image.py --job <job.json> --record-stage
-
-# 8. 终检并创建草稿。
+# 7. 终检：自动固定主题、生成信息模块；没有正文图则跳过生图。
 python3 <PIPELINE>/scripts/pipeline_runtime.py prepare --job <job.json>
+
+# 8. 排版并创建草稿。封面走用户图 → HTML/离线兜底，不在 prepare 里生图。
 python3 <PIPELINE>/scripts/pipeline_runtime.py finish \
   --job <job.json> --config <ROOT>/wechat-accounts.json
 ```
@@ -72,7 +65,7 @@ python3 <PIPELINE>/scripts/pipeline_runtime.py finish \
 
 ### Brief
 
-正常模式至少需要：主题、思路或时间线、必须写到/避免写到的内容。公共事件档案模式还必须有已通过上游校验的 dossier；当天没有合格材料就跳过，不以传闻、模型记忆或普通热点代替。格式见 [`references/user-brief.md`](references/user-brief.md)。
+正常模式至少需要：主题、思路（二级标题也认 论点/时间线/大纲/要点/素材）、必须写到/避免写到的内容。公共事件档案模式还必须有已通过上游校验的 dossier；当天没有合格材料就跳过，不以传闻、模型记忆或普通热点代替。格式见 [`references/user-brief.md`](references/user-brief.md)。
 
 `user-brief.md` 必须在 `init` 之后写，因为 `init` 会重建工作区。
 
@@ -81,7 +74,7 @@ python3 <PIPELINE>/scripts/pipeline_runtime.py finish \
 以 `begin` 返回的 `writing_contract` 为权威，并遵守：
 
 - 标题只有一个一级标题，≤32 字；主题明确，避免周报体和空洞悬念。
-- 方式 2 纯正文 1500—4000 字，以 `check` 结果为准；方式 1 不卡字数和写作分。
+- 方式 2 纯正文 2500—5000 字，且必须落在本篇 `body_band`（`short` 2500–3300 / `mid` 3300–4200 / `long` 4200–5000）；`##` 至少 `heading_count-1` 个。方式 1 不卡字数、band 和写作分。
 - 忠实 brief、dossier 和来源边界；不编造数字、引语、案例、亲历、采访或内幕。
 - 按锁定结构组织，但事实与 brief 的叙事顺序优先；每段可保留 1—3 个真实关键短语的 `**强调**`。
 - 不硬塞清单。历史案件和人物稿优先事实线、机制与治理影响；正文不写关注、转发或在看引导。
@@ -90,11 +83,12 @@ python3 <PIPELINE>/scripts/pipeline_runtime.py finish \
 ### 媒体与草稿
 
 - 素材方式先服从用户 brief；没有指示时服从账号档案。用户图优先且不覆盖。
-- 原生信息模块由 `build_inline_visuals.py` 生成或校验。公共事件最多一张“公开事实脉络”，全部文案必须来自最终正文；普通文章默认不加。无效计划自动降级为空。
-- AI 正文图只走 `gen_inline_images.py`：已有图优先；Agent 可先用自带生图写入 `imgs/`；否则仅在有 `AGNES_API_KEY` 时脚本生成。公共事件强制跳过 AI 图。失败可 `skipped`。
-- 封面只走 `gen_cover_image.py`：用户图优先；正式报道走准确标题 HTML；普通观点稿可脚本生图，再降级到 HTML、Pillow、账号默认素材。
-- 主题由 `choose-theme` 按 `run_id` 稳定选择；检测到公共事件档案或正式报道时自动限定为 `solemn-gray`、`news-wire`、`formal-brief`。
-- `finish` 默认创建草稿；只有开发验证才使用 `--dry-run`。不得直接调用独立发布命令绕过门禁。
+- `prepare` 自动固定主题并生成信息模块。公共事件最多一张“公开事实脉络”，文案必须来自正文原句；普通文章默认空模块。无效计划自动降级为空。
+- 正文已引用且文件存在 → illustrations 记 `user_provided`。没有引用则标 skipped，不调用生图。`imgs/` 杂散文件不算供图。
+- 封面由 `finish` 验收：用户图（`user_provided`）→ 正式报道 HTML 标题 → 可选生图 → Pillow / 账号默认素材。
+- 主题按 `run_id` 哈希稳定选择。编辑稿候选不含 `solemn-gray` / `news-wire` / `formal-brief`；正式报道才限定这三套。
+- `finish` 默认创建草稿；内容指纹未变才复用旧草稿。只有开发验证才使用 `--dry-run`。不得直接调用独立发布命令绕过门禁。
+- 看一眼现状：`pipeline_job.py show --job <job.json>`（含 `summary`）。
 
 ## 幂等与完成判定
 

@@ -20,22 +20,21 @@ WIDTH = 1410
 HEIGHT = 600
 TEMPLATES = ("signal-editorial", "night-signal", "redaction-poster")
 PALETTES = {
-    "moyu-green": {"background": "#F0FDF4", "paper": "#FFFFFF", "ink": "#111827", "muted": "#4B5563", "accent": "#059669", "accent-dark": "#065F46", "soft": "#A7F3D0", "line": "rgba(5,150,105,0.28)", "radius": "22px"},
-    "red-white": {"background": "#FFF7F7", "paper": "#FFFFFF", "ink": "#1C1917", "muted": "#57534E", "accent": "#DC2626", "accent-dark": "#991B1B", "soft": "#FECACA", "line": "rgba(220,38,38,0.25)", "radius": "18px"},
-    "graphite-minimal": {"background": "#FAFAFA", "paper": "#FFFFFF", "ink": "#27272A", "muted": "#71717A", "accent": "#52525B", "accent-dark": "#27272A", "soft": "#E4E4E7", "line": "rgba(82,82,91,0.26)", "radius": "12px"},
-    "zen-whitespace": {"background": "#FAFCFA", "paper": "#FFFFFF", "ink": "#2B2B2B", "muted": "#737B76", "accent": "#4A5D52", "accent-dark": "#34423A", "soft": "#D6E4DC", "line": "rgba(74,93,82,0.24)", "radius": "8px"},
-    "moyu-ticket": {"background": "#FFFEF8", "paper": "#FFFFFF", "ink": "#1A1A1A", "muted": "#555555", "accent": "#059669", "accent-dark": "#1A1A1A", "soft": "#A7F3D0", "line": "rgba(26,26,26,0.28)", "radius": "2px"},
-    "olive-journal": {"background": "#EEEFE9", "paper": "#FDFDF8", "ink": "#23251D", "muted": "#65675E", "accent": "#ED7B2F", "accent-dark": "#1E1F23", "soft": "#D4C9B8", "line": "rgba(77,79,70,0.32)", "radius": "6px"},
+    "moyu-green": {"background": "#F1F3F2", "paper": "#FFFFFF", "ink": "#1A1A1A", "muted": "#6E6E6E", "accent": "#31544A", "accent-dark": "#1F3830", "soft": "#D9DEDB", "line": "rgba(49,84,74,0.28)", "radius": "22px"},
+    "olive-journal": {"background": "#F2F1EB", "paper": "#FDFDF8", "ink": "#1F201B", "muted": "#6B6C64", "accent": "#6B573F", "accent-dark": "#1F201B", "soft": "#D4D2C9", "line": "rgba(63,64,58,0.32)", "radius": "6px"},
     # Current pipeline themes.  The cover templates own their main visual
     # language; these variables keep the standalone renderer compatible with
     # the body-theme registry and provide restrained fallback accents.
     "plain-white": {"background": "#FAFAF9", "paper": "#FFFFFF", "ink": "#1A1A1A", "muted": "#6B625A", "accent": "#8C8378", "accent-dark": "#4F4943", "soft": "#E8E6E3", "line": "rgba(140,131,120,0.28)", "radius": "2px"},
     "ink-rule": {"background": "#F7F7F5", "paper": "#FFFFFF", "ink": "#111111", "muted": "#5F5F5F", "accent": "#111111", "accent-dark": "#000000", "soft": "#D8D8D8", "line": "rgba(17,17,17,0.28)", "radius": "2px"},
-    "deep-pool": {"background": "#EAF2F3", "paper": "#FFFFFF", "ink": "#102A32", "muted": "#506A70", "accent": "#2E7D8C", "accent-dark": "#143F48", "soft": "#B9DDE2", "line": "rgba(46,125,140,0.28)", "radius": "10px"},
-    "color-block": {"background": "#EDF3F8", "paper": "#FFFFFF", "ink": "#10283B", "muted": "#536675", "accent": "#1B5E8C", "accent-dark": "#103B59", "soft": "#BFD7E7", "line": "rgba(27,94,140,0.28)", "radius": "6px"},
+    "deep-pool": {"background": "#F0F1F2", "paper": "#FFFFFF", "ink": "#16191D", "muted": "#6E7276", "accent": "#3E4C57", "accent-dark": "#232D35", "soft": "#DFE2E4", "line": "rgba(62,76,87,0.28)", "radius": "10px"},
+    "color-block": {"background": "#F4F4F4", "paper": "#FFFFFF", "ink": "#1A1A1A", "muted": "#6E6E6E", "accent": "#1F1F1F", "accent-dark": "#000000", "soft": "#DEDEDE", "line": "rgba(31,31,31,0.28)", "radius": "6px"},
     "news-wire": {"background": "#F3F5F6", "paper": "#FFFFFF", "ink": "#18242D", "muted": "#5B6872", "accent": "#273746", "accent-dark": "#17232D", "soft": "#D5DCE1", "line": "rgba(39,55,70,0.30)", "radius": "2px"},
     "solemn-gray": {"background": "#F2EFEC", "paper": "#FCFBF9", "ink": "#272321", "muted": "#68605B", "accent": "#712F38", "accent-dark": "#451C22", "soft": "#D9C7C8", "line": "rgba(113,47,56,0.28)", "radius": "2px"},
     "formal-brief": {"background": "#EDF2F6", "paper": "#FFFFFF", "ink": "#172B3A", "muted": "#586B79", "accent": "#234E70", "accent-dark": "#15364F", "soft": "#C9DBE8", "line": "rgba(35,78,112,0.28)", "radius": "3px"},
+    "aurora-violet": {"background": "#F2F1F4", "paper": "#FFFFFF", "ink": "#201D28", "muted": "#6E6C75", "accent": "#4A4458", "accent-dark": "#332F3D", "soft": "#DDDBE1", "line": "rgba(74,68,88,0.28)", "radius": "12px"},
+    "peach-soft": {"background": "#F8F2ED", "paper": "#FDFBF8", "ink": "#2B2724", "muted": "#6E6862", "accent": "#7A4A38", "accent-dark": "#573428", "soft": "#E0D6CF", "line": "rgba(122,74,56,0.26)", "radius": "16px"},
+    "noir-gold": {"background": "#F5F3EE", "paper": "#FFFFFF", "ink": "#141414", "muted": "#6E6E6E", "accent": "#7A6A45", "accent-dark": "#574A30", "soft": "#DFDAD0", "line": "rgba(122,106,69,0.30)", "radius": "2px"},
 }
 TEMPLATE_PALETTES = {
     "signal-editorial": {
@@ -282,7 +281,7 @@ def render_html(spec, css):
 
 
 def atomic_write(path, value):
-    path.parent.mkdir(parents=True, exist_ok=True)
+    os.makedirs(path.parent, exist_ok=True)
     temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
     try:
         temporary.write_text(value, encoding="utf-8")
@@ -427,7 +426,7 @@ def probe_dom(browser, html_uri, profile, timeout):
 
 
 def screenshot(browser, html_path, output, timeout):
-    output.parent.mkdir(parents=True, exist_ok=True)
+    os.makedirs(output.parent, exist_ok=True)
     # Chrome/Snap 不能从隐藏工作区稳定截图，但 HOME 在容器与受限运行器里也常不可写。
     # 默认用系统临时目录；需要固定位置时可用 WECHAT_COVER_TMPDIR 覆盖。
     configured_tmp = os.environ.get("WECHAT_COVER_TMPDIR", "").strip()
@@ -437,14 +436,14 @@ def screenshot(browser, html_path, output, timeout):
         else Path(tempfile.gettempdir())
     )
     staging_root = staging_base / "wechat-cover-tmp"
-    staging_root.mkdir(mode=0o700, exist_ok=True)
+    os.makedirs(staging_root, mode=0o700, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix="render-", dir=staging_root))
     staged_html = staging / "cover.html"
     temporary = staging / "cover.png"
     profile = staging / "profile"
     try:
         shutil.copy2(html_path, staged_html)
-        profile.mkdir(parents=True, exist_ok=True)
+        os.makedirs(profile, exist_ok=True)
         probe_dom(browser, staged_html.as_uri(), profile, timeout)
         command = [
             str(browser), "--headless=new", *browser_runtime_flags(),

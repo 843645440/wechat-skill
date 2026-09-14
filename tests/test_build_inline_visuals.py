@@ -111,7 +111,7 @@ class BuildInlineVisualsTests(unittest.TestCase):
             plan = json.loads((job_dir / "inline-visuals.json").read_text(encoding="utf-8"))
             self.assertEqual("editorial", result["content_mode"])
             self.assertEqual([], plan["modules"])
-            self.assertIn("gen_inline_images.py", result["next_command"])
+            self.assertIn("pipeline_runtime.py prepare", result["next_command"])
 
     def test_formal_plan_flows_through_renderer_cli(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -19,8 +19,8 @@ SPEC.loader.exec_module(pipeline_job)
 class PipelineJobTests(unittest.TestCase):
     def init_job(self, tmp, topic="AI进入真实工作流程", force_new=False, **overrides):
         root = Path(tmp)
-        (root / "config").mkdir(exist_ok=True)
-        (root / "references").mkdir(exist_ok=True)
+        os.makedirs(root / "config", exist_ok=True)
+        os.makedirs(root / "references", exist_ok=True)
         profile = {
             "audience": "职场读者",
             "input_mode": overrides.get("input_mode", "open"),
@@ -117,8 +117,8 @@ class PipelineJobTests(unittest.TestCase):
     def test_init_prints_job_contract_with_absolute_paths_next_command_and_no_credentials(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            (root / "config").mkdir(exist_ok=True)
-            (root / "references").mkdir(exist_ok=True)
+            os.makedirs(root / "config", exist_ok=True)
+            os.makedirs(root / "references", exist_ok=True)
             profile = {
                 "audience": "职场读者",
                 "input_mode": "open",
@@ -438,6 +438,17 @@ class PipelineJobTests(unittest.TestCase):
         self.assertTrue(2 <= shape["heading_count"] <= 5)
         self.assertEqual(shape, shape_again)
         self.assertEqual("tech_explain", overridden["structure_id"])
+        self.assertEqual("long", overridden["body_band"])
+
+    def test_preferred_body_band_follows_information_density(self):
+        self.assertEqual("short", pipeline_job.preferred_body_band("event_read"))
+        self.assertEqual("short", pipeline_job.preferred_body_band("quick_take"))
+        self.assertEqual(
+            "short",
+            pipeline_job.preferred_body_band("felt_essay", formal_report=True),
+        )
+        self.assertEqual("long", pipeline_job.preferred_body_band("tech_explain"))
+        self.assertEqual("mid", pipeline_job.preferred_body_band("felt_essay"))
 
     def test_shape_manual_missing_required_fields_gives_actionable_error(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -448,15 +459,18 @@ class PipelineJobTests(unittest.TestCase):
                     "shape", "--job", str(job_path),
                 ]))
 
-    def test_stage_requires_running_before_humanize_or_illustrations_complete(self):
+    def test_stage_allows_humanize_completed_from_pending(self):
         with tempfile.TemporaryDirectory() as tmp:
             job_path = self.init_job(tmp)
-            for name in ("humanize", "illustrations"):
-                args = pipeline_job.build_parser().parse_args([
-                    "stage", "--job", str(job_path), "--name", name, "--status", "completed",
-                ])
-                with self.subTest(name=name), self.assertRaisesRegex(pipeline_job.JobError, "先标记 running"):
-                    pipeline_job.cmd_stage(args)
+            args = pipeline_job.build_parser().parse_args([
+                "stage", "--job", str(job_path), "--name", "humanize",
+                "--status", "completed", "--detail", "intensity=strong",
+            ])
+            with contextlib.redirect_stdout(io.StringIO()):
+                pipeline_job.cmd_stage(args)
+            job = pipeline_job.load_job(job_path)
+        self.assertEqual("completed", job["stages"]["humanize"]["status"])
+        self.assertEqual("strong", job["stages"]["humanize"]["details"]["intensity"])
 
     def test_stage_records_duration_and_theme_is_stable(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -497,6 +511,22 @@ class PipelineJobTests(unittest.TestCase):
         self.assertTrue(picks <= set(themes), picks)
         # 24 个不同 run_id 不该全落在同一套主题上，否则「跨文章轮换」就失效了。
         self.assertGreater(len(picks), 1, picks)
+
+    def test_choose_theme_editorial_excludes_formal_themes(self):
+        formal = {"solemn-gray", "news-wire", "formal-brief"}
+        picks = set()
+        for _ in range(30):
+            with tempfile.TemporaryDirectory() as tmp:
+                job_path = self.init_job(tmp, topic="AI 巨头集体喊刹车")
+                args = pipeline_job.build_parser().parse_args(
+                    ["choose-theme", "--job", str(job_path)]
+                )
+                out = io.StringIO()
+                with contextlib.redirect_stdout(out):
+                    pipeline_job.cmd_choose_theme(args)
+                picks.add(out.getvalue().strip())
+        self.assertTrue(picks)
+        self.assertTrue(picks.isdisjoint(formal), picks)
 
     def test_choose_theme_limits_formal_report_to_sober_set(self):
         with tempfile.TemporaryDirectory() as tmp:

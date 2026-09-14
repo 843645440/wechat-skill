@@ -4,9 +4,9 @@ Markdown」这几步 agent 判断压成一次调用，防止弱模型在这一�
 
 降级链（语义固定，任何环境都一样）：
 
-1. **用户或 Agent 已给图优先**：`article.md` 里已经引用了真实存在的本地图片，或
-   `--imgs-dir` 里已经放了图片文件 → 直接 `backend=user_provided`，
-   `status=completed`，不生图、不覆盖、不删已有图。Agent 若有自带生图能力，
+1. **用户或 Agent 已给图优先**：`article.md` 里已经引用了真实存在的本地图片
+   → `backend=user_provided`，`status=completed`，不生图、不覆盖。
+   `imgs/` 里未引用的文件不算供图，只 warning。Agent 若有自带生图能力，
    应先把图写入 imgs/ 并插入 Markdown 引用，再跑本脚本。
 2. **没有现成图 → 仅在配置了 AGNES_API_KEY 时尝试脚本生图**：挑 0-3 个插入位，
    套固定 prompt，调用 Agnes 客户端。提示词不写供应商名。
@@ -88,8 +88,20 @@ def plain_text(value):
 # 1. 用户已给图检测
 # ---------------------------------------------------------------------------
 
+def listed_image_files(imgs_dir):
+    if not imgs_dir.is_dir():
+        return []
+    return [
+        entry
+        for entry in imgs_dir.iterdir()
+        if entry.is_file()
+        and entry.suffix.lower() in IMAGE_EXTS
+        and not entry.name.startswith(".")
+    ]
+
+
 def find_user_provided(article_text, article_dir, imgs_dir):
-    """返回 True 当用户已经提供了图（正文引用 或 imgs-dir 里已有文件）。"""
+    """正文里已引用且文件存在的本地图，才算用户供图。杂散文件不算。"""
     for match in INLINE_IMAGE_REF_RE.finditer(article_text):
         src = match.group(1)
         if src.startswith(("http://", "https://", "data:")):
@@ -97,11 +109,23 @@ def find_user_provided(article_text, article_dir, imgs_dir):
         candidate = (article_dir / src).resolve()
         if candidate.is_file():
             return True
-    if imgs_dir.is_dir():
-        for entry in imgs_dir.iterdir():
-            if entry.is_file() and entry.suffix.lower() in IMAGE_EXTS:
-                return True
     return False
+
+
+def unreferenced_images(article_text, article_dir, imgs_dir):
+    referenced = set()
+    for match in INLINE_IMAGE_REF_RE.finditer(article_text):
+        src = match.group(1)
+        if src.startswith(("http://", "https://", "data:")):
+            continue
+        candidate = (article_dir / src).resolve()
+        if candidate.is_file():
+            referenced.add(candidate)
+    unused = []
+    for entry in listed_image_files(imgs_dir):
+        if entry.resolve() not in referenced:
+            unused.append(entry.name)
+    return unused
 
 
 # ---------------------------------------------------------------------------
@@ -250,6 +274,18 @@ def call_image_backend(prompt_path, output_path, timeout=DEFAULT_TIMEOUT):
     return output_path.is_file() and output_path.stat().st_size > 0
 
 
+def strip_generated_watermark(path):
+    crop = SCRIPT_DIR.parents[3] / "scripts" / "crop_ai_watermark.py"
+    if not crop.is_file():
+        return
+    subprocess.run(
+        [sys.executable, str(crop), str(path), "-r", "0.07", "-o", str(path)],
+        check=False,
+        capture_output=True,
+        timeout=30,
+    )
+
+
 def generate_one(prompt_path, output_path, timeout):
     """单张失败只重试一次；仍失败则跳过该图。"""
     for _ in range(2):
@@ -286,9 +322,14 @@ def run(args):
 
     article_text = article_path.read_text(encoding="utf-8")
 
+    unused = unreferenced_images(article_text, article_dir, imgs_dir)
     if find_user_provided(article_text, article_dir, imgs_dir):
-        return {"status": "completed", "backend": "user_provided",
-                "inserted": 0, "positions": []}
+        result = {"status": "completed", "backend": "user_provided",
+                  "inserted": 0, "positions": []}
+        if unused:
+            result["unused_images"] = unused
+            result["warning"] = "imgs/ 有未引用图片：" + "、".join(unused)
+        return result
 
     job = {}
     if args.job:
@@ -317,9 +358,9 @@ def run(args):
 
     seed = resolve_seed(args)
     try:
-        imgs_dir.mkdir(parents=True, exist_ok=True)
+        os.makedirs(imgs_dir, exist_ok=True)
         prompts_dir = safe_join(imgs_dir, "prompts")
-        prompts_dir.mkdir(parents=True, exist_ok=True)
+        os.makedirs(prompts_dir, exist_ok=True)
     except PathEscapeError as exc:
         return {"status": "skipped", "backend": "none", "inserted": 0,
                 "reason": str(exc)}
@@ -340,6 +381,7 @@ def run(args):
         prompt_path.write_text(prompt_text, encoding="utf-8")
         if not generate_one(prompt_path, output_path, args.timeout):
             continue
+        strip_generated_watermark(output_path)
         rel_path = os.path.relpath(output_path, article_dir)
         alt = sec["heading"].replace("[", "").replace("]", "")[:60] or "配图"
         sec["rel_path"] = rel_path

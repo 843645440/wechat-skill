@@ -36,8 +36,6 @@ ARTICLE = """# AI 进入客服之后，工作为什么没有变轻
 
 THEMES = {
     "moyu-green",
-    "red-white",
-    "moyu-ticket",
     "olive-journal",
 }
 
@@ -263,7 +261,7 @@ class InlineVisualPlanTests(unittest.TestCase):
     def test_rejects_metric_value_not_present_in_article(self):
         plan = {
             "version": 1,
-            "theme": "red-white",
+            "theme": "moyu-green",
             "modules": [
                 {
                     "id": "inline-01",

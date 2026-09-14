@@ -4,11 +4,11 @@
 
 **把成稿排版，或按主题写作，再配封面、写入多账号草稿箱**
 
-11 套精选主题 + 主题生成器 · 代码块/图片/GIF · 自动章节编号与关键词标记 · 双关卡质量校验
+12 套精选主题 + 主题生成器 · 代码块/图片/GIF · 自动章节编号与关键词标记 · 双关卡质量校验
 
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-Skill-blue.svg)](https://claude.ai/code)
-[![Themes](https://img.shields.io/badge/themes-11%20+%20generator-059669)](references/theme-index.md)
+[![Themes](https://img.shields.io/badge/themes-12%20+%20generator-31544A)](references/theme-index.md)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 [![Agents](https://img.shields.io/badge/Claude%20Code%20·%20Codex%20·%20Cursor-supported-8b5cf6.svg)](#-快速开始)
 
@@ -22,17 +22,17 @@
 
 - 把已有 Markdown / Word / PDF / 纯文本排成**样式全内联、粘贴到公众号编辑器不掉格式**的 HTML
 - 按你给的主题和思路写成文章，去 AI 味、配封面，写入指定账号**草稿箱**
-- 用 11 套主题排版，或按一句话 / 一张参考图生成新主题
+- 用 12 套主题排版，或按一句话 / 一张参考图生成新主题
 - 多账号草稿；定时任务由你的 Agent 触发（仓库里不内置 cron）
 
 流水线**只创建草稿，不公开发布**，也不等于向粉丝群发。人工审核发生在微信公众号草稿箱。默认不自动扫热点选题。
 
 ## ✨ 这个 Skill 能做什么
 
-- **11 套精选主题**：覆盖卡片型、低噪音长文、新闻报道和正式简报；其中新闻线、沉静灰、正式简报专门处理事实进展、伤亡事件与机构报告。
-- **主题生成器**：不满足现成主题？用一句话描述或一张参考图，生成一套全新组件库并保存本地复用（见 `references/theme-generator.md`）。
+- **12 套精选主题**：覆盖卡片型、低噪音长文、新闻报道、文告与垂类氛围；全部为稳重灰调（黑白灰 + 深色点缀）。专电、素笺、文告只给伤亡/案件/正式通报用。
+- **加新主题**：在渲染器 `THEMES` 里加一套并登记 `references/theme-index.md`，不要再手写 Markdown 组件库（见 [CONTRIBUTING.md](CONTRIBUTING.md)）。
 - **内容全兼容**：代码块（深/浅色，等宽不折行）、图片、GIF（带动图角标）、行内代码、引用、列表、产品徽章。
-- **智能排版**：章节自动编号（末章 ∞ / ///）、每段主动标 1–3 个关键词下划线、从正文提炼引言卡与目录、作者签名去重合并。
+- **智能排版**：章节自动编号（末章 ∞ / ///）、开头引言卡、作者签名去重。下划线来自正文里的 `**关键短语**`，不自动抽目录。
 - **两种内容入口**：已有成稿只排版推草稿；或给主题让 AI 写完再排。后半段同一条工作流。
 - **可选视觉**：正文配图可关；封面走用户图 → 正式标题 HTML → 可选生图 → 离线兜底。原生 HTML 信息模块按题材自动。
 - **中文全角标点**：正文自动规范全角，代码块内原样保留。
@@ -47,16 +47,10 @@
 
 <table>
 <tr>
-<td colspan="3" align="center"><img src="https://origin.picgo.net/2026/07/07/-40619312d679bc34.jpg" width="100%"><br><sub><b>摸鱼绿（默认）</b></sub></td>
+<td colspan="3" align="center"><img src="https://origin.picgo.net/2026/07/07/-40619312d679bc34.jpg" width="100%"><br><sub><b>松烟（默认）</b></sub></td>
 </tr>
 <tr>
-<td colspan="3" align="center"><img src="https://origin.picgo.net/2026/07/07/-084eb2b9d6f8d5e2.jpg" width="100%"><br><sub><b>红白色系</b></sub></td>
-</tr>
-<tr>
-<td colspan="3" align="center"><img src="https://origin.picgo.net/2026/07/07/-747b33f502544254.jpg" width="100%"><br><sub><b>橄榄手记</b></sub></td>
-</tr>
-<tr>
-<td width="33%" align="center"><img src="https://github.com/isjiamu/gzh-design-skill/releases/download/assets-v1/lf-moyu-ticket.png?v=1" width="250"><br><sub><b>摸鱼票据风</b></sub></td>
+<td colspan="3" align="center"><img src="https://origin.picgo.net/2026/07/07/-747b33f502544254.jpg" width="100%"><br><sub><b>手泽</b></sub></td>
 </tr>
 </table>
 
@@ -70,36 +64,39 @@
 
 ## 🗂 常见排版场景
 
-| 你的内容 | 推荐怎么排 |
-|---|---|
-| 观点 / 深度长文 | 红白 或 橄榄手记；关键词下划线 + 金句引用 + 居中金句 |
-| 产品测评 / 工具盘点 | 摸鱼绿 或 摸鱼票据；step/tool-label + 卡片，按配方表走 |
-| 教程 / 操作指南 | 摸鱼绿；step-label + 代码块 + 编号列表 |
-| 数据复盘 / 年度报告 | 摸鱼绿 或 橄榄手记；数据卡 + 表格 |
-| 内刊 / 深度评测 / 案例复盘 | 橄榄手记；编者按 + 分节 + 暗色摘要框 |
-| 新闻进展 / 事实核查 | 新闻线；报道提要 + REPORT 分节 + 信息说明 |
-| 伤亡事件 / 事故复盘 | 沉静灰；宋体长读 + 事件脉络 + 克制编辑尾注 |
-| 政策 / 机构 / 专题报告 | 正式简报；文档页眉 + 摘要框 + SECTION 分节 |
-| Word / PDF 稿转公众号 | 先自动格式归一化 → 再按题材选主题 |
-| 想要现成之外的风格 | 主题生成器：一句话或参考图现造一套 |
+单独排版时用户指定主题，或默认松烟；**不要按文章风格自行匹配**。流水线编辑稿在 9 套非通报主题里按 `run_id` 哈希轮换；伤亡/案件才进专电 / 素笺 / 文告。
 
-## 🎨 11 套精选主题
+| 你的内容 | 单独排版时可指定 |
+|---|---|
+| 观点 / 深度长文 | 玄章 或 手泽；关键词下划线 + 引用 |
+| 产品测评 / 工具盘点 | 松烟；卡片密度高 |
+| 教程 / 操作指南 | 松烟；代码块 + 编号列表 |
+| 数据复盘 / 年度报告 | 松烟 或 手泽；表格 |
+| 内刊 / 深度评测 / 案例复盘 | 手泽 |
+| 新闻进展 / 事实核查 | 专电（正式池） |
+| 伤亡事件 / 事故复盘 | 素笺（正式池） |
+| 政策 / 机构 / 专题报告 | 文告（正式池） |
+| Word / PDF 稿转公众号 | 先格式归一化 → 用户指定或默认松烟 |
+| 想要现成之外的风格 | 按 CONTRIBUTING 在渲染器里加主题 |
+
+## 🎨 12 套精选主题
 
 覆盖绝大多数公众号题材，每套都打磨到「拿来即用」：
 
 | 主题 | 适合 |
 |---|---|
-| **摸鱼绿**（默认） | 教程、测评、清单、工具盘点（卡片丰富、信息密度高） |
-| **红白色系** | 深度分析、观点、力量感话题（经典编辑风） |
-| **摸鱼票据风** | 工具对比、创意评测（票据视觉隐喻） |
-| **橄榄手记** | 内刊手记、深度评测、案例复盘（编辑部内刊质感） |
-| **素白** | 随笔、长文与低视觉噪音阅读 |
-| **墨线** | 严肃议题、书评、历史复盘 |
-| **深潭** | 深度调查、行业观察 |
-| **色块** | 观点明确、需要强章节识别的分析 |
-| **新闻线** | 新闻解读、事件进展、事实核查 |
-| **沉静灰** | 伤亡事件、事故复盘、纪念与公共安全议题 |
-| **正式简报** | 政策说明、机构动态、专题报告、阶段总结 |
+| **松烟**（默认） | 教程、测评、清单、工具盘点（卡片丰富、信息密度高） |
+| **手泽** | 内刊手记、深度评测、案例复盘（编辑部内刊质感） |
+| **留白** | 随笔、长文与低视觉噪音阅读 |
+| **墨栏** | 严肃议题、书评、历史复盘 |
+| **静渊** | 深度调查、行业观察 |
+| **玄章** | 观点明确、需要强章节识别的分析 |
+| **专电** | 新闻解读、事件进展、事实核查 |
+| **素笺** | 伤亡事件、事故复盘、纪念与公共安全议题 |
+| **文告** | 政策说明、机构动态、专题报告、阶段总结 |
+| **霓灰** | AIGC、前沿科技、产品发布（深灰紫刊头 + 灰调渐变线） |
+| **陶然** | 生活分享、书影音、探店食记、情感随笔（胶囊圆角母题） |
+| **金石** | 商业观察、财经解读、公司研究、职场（黑色刊头 + 灰金细节） |
 
 > 主色、下划线色值等**完整速查表见文末 [附录](#-完整主题速查表)**；不够用就让 AI [生成新主题](#-faq)。
 
@@ -136,7 +133,7 @@ npx skills add https://github.com/843645440/wechat-skill
 
 这种方式用于只需要根排版 Skill 的运行环境。装好后对 Agent 说：
 
-> 用摸鱼绿把这篇文章排成公众号 HTML：`article.md`
+> 用松烟把这篇文章排成公众号 HTML：`article.md`
 
 ## 📖 两种内容用法
 
@@ -147,7 +144,7 @@ npx skills add https://github.com/843645440/wechat-skill
 | 你提供 | 文章（Markdown / Word / PDF / 正文） | 主题 + 思路，或打开一个系列选题 |
 | Skill 做什么 | 归一化、可选去 AI 味、选主题排版、封面、草稿 | 写作、强制去 AI 味、体检、排版、封面、草稿 |
 | 去 AI 味 | 可关，默认关 | 强制开 |
-| 字数 / 写作分 | 不拦 | 拦（1500–4000 字，score ≥75） |
+| 字数 / 写作分 | 不拦 | 拦（2500–5000 字，score ≥75） |
 | 定时任务 | 不适合 | 可以，用你自己 Agent 的定时器 |
 
 只丢了一个标题、没有成稿，不要走用法 1。
@@ -156,7 +153,7 @@ npx skills add https://github.com/843645440/wechat-skill
 
 > 用 `$wechat-content-pipeline`，把这篇稿排版后写入 A 账号草稿箱。去 AI 味关掉。
 >
-> 或只排版、不进草稿箱：用摸鱼绿把 `article.md` 排成公众号 HTML。
+> 或只排版、不进草稿箱：用松烟把 `article.md` 排成公众号 HTML。
 
 **用法 2 示例**（给主题，AI 写到草稿箱）
 
@@ -170,18 +167,17 @@ npx skills add https://github.com/843645440/wechat-skill
 
 ### 用法 2 后半段在做什么
 
-1. **接收 brief** — 主题 + 思路是硬门禁；读近 7 天历史做结构轮换（`shape`），防同质。
+1. **接收 brief** — 主题 + 思路是硬门禁（二级标题也认「论点 / 时间线 / 大纲 / 要点 / 素材」）；读近 7 天历史做结构轮换（`shape`），防同质。
 2. **写作** — `begin` 验证 brief 与结构后写 `article.md`。普通观点稿按账号声口；公共事件档案覆盖为克制正式。
-3. **去 AI 味** — 强制一轮；公共事件用克制尺度。
-4. **正文配图** — 已有图优先；Agent 可先用自带生图；否则仅在有 `AGNES_API_KEY` 时脚本生成。失败可不配图。公共事件禁用 AI 正文图。
+3. **去 AI 味** — 强制一轮；公共事件用克制尺度。记一次 `humanize completed` 即可。
+4. **prepare** — 自动固定主题（编辑稿不含通报皮）、生成信息模块；正文已引用的本地图记为用户供图，没有引用则跳过生图。
 5. **封面** — 用户图 → 正式报道准确标题 HTML → 可选生图 → HTML / Pillow → 账号默认素材。
-6. **随机主题排版** — 固定一套主题，脚本一次生成正文 HTML。
-7. **终检与草稿** — 用法 2 要求 score ≥75、blocking=0；用法 1 不卡字数和分数。写入草稿箱后结束，不公开发布。同一 `run_id` 成功后不重复发送。
+6. **终检与草稿** — 用法 2 要求 score ≥75、blocking=0，且字数落在本篇 `body_band`；用法 1 不卡字数和分数。写入草稿箱后结束，不公开发布。同一 `run_id` 且内容指纹未变时不重复发送。
 
 ## 🖼 配图开关
 
-- **正文图**：默认关。用户带来的图优先，不覆盖。开了之后：先用 Agent 自带生图；没有则看 `AGNES_API_KEY`；都没有就不配图。
-- **封面**：不能关成「没有封面」。微信草稿必须有封面。
+- **正文图**：默认关。用户带来的、且已写入正文引用的图优先，不覆盖。开了之后：先用 Agent 自带生图；没有则看 `AGNES_API_KEY`；都没有就不配图。`imgs/` 里未引用的文件不算供图。
+- **封面**：不能关成「没有封面」。微信草稿必须有封面。本地封面记为 `user_provided`。
 - HTML 信息模块按题材自动，不算正文图。公共事件强制：无 AI 正文图，封面走准确标题。
 
 提示词和设计说明里不要写供应商名。需要脚本生图时，免费 Key 在 <https://platform.agnes-ai.cn>，环境变量是 `AGNES_API_KEY`。
@@ -192,7 +188,7 @@ npx skills add https://github.com/843645440/wechat-skill
 
 ## 🔁 可验证循环
 
-改组件库或工作流后，用双关卡闭环防回归：
+改主题、渲染器或工作流后，用双关卡闭环防回归：
 
 ```bash
 python3 scripts/component_lint.py .            # 源头关：扫组件库反模式
@@ -298,30 +294,26 @@ wechat-skill/
 ├── optional-skills/            # 按需安装：独立封面与原生信息模块扩展
 ├── config/                     # A/B 账号的非敏感内容档案
 ├── SKILL.md                    # 排版工作流主文档（Agent 入口）
-├── references/                 # 主题索引、生成器、多账号发布、评测用例
+├── references/                 # 主题索引、多账号发布、评测用例
 ├── docs/usage.md               # 安装、配置与云端 Agent 使用指南
 ├── docs/setup.md               # 首次配置（给 Agent 带着问）
 ├── scripts/
 │   ├── setup_status.py         # 首次配置检查
 │   ├── validate_gzh_html.py    # 产物合规校验
 │   ├── component_lint.py       # 组件库源头检查
+│   ├── crop_ai_watermark.py    # 脚本生图后裁底部水印
 │   └── wechat_publish.py       # 多账号草稿与发布 CLI
+├── tests/                      # 离线 unittest，不连真实公众号
 ├── work/<account>/current/     # 账号级临时交接区（运行时生成，不提交）
 ├── assets/                     # 示例文章、账号模板、主题预览
 └── docs/gallery/               # 主题浏览器预览
 ```
 
-## 🧠 不止 11 套，自己造主题
+## 🧠 不止 12 套，自己加主题
 
-内置主题不够用时，让 AI 现造一套。流程见 [`references/theme-generator.md`](references/theme-generator.md)：
+内置主题不够用时，按 [CONTRIBUTING.md](CONTRIBUTING.md) 在 `render_article.py` 的 `THEMES` 里加一项，登记 `references/theme-index.md`，并补 `docs/gallery/<id>.html`。不要再新建 Markdown 组件库。
 
-> 按「黑白杂志、克莱因蓝点睛、衬线字体」的气质，给公众号排版生成一套新主题
->
-> 按这张参考图（附图）做一套公众号排版组件库
-
-仓库里 `assets/theme-previews/theme-mono-blue-editorial.html` 就是这样生成的「墨蓝刊读风」样例。
-
-每套主题都建立在固定角色的色板上：主色只在锚点出现（全文 ≤5 处），大面积白底 + 灰阶，一段内高亮 ≤2 种。只给一个主色或一句气质，生成器会推导浅底、边框、高亮、灰阶和下划线色。
+每套主题都建立在固定角色的色板上：主色只在锚点出现，大面积白底 + 灰阶。流水线编辑稿不会按文章风格挑选主题。
 
 ## ❓ FAQ
 
@@ -329,7 +321,7 @@ wechat-skill/
 A：不会。所有样式内联、文字 `<span leaf="">` 包裹，这正是校验脚本强制的重点。
 
 **Q：能自己加主题吗？**  
-A：两种方式。① 让 AI 按风格或参考图生成；② 照 `CONTRIBUTING.md` 手写贡献并跑通校验。
+A：照 `CONTRIBUTING.md` 在渲染器里加一套，登记索引、补 gallery，并跑通校验。
 
 **Q：只能在 Claude Code 用吗？**  
 A：不限。任何能读取 Skill 目录的 Agent（Codex / Cursor 等）都能用。
@@ -350,19 +342,20 @@ A：跑 `scripts/validate_gzh_html.py`，报 ERROR 就回到装配步骤修；�
 
 | 主色 | 主题 | 适用 |
 |---|---|---|
-| ![](https://placehold.co/12/059669/059669.png) `#059669` | 摸鱼绿（默认） | 教程、测评、清单、工具盘点 |
-| ![](https://placehold.co/12/DC2626/DC2626.png) `#DC2626` | 红白色系 | 深度分析、观点、力量感话题 |
-| ![](https://placehold.co/12/059669/059669.png) `#059669` | 摸鱼票据风 | 工具对比、创意评测（票据视觉隐喻） |
-| ![](https://placehold.co/12/1e1f23/1e1f23.png) `#1e1f23` | 橄榄手记 | 内刊手记、深度评测、案例复盘 |
-| ![](https://placehold.co/12/8C8378/8C8378.png) `#8C8378` | 素白 | 长文、随笔、低噪音阅读 |
-| ![](https://placehold.co/12/111111/111111.png) `#111111` | 墨线 | 严肃议题、书评、历史复盘 |
-| ![](https://placehold.co/12/2E7D8C/2E7D8C.png) `#2E7D8C` | 深潭 | 深度调查、行业观察 |
-| ![](https://placehold.co/12/1B5E8C/1B5E8C.png) `#1B5E8C` | 色块 | 观点明确的分析 |
-| ![](https://placehold.co/12/273746/273746.png) `#273746` | 新闻线 | 新闻解读、事件进展、事实核查 |
-| ![](https://placehold.co/12/712F38/712F38.png) `#712F38` | 沉静灰 | 伤亡事件、事故复盘、公共安全 |
-| ![](https://placehold.co/12/234E70/234E70.png) `#234E70` | 正式简报 | 政策说明、机构动态、专题报告 |
+| ![](https://placehold.co/12/31544A/31544A.png) `#31544A` | 松烟（默认） | 教程、测评、清单、工具盘点 |
+| ![](https://placehold.co/12/6B573F/6B573F.png) `#6B573F` | 手泽 | 内刊手记、深度评测、案例复盘 |
+| ![](https://placehold.co/12/8C8378/8C8378.png) `#8C8378` | 留白 | 长文、随笔、低噪音阅读 |
+| ![](https://placehold.co/12/111111/111111.png) `#111111` | 墨栏 | 严肃议题、书评、历史复盘 |
+| ![](https://placehold.co/12/3E4C57/3E4C57.png) `#3E4C57` | 静渊 | 深度调查、行业观察 |
+| ![](https://placehold.co/12/1F1F1F/1F1F1F.png) `#1F1F1F` | 玄章 | 观点明确的分析 |
+| ![](https://placehold.co/12/4A4458/4A4458.png) `#4A4458` | 霓灰 | AIGC、前沿科技、产品发布 |
+| ![](https://placehold.co/12/7A4A38/7A4A38.png) `#7A4A38` | 陶然 | 生活分享、书影音、情感随笔 |
+| ![](https://placehold.co/12/7A6A45/7A6A45.png) `#7A6A45` | 金石 | 商业观察、财经解读、职场 |
+| ![](https://placehold.co/12/273746/273746.png) `#273746` | 专电 | 新闻解读、事件进展、事实核查 |
+| ![](https://placehold.co/12/712F38/712F38.png) `#712F38` | 素笺 | 伤亡事件、事故复盘、公共安全 |
+| ![](https://placehold.co/12/234E70/234E70.png) `#234E70` | 文告 | 政策说明、机构动态、专题报告 |
 
-> 每套主题的英文标识、组件库文件、下划线 CSS 见 [`references/theme-index.md`](references/theme-index.md)。需要别的风格？让 AI 用 [主题生成器](#-faq) 现生成一套。
+> 每套主题的英文标识与适用场景见 [`references/theme-index.md`](references/theme-index.md)。需要别的风格？按 [CONTRIBUTING.md](CONTRIBUTING.md) 加一套。
 
 ## ⭐ Star
 

@@ -52,8 +52,8 @@ python3 <PIPELINE_ROOT>/scripts/pipeline_job.py shape \
 | `ending_type` | 结尾类型 | 近 **5** 篇**不重复** |
 | `tension_type` | 矛盾类型 | 近 **5** 篇同一类型 **≤2** |
 | `felt_sense` | 主情绪（短中文） | 近 **3** 篇尽量不雷同（Agent 自检） |
-| `heading_count` | `##` 个数 2–5 | 禁止连续三篇相同个数 |
-| `body_band` | `short`/`mid`/`long` | 字数带宽轮换 |
+| `heading_count` | `##` 个数 2–5 | 禁止连续三篇相同个数；成稿至少 `heading_count-1` 个（不少于 2） |
+| `body_band` | `short`/`mid`/`long` | 字数带宽轮换；`check`/`prepare`/`finish` 硬拦 |
 
 ### structure_id 池
 
@@ -88,9 +88,11 @@ python3 <PIPELINE_ROOT>/scripts/pipeline_job.py shape \
 
 ### body_band
 
-- `short`：约 1500–1900 字  
-- `mid`：约 1900–2600  
-- `long`：约 2600–4000（勿为凑长注水）
+硬门禁 2500–5000 字。`--auto` 会按结构信息密度给目标带宽（新闻/快评偏短，机制/产业偏长），并避开上一篇的 band。区间是闭区间，边界值（3300/4200）允许落在相邻两档：
+
+- `short`：2500–3300 字（`quick_take` / `event_read`、正式报道）
+- `mid`：3300–4200 字（默认）
+- `long`：4200–5000 字（机制、产业、对比多；勿为凑长注水）
 
 ## 与强情感的关系
 
@@ -107,5 +109,5 @@ python3 <PIPELINE_ROOT>/scripts/pipeline_job.py shape \
 ## 失败与排障
 
 - `shape` 报错：按 `history --rotation` 的 preferred 重选。  
-- 历史缺 shape 字段：旧条目不参与计数，从本轮开始积累。  
+- 历史缺 `structure_id` 的条目不入轮换窗口；同一 `run_id` 更新而非新增。  
 - `--force`：仅人工确认后的例外，cron 默认禁止。

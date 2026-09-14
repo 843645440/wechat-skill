@@ -7,7 +7,7 @@ description: 使用受约束 JSON、固定 HTML/CSS 和 Chrome/Chromium 确定�
 
 根据最终标题生成一张 1410×600 PNG。提供 `signal-editorial`、`night-signal` 与 `redaction-poster` 三套独立于正文主题的可切换模板；当前不在 Skill 内绑定账号。该 Skill 只负责封面，不分析或生成正文配图。
 
-> **注意（2026-07）**：`wechat-content-pipeline` **默认已停用**本 Skill，封面改为 Agent 生图 API（见 `../wechat-content-pipeline/references/ai-cover-generation.md`）。本目录仅供手工调试或回退实验；流水线 `prepare/finish` 不再调用 `build_cover_spec.py` / `render_cover.py`。
+> **注意**：流水线不直接加载本 Skill 手册。封面唯一入口是 `gen_cover_image.py`；正式报道和降级链仍会调用本目录的 `build_cover_spec.py` / `render_cover.py`。不要绕过 `gen_cover_image.py` 单独跑这两条命令。
 
 ## 工作流
 
@@ -50,7 +50,7 @@ python3 <SKILL_ROOT>/scripts/render_cover.py \
 
 ## 硬性边界
 
-- 只使用 `moyu-green`、`red-white`、`graphite-minimal`、`zen-whitespace`、`moyu-ticket`、`olive-journal` 六个已注册主题。
+- `theme` 必须是正文 `THEMES` 里的标识；调色板只提供克制强调色，封面视觉由三套模板自己决定。
 - 只使用 `signal-editorial`、`night-signal`、`redaction-poster` 三套注册模板；模板选择与账号映射由后续配置决定。
 - 标题必须完全位于单一高对比底色的安全区；装饰不得穿过、覆盖或裁切文字。
 - 每张封面只渲染一次，浏览器硬超时 45 秒；超时会终止浏览器进程组并返回失败。浏览器技术故障允许同一命令重试一次，不创建 V2/V3。

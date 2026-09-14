@@ -197,7 +197,7 @@ class CoverFallbackChainTests(unittest.TestCase):
 
             def html_ok(article, title, kicker, theme, output, timeout):
                 calls.append(("html", theme, title))
-                Path(output).parent.mkdir(parents=True, exist_ok=True)
+                os.makedirs(Path(output).parent, exist_ok=True)
                 Path(output).write_bytes(b"html-cover")
                 return True, "", {"template": "signal-editorial", "theme": theme}
 
@@ -223,7 +223,7 @@ class CoverFallbackChainTests(unittest.TestCase):
 
             def generate(prompt, output, prompts_dir, ratio, timeout):
                 captured.update(prompt=prompt, ratio=ratio)
-                Path(output).parent.mkdir(parents=True, exist_ok=True)
+                os.makedirs(Path(output).parent, exist_ok=True)
                 Path(output).write_bytes(b"generated")
                 return True, ""
 
@@ -245,7 +245,7 @@ class CoverFallbackChainTests(unittest.TestCase):
             job_path, _ = make_job(tmp)
 
             def html_ok(article, title, kicker, theme, output, timeout):
-                Path(output).parent.mkdir(parents=True, exist_ok=True)
+                os.makedirs(Path(output).parent, exist_ok=True)
                 Path(output).write_bytes(b"html-cover")
                 return True, "", {"template": "signal-editorial", "theme": theme}
 

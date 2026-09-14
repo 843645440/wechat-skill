@@ -93,7 +93,7 @@ def try_generate(prompt_text, cover_path, prompts_dir, ratio, timeout):
     """
     if not AGNES_GENERATE.is_file():
         return False, f"生图后端脚本不存在：{AGNES_GENERATE}"
-    prompts_dir.mkdir(parents=True, exist_ok=True)
+    os.makedirs(prompts_dir, exist_ok=True)
     prompt_path = prompts_dir / "cover.txt"
     prompt_path.write_text(prompt_text, encoding="utf-8")
     cmd = [
@@ -152,7 +152,7 @@ def try_html_cover(article_path, title, kicker, theme, cover_path, timeout):
     if not BUILD_HTML_SPEC.is_file() or not RENDER_HTML_COVER.is_file():
         return False, "HTML 封面渲染器未安装", {}
     cover_dir = cover_path.parent
-    cover_dir.mkdir(parents=True, exist_ok=True)
+    os.makedirs(cover_dir, exist_ok=True)
     spec_path = cover_dir / "cover.spec.json"
     html_path = cover_dir / "cover.html"
     build_cmd = [
@@ -205,7 +205,7 @@ def run(args):
     artifacts = job.get("artifacts", {})
     article_path = job_dir / artifacts.get("article", "article.md")
     cover_path = job_dir / artifacts.get("cover", "cover/cover.png")
-    cover_path.parent.mkdir(parents=True, exist_ok=True)
+    os.makedirs(cover_path.parent, exist_ok=True)
 
     # 1. 用户已给封面 —— 最高优先级，绝不覆盖
     if has_usable_cover(cover_path):

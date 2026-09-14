@@ -10,6 +10,8 @@ selection, body rendering, cover acceptance, and optional draft creation.
 import argparse
 import contextlib
 import fcntl
+import hashlib
+import importlib.util
 import io
 import json
 import os
@@ -32,15 +34,15 @@ MARKDOWN_IMAGE_RE = re.compile(r"!\[[^\]]*\]\(([^)]+)\)")
 FENCE_RE = re.compile(r"```.*?```", re.DOTALL)
 MARKDOWN_NOISE_RE = re.compile(r"[#>*_`~\[\]()!|\\\-]+")
 BRIEF_IDEAS_RE = re.compile(
-    r"^##\s+思路\s*$\n(?P<body>.*?)(?=^##\s+|\Z)",
+    r"^##\s+(?:思路|论点|时间线|大纲|要点|素材)\s*$\n(?P<body>.*?)(?=^##\s+|\Z)",
     re.MULTILINE | re.DOTALL,
 )
 TRANSIENT_RE = re.compile(
     r"TLS|EOF|connection reset|timed? out|timeout|HTTP\s+5\d\d|微信 API 请求失败",
     re.IGNORECASE,
 )
-MIN_BODY_CHARS = 1500
-MAX_BODY_CHARS = 4000
+MIN_BODY_CHARS = pipeline_job.JOB_MIN_BODY_CHARS
+MAX_BODY_CHARS = pipeline_job.JOB_MAX_BODY_CHARS
 WRITING_PASS_SCORE = 75
 
 # 写作体检（wechat-viral-writer）。check 提前反馈，prepare 和 finish 则把 humanize 后的
@@ -241,8 +243,25 @@ def choose_theme(job_path):
     return output.getvalue().strip()
 
 
+def _viral_scorer():
+    if not VIRAL_SCORER.is_file():
+        return None
+    spec = importlib.util.spec_from_file_location(
+        "wechat_viral_score_draft", VIRAL_SCORER
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def count_body_chars(article):
-    """Count readable body characters after stripping title and light Markdown noise."""
+    """与 score_draft.py 同一口径，避免卡在 2499/2500 时一边过一边不过。"""
+    try:
+        scorer = _viral_scorer()
+        if scorer is not None:
+            return int(scorer.count_body_chars(article))
+    except Exception:
+        pass
     lines = []
     skipped_title = False
     for line in article.splitlines():
@@ -256,6 +275,66 @@ def count_body_chars(article):
     text = FENCE_RE.sub("", text)
     text = MARKDOWN_NOISE_RE.sub("", text)
     return len(re.sub(r"\s+", "", text))
+
+
+def count_h2(article):
+    return sum(1 for line in article.splitlines() if re.match(r"^##\s+", line))
+
+
+def shape_consistency_problems(job, article, body_chars):
+    if pipeline_job.job_lane(job) == "manuscript":
+        return []
+    problems = []
+    shape = job.get("article_shape") or {}
+    expected = shape.get("heading_count")
+    if expected:
+        actual = count_h2(article)
+        minimum = max(2, int(expected) - 1)
+        if actual < minimum:
+            problems.append(
+                f"二级标题 {actual} 个，shape.heading_count={expected}："
+                f"至少 {minimum} 个 ## 小节"
+            )
+    band = shape.get("body_band")
+    ranges = pipeline_job.BODY_BAND_RANGES.get(band)
+    if ranges:
+        low, high = ranges
+        if body_chars < low or body_chars > high:
+            problems.append(
+                f"正文 {body_chars} 字不在 {band} 档 {low}—{high}"
+            )
+    return problems
+
+
+def require_shape_consistency(job, artifacts):
+    article = artifacts["article"].read_text(encoding="utf-8")
+    problems = shape_consistency_problems(job, article, count_body_chars(article))
+    if problems:
+        raise RuntimeFailure("；".join(problems))
+
+
+def article_sha256(path):
+    try:
+        return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    except OSError:
+        return ""
+
+
+def content_fingerprint(artifacts):
+    hasher = hashlib.sha256()
+    for key in ("article", "html", "cover"):
+        path = artifacts.get(key)
+        if path and Path(path).is_file():
+            hasher.update(Path(path).read_bytes())
+    article = artifacts.get("article")
+    if article and Path(article).is_file():
+        text = Path(article).read_text(encoding="utf-8")
+        job_dir = Path(article).parent
+        for ref in MARKDOWN_IMAGE_RE.findall(text):
+            image = job_dir / ref
+            if image.is_file():
+                hasher.update(image.read_bytes())
+    return hasher.hexdigest()
 
 
 def manuscript_quality():
@@ -322,9 +401,51 @@ def require_writing_inputs(job):
     ideas = re.sub(r"[\s#*\-]+", "", match.group("body")) if match else ""
     if len(ideas) < 10:
         raise RuntimeFailure(
-            "user-brief.md 的「## 思路」为空或过短；至少写入可展开的论点、"
-            "时间线、素材或大纲，禁止只给一句题目"
+            "user-brief.md 缺少可展开的「## 思路」（也认 论点/时间线/大纲/要点/素材）；"
+            "至少写入论点、时间线、素材或大纲，禁止只给一句题目"
         )
+
+
+def ensure_prepare_media(job_path):
+    """prepare 自动固定主题、生成信息模块；没有正文图则跳过，不调用生图。"""
+    choose_theme(job_path)
+    builder = SCRIPT_DIR / "build_inline_visuals.py"
+    if builder.is_file():
+        try:
+            run_json([sys.executable, str(builder), "--job", str(job_path)])
+        except RuntimeFailure:
+            pass
+    job = pipeline_job.load_job(job_path)
+    job.setdefault("artifacts", {}).setdefault(
+        "inline_visuals", "inline-visuals.json"
+    )
+    pipeline_job.save_job(job_path, job)
+    job, artifacts = job_paths(job_path)
+    existing_refs = []
+    if artifacts["article"].is_file():
+        article = artifacts["article"].read_text(encoding="utf-8")
+        job_dir = artifacts["article"].parent.resolve()
+        for ref in MARKDOWN_IMAGE_RE.findall(article):
+            image_path = (job_dir / ref).resolve()
+            if image_path.is_file():
+                existing_refs.append(ref)
+    if job["stages"]["illustrations"]["status"] == "pending":
+        if existing_refs:
+            mark(
+                job_path, "illustrations", "completed",
+                "正文已引用本地图",
+                {
+                    "backend": "user_provided",
+                    "image_count": str(len(existing_refs)),
+                },
+            )
+        else:
+            mark(
+                job_path, "illustrations", "skipped",
+                "prepare 未配正文图，跳过生图",
+                {"backend": "none"},
+            )
+    return job_paths(job_path)
 
 
 def require_prepare_stages(job):
@@ -427,9 +548,9 @@ def resolve_config(value, project_root):
 
 
 BAND_CHAR_HINTS = {
-    "short": "约 1500—1900 字",
-    "mid": "约 1900—2600 字",
-    "long": "约 2600—4000 字",
+    "short": "2500—3300 字（快评、单事件、新闻线密）",
+    "mid": "3300—4200 字（默认）",
+    "long": "4200—5000 字（机制、产业、对比多）",
 }
 
 
@@ -475,13 +596,13 @@ def writing_contract(job):
                          "high 级问题必须清零。"
                          "⚠️ 不许为了刷分塞假数字、假案例、假亲历",
         },
-        "length_plan": "先排篇幅再动笔：开头 150 字 + 小节 N×250 字 + 结尾 150 字。"
-                       f"要够 {MIN_BODY_CHARS} 字，N 至少 5 个，稳妥 6—8 个。"
+        "length_plan": "先排篇幅再动笔：开头 200 字 + 已锁定小节各 400—700 字 + 结尾 200 字。"
+                       f"硬门禁 {MIN_BODY_CHARS}—{MAX_BODY_CHARS} 字；小节个数以 shape.heading_count 为准，不另加节凑字。"
                        "字数不够只有一种解法：补真实机制/人群/成本细节，加过渡段会在信息量上再扣一次",
         "after_write": [
             "pipeline_runtime.py check --job <job.json>  # 写完先自检，错误按提示改",
-            "pipeline_job.py stage --name humanize --status running → 一轮 strong 去 AI 味改写 → --status completed --detail intensity=strong",
-            "配图/封面就位后：pipeline_runtime.py prepare → finish",
+            "改写 article.md 一轮后：pipeline_job.py stage --name humanize --status completed --detail intensity=strong",
+            "pipeline_runtime.py prepare → finish（主题和信息模块由 prepare 自动完成）",
         ],
     }
 
@@ -596,6 +717,7 @@ def cmd_check(args):
             )
         elif body_chars > MAX_BODY_CHARS:
             problems.append(f"正文 {body_chars} 字 > {MAX_BODY_CHARS}：删冗余段落")
+        problems.extend(shape_consistency_problems(job, article, body_chars))
     refs = MARKDOWN_IMAGE_RE.findall(article)
     if len(refs) > 3:
         problems.append(f"正文图 {len(refs)} 张 > 3：删到 3 张以内")
@@ -632,7 +754,7 @@ def cmd_check(args):
         and job["stages"]["humanize"]["status"] != "completed"
     ):
         hints.append(
-            "humanize 未完成：改写前后用 stage --name humanize --status running/completed 记账"
+            "humanize 未完成：改写 article.md 一轮后 stage --name humanize --status completed"
         )
     if not _cover_file_usable(artifacts["cover"]):
         hints.append(
@@ -697,7 +819,7 @@ def cmd_prepare(args):
 
 
 def _cmd_prepare(args):
-    job, artifacts = job_paths(args.job)
+    job, artifacts = ensure_prepare_media(args.job)
     require_prepare_stages(job)
     title = require_content(artifacts, job)
     quality = (
@@ -705,12 +827,13 @@ def _cmd_prepare(args):
         if pipeline_job.job_lane(job) == "manuscript"
         else require_writing_quality(artifacts["article"])
     )
+    require_shape_consistency(job, artifacts)
     image_count = require_illustrations(job, artifacts)
     mark(
         args.job, "write", "completed", "正文与最终写作体检均已通过",
         details={
             "quality_score": quality["score"] if quality.get("score") is not None else "skipped",
-            "quality_grade": quality.get("grade") or "",
+            "quality_grade": quality.get("grade") or "n/a",
             "quality_blocking_count": quality["blocking_count"],
             "quality_checked_after_humanize": (
                 "false" if quality.get("skipped") else "true"
@@ -719,14 +842,18 @@ def _cmd_prepare(args):
         artifacts={"article": artifacts["article"]},
     )
     theme = choose_theme(args.job)
+    stored_hash = (job["stages"]["humanize"].get("details") or {}).get("article_sha256")
+    current_hash = article_sha256(artifacts["article"])
+    cover_details = job["stages"]["cover"].get("details") or {}
     return {
         "status": "ok", "next": "finish", "title": title,
         "theme": theme,
-        "cover_backend": (job["stages"]["cover"].get("details") or {}).get(
-            "backend", "image_generate"
-        ),
+        "cover_backend": cover_details.get("backend") or job["stages"]["cover"]["status"],
         "image_count": image_count,
         "body_chars": count_body_chars(artifacts["article"].read_text(encoding="utf-8")),
+        "article_changed_after_humanize": bool(
+            stored_hash and current_hash and stored_hash != current_hash
+        ),
         "writing_quality": quality,
     }
 
@@ -768,6 +895,31 @@ def render_body(job_path, job, artifacts, roots):
     return render_result
 
 
+def cover_aspect_note(path, job):
+    try:
+        data = Path(path).read_bytes()
+    except OSError:
+        return ""
+    if not (data.startswith(b"\x89PNG\r\n\x1a\n") and len(data) >= 24):
+        return ""
+    width = int.from_bytes(data[16:20], "big")
+    height = int.from_bytes(data[20:24], "big")
+    if not height:
+        return ""
+    ratio = width / height
+    expected = 2.35
+    profile_aspect = ((job.get("image_policy") or {}).get("cover_aspect")) or "2.35:1"
+    if isinstance(profile_aspect, str) and ":" in profile_aspect:
+        left, right = profile_aspect.split(":", 1)
+        try:
+            expected = float(left) / float(right)
+        except ValueError:
+            expected = 2.35
+    if abs(ratio - expected) / expected > 0.08:
+        return f"{width}x{height} 比例 {ratio:.2f} 偏离 {profile_aspect}"
+    return ""
+
+
 def _cover_file_usable(path):
     """Accept PNG/JPEG/WebP generated by image APIs; minimal magic-byte check."""
     try:
@@ -790,7 +942,7 @@ def accept_cover(job_path, job, artifacts, config_path):
     cover_path = artifacts["cover"]
     cover_stage = job["stages"].get("cover", {})
     if cover_stage.get("status") == "completed" and _cover_file_usable(cover_path):
-        backend = (cover_stage.get("details") or {}).get("backend") or "local_file"
+        backend = (cover_stage.get("details") or {}).get("backend") or "user_provided"
         return {
             "status": "completed",
             "backend": backend,
@@ -799,16 +951,19 @@ def accept_cover(job_path, job, artifacts, config_path):
 
     mark(job_path, "cover", "running", "验收生图封面")
     if _cover_file_usable(cover_path):
+        aspect_note = cover_aspect_note(cover_path, job)
+        details = {
+            "backend": "user_provided",
+            "visual_check": "none",
+        }
+        if aspect_note:
+            details["aspect_warning"] = aspect_note
         mark(
             job_path, "cover", "completed", "本地封面文件已就绪",
-            {
-                "backend": "local_file",
-                # 不要求 Agent 视觉审图；人工在草稿箱核对
-                "visual_check": "none",
-            },
+            details,
             {"cover": cover_path},
         )
-        return {"status": "completed", "backend": "local_file", "reused": False}, True
+        return {"status": "completed", "backend": "user_provided", "reused": False}, True
 
     has_default = default_thumb_available(config_path, job["account"])
     if has_default:
@@ -933,10 +1088,16 @@ def publish_draft(args, job, artifacts, roots, generated_cover, config_path):
 
 def cmd_finish(args):
     lock_path = Path(args.job).resolve().parent / ".finish.lock"
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-    with lock_path.open("a+", encoding="utf-8") as lock_file:
-        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
-        return _cmd_finish(args)
+    pipeline_job.ensure_dir(lock_path.parent)
+    try:
+        with lock_path.open("a+", encoding="utf-8") as lock_file:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            return _cmd_finish(args)
+    finally:
+        try:
+            lock_path.unlink()
+        except OSError:
+            pass
 
 
 def _cmd_finish(args):
@@ -963,7 +1124,23 @@ def _cmd_finish(args):
         raise RuntimeFailure(UNCERTAIN_DRAFT_MESSAGE.format(job=args.job))
     existing_draft = verified_draft_result(job, artifacts)
     if existing_draft:
-        return draft_resume_response(job, existing_draft)
+        stored_fp = (
+            draft_details.get("content_fingerprint")
+            or existing_draft.get("content_fingerprint")
+        )
+        current_fp = content_fingerprint(artifacts)
+        if stored_fp and stored_fp != current_fp:
+            mark(
+                args.job, "draft", "pending",
+                "正文或媒体已变化，将新建草稿",
+                {
+                    "previous_draft_media_id": existing_draft.get("draft_media_id") or "",
+                    "content_fingerprint": stored_fp,
+                },
+            )
+            job, artifacts = job_paths(args.job)
+        else:
+            return draft_resume_response(job, existing_draft)
     # prepare 后文件仍可能被人工编辑；finish 再验一次，保证真正送入渲染器的是合格稿。
     require_content(artifacts, job)
     quality = (
@@ -971,11 +1148,12 @@ def _cmd_finish(args):
         if pipeline_job.job_lane(job) == "manuscript"
         else require_writing_quality(artifacts["article"])
     )
+    require_shape_consistency(job, artifacts)
     mark(
         args.job, "write", "completed", "发布前最终写作体检通过",
         details={
             "quality_score": quality["score"] if quality.get("score") is not None else "skipped",
-            "quality_grade": quality.get("grade") or "",
+            "quality_grade": quality.get("grade") or "n/a",
             "quality_blocking_count": quality["blocking_count"],
             "quality_checked_after_humanize": (
                 "false" if quality.get("skipped") else "true"
@@ -996,6 +1174,31 @@ def _cmd_finish(args):
         args, job, artifacts, roots, generated_cover, config_path
     )
     final_job = pipeline_job.load_job(args.job)
+    try:
+        from visual_policy import content_mode as detect_mode
+        mode = detect_mode(final_job, final_job.get("job_dir"))
+    except Exception:
+        mode = ""
+    extra = {
+        "theme": (final_job["stages"].get("format") or {}).get("details", {}).get("theme"),
+        "cover_backend": (final_job["stages"].get("cover") or {}).get("details", {}).get("backend"),
+        "content_mode": mode,
+        "content_fingerprint": content_fingerprint(artifacts),
+    }
+    result_path = artifacts.get("draft_result")
+    if result_path and Path(result_path).is_file():
+        try:
+            data = json.loads(Path(result_path).read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                data.update({key: value for key, value in extra.items() if value})
+                Path(result_path).write_text(
+                    json.dumps(data, ensure_ascii=False, indent=2) + "\n",
+                    encoding="utf-8",
+                )
+                if isinstance(draft_result, dict):
+                    draft_result.update({key: value for key, value in extra.items() if value})
+        except (OSError, ValueError):
+            pass
     reported_state = final_job["state"]
     if args.dry_run:
         reported_state = "validated-dry-run"
@@ -1014,7 +1217,7 @@ def _cmd_finish(args):
             slug = re.sub(r'\s+', '-', slug.strip())[:50]
             date_str = datetime.now().strftime("%Y-%m-%d")
             archive_dir = roots["project"] / "work" / account / "archive" / f"{date_str}-{slug}"
-            archive_dir.mkdir(parents=True, exist_ok=True)
+            pipeline_job.ensure_dir(archive_dir)
             article_src = artifacts["article"]
             article_dst = archive_dir / "article.md"
             import shutil

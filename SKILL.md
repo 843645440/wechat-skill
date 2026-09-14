@@ -43,10 +43,10 @@ python3 scripts/wrap_preview.py "<上面的 html>"
 ### 第 2 步：选主题
 
 读 [references/theme-index.md](references/theme-index.md)（只有 ~1 KB 的选择表）。
-用户指定了就用；题材明显契合某套就用那套并说明理由；没倾向用 `moyu-green`；
-**被 `wechat-content-pipeline` 调用时用编排器已固定的主题，不重选、不询问**。
+用户指定了就用；没指定用 `moyu-green`，或让用户从 gallery 挑。**不要按文章风格自行匹配主题。**
+**被 `wechat-content-pipeline` 调用时用 `prepare` 已固定的主题，不重选、不询问**。渲染器不输出「本文看点」目录。
 
-用户说「直接排 / 自动排 / 一键 / 不用问」→ 全自动模式：不提问，自动推断结构与主题，交付时附决策说明。
+用户说「直接排 / 自动排 / 一键 / 不用问」→ 全自动模式：不提问，主题用 `moyu-green`（用户指定除外），交付时附决策说明。
 
 ## 渲染器认得的 Markdown
 

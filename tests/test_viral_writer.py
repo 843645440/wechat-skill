@@ -175,7 +175,11 @@ class TitleRankingTests(unittest.TestCase):
     def test_concrete_subject_is_recognised(self):
         for title in ("AI短剧播放破2亿，横店13万群演抢800个通告",
                       "《被裁掉的女孩》火了，真人演员在改行",
-                      "13万群演抢800个通告，这行还能干吗"):
+                      "13万群演抢800个通告，这行还能干吗",
+                      "86.5%概率加息：沃什要用一次投票怼回特朗普",
+                      "美联储本周加息概率86.5%，特朗普拦不住",
+                      "美联储本周议息，特朗普钦点的主席可能加息",
+                      "财政部罕见发声，白宫这次接不住"):
             with self.subTest(title=title):
                 [item] = self.rank(title)["ranked"]
                 self.assertTrue(item["has_subject"], title)

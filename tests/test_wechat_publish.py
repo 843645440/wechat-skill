@@ -41,6 +41,21 @@ class PublishTests(unittest.TestCase):
         with self.assertRaises(wp.PublishError):
             wp.get_account(config, "c")
 
+    def test_jpeg_with_trailing_junk_is_repaired(self):
+        if wp.Image is None:
+            self.skipTest("Pillow required")
+        buffer = io.BytesIO()
+        wp.Image.new("RGB", (2, 2), (255, 0, 0)).save(buffer, format="JPEG")
+        dirty = buffer.getvalue() + b"TRAILING-JUNK"
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "shot.jpg")
+            with open(path, "wb") as handle:
+                handle.write(dirty)
+            filename, data, content_type = wp.read_image(path, tmp)
+        self.assertEqual(content_type, "image/jpeg")
+        self.assertTrue(data.endswith(b"\xff\xd9"))
+        self.assertEqual(filename, "shot.jpg")
+
     def test_html_images_are_uploaded_once_per_source(self):
         with tempfile.TemporaryDirectory() as tmp:
             image_path = os.path.join(tmp, "cover.png")

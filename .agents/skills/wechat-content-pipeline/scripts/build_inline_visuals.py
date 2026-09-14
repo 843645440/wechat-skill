@@ -108,7 +108,7 @@ def build_formal_plan(article_text, theme):
 
 
 def atomic_json(path, value):
-    path.parent.mkdir(parents=True, exist_ok=True)
+    os.makedirs(path.parent, exist_ok=True)
     temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
     temporary.write_text(
         json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"

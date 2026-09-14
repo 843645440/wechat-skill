@@ -8,6 +8,7 @@ decisions and the compact cover-art dimensions the pipeline actually needs.
 
 import hashlib
 import json
+import os
 from pathlib import Path
 
 
@@ -19,6 +20,8 @@ FORMAL_BRIEF_MARKERS = (
     "权威发布",
     "不消费苦难",
 )
+FORMAL_THEMES = ("solemn-gray", "news-wire", "formal-brief")
+
 FORMAL_TOPIC_MARKERS = (
     "枪击",
     "伤亡",
@@ -150,7 +153,7 @@ HARD CONSTRAINTS:
 def write_art_direction(path, value):
     """Persist a compact, reproducible record beside the generated prompt."""
     path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
+    os.makedirs(path.parent, exist_ok=True)
     payload = {key: item for key, item in value.items() if key != "prompt"}
     path.write_text(
         json.dumps(payload, ensure_ascii=False, indent=2) + "\n",

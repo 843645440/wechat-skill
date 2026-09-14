@@ -23,40 +23,28 @@ MONO_FONT = "SF Mono,Consolas,Monaco,monospace"
 # 必需键：layout / name / paper / ink / body / muted / accent / soft / line /
 #         underline / radius / shadow。可选键：font（默认无衬线）、以及各
 #         layout 自己用的附加色（dark / darkink / block / blockink / num）。
+# 全库统一「稳重灰调」规范：正文区一律灰阶；主题色只以深色调点缀出现在
+# 强调、编号与细节线上（accent 必须足够深，可当重点色用）。
+# 目录模块已全线移除：文章从 hero 直接进入第一节。
 THEMES = {
     "moyu-green": {
-        "layout": "magazine", "name": "摸鱼绿", "paper": "#FFFFFF",
-        "ink": "#111827", "body": "#374151", "muted": "#6B7280",
-        "accent": "#059669", "soft": "#F0FDF4", "line": "#A7F3D0",
-        "underline": "border-bottom:2px solid #A7F3D0;font-weight:600;",
-        "radius": "14px", "shadow": "0 5px 16px rgba(5,150,105,0.10)",
-    },
-    "red-white": {
-        "layout": "editorial", "name": "红白色系", "paper": "#FFFFFF",
-        "ink": "#1C1917", "body": "#44403C", "muted": "#78716C",
-        "accent": "#DC2626", "soft": "#FEF2F2", "line": "#FECACA",
-        "underline": "border-bottom:2px solid #FECACA;font-weight:600;",
-        "radius": "10px", "shadow": "0 4px 18px rgba(220,38,38,0.10)",
-    },
-    "moyu-ticket": {
-        "layout": "ticket", "name": "摸鱼票据", "paper": "#FFFFFF",
-        # muted 原为 #888888，对白底只有 3.54:1，小字号标签不达标，提到 4.81:1。
-        "ink": "#1A1A1A", "body": "#555555", "muted": "#727272",
-        "accent": "#059669", "soft": "#FFFEF8", "line": "#A7F3D0",
-        "underline": "border-bottom:2px solid #A7F3D0;font-weight:600;",
-        "radius": "0", "shadow": "4px 4px 0 #1A1A1A",
+        "layout": "magazine", "name": "松烟", "paper": "#FFFFFF",
+        "ink": "#1A1A1A", "body": "#3D3D3D", "muted": "#6E6E6E",
+        "accent": "#31544A", "soft": "#F4F6F5", "line": "#D9DEDB",
+        "underline": "border-bottom:2px solid #C9D2CE;font-weight:600;",
+        "radius": "14px", "shadow": "0 5px 16px rgba(0,0,0,0.07)",
     },
     "olive-journal": {
-        "layout": "journal", "name": "橄榄手记", "paper": "#FDFDF8",
-        "ink": "#23251D", "body": "#4D4F46", "muted": "#65675E",
-        "accent": "#ED7B2F", "soft": "#EEEFE9", "line": "#BFC1B7",
-        "underline": "border-bottom:2px solid #ED7B2F;font-weight:600;",
-        "radius": "6px", "shadow": "0 5px 18px rgba(35,37,29,0.09)",
+        "layout": "journal", "name": "手泽", "paper": "#FDFDF8",
+        "ink": "#1F201B", "body": "#3F403A", "muted": "#6B6C64",
+        "accent": "#6B573F", "soft": "#F2F1EB", "line": "#D4D2C9",
+        "underline": "border-bottom:2px solid #C3BCA9;font-weight:600;",
+        "radius": "6px", "shadow": "0 5px 18px rgba(0,0,0,0.07)",
     },
-    # ── 以下 4 套为「低噪音 / 强母题」组，装饰集中在 hero、章节标题和目录，
+    # ── 以下 4 套为「低噪音 / 强母题」组，装饰集中在 hero 和章节标题，
     #    正文区一律浅底 + 高行高，长文不累眼。────────────────────────────
     "plain-white": {
-        "layout": "plain", "name": "素白", "paper": "#FFFFFF",
+        "layout": "plain", "name": "留白", "paper": "#FFFFFF",
         # muted 是 plain 布局里 hero 引言的正文色，必须过 4.5:1，
         # 不能为了「更淡」压到 #9A9A9A 那种 2.8:1 的水平。
         "ink": "#1A1A1A", "body": "#3D3D3D", "muted": "#7D746B",
@@ -66,7 +54,7 @@ THEMES = {
         "num": "#E8E6E3",          # 章节大号数字的浅色
     },
     "ink-rule": {
-        "layout": "serif-rule", "name": "墨线", "paper": "#FFFFFF",
+        "layout": "serif-rule", "name": "墨栏", "paper": "#FFFFFF",
         "ink": "#111111", "body": "#333333", "muted": "#767676",
         "accent": "#111111", "soft": "#F6F6F6", "line": "#CFCFCF",
         "underline": "border-bottom:1.5px solid #111111;font-weight:600;",
@@ -75,28 +63,28 @@ THEMES = {
         "rule": "#111111",         # 分节黑线；line 留给表格等通用边框
     },
     "deep-pool": {
-        "layout": "darkhero", "name": "深潭", "paper": "#FFFFFF",
-        "ink": "#16202B", "body": "#3C4A57", "muted": "#66747F",
-        "accent": "#2E7D8C", "soft": "#F2F6F7", "line": "#DDE6E9",
-        "underline": "border-bottom:2px solid #A8CDD4;font-weight:600;",
-        "radius": "8px", "shadow": "0 4px 16px rgba(22,32,43,0.08)",
-        # onDark 是深色 hero 上的强调色：accent 本身压在 dark 上只有 3.47:1，
-        # 10px 的 kicker 不够用，所以另备一个提亮版。
-        "dark": "#16202B", "darkink": "#F2F6F7", "darkbody": "#9FB2BF",
-        "ondark": "#6FBCC9",
+        "layout": "darkhero", "name": "静渊", "paper": "#FFFFFF",
+        "ink": "#16191D", "body": "#3D4247", "muted": "#6E7276",
+        "accent": "#3E4C57", "soft": "#F4F5F6", "line": "#DFE2E4",
+        "underline": "border-bottom:2px solid #C2C9CE;font-weight:600;",
+        "radius": "8px", "shadow": "0 4px 16px rgba(0,0,0,0.07)",
+        # onDark 是深色 hero 上的强调色：accent 一类深色压深底不够亮，
+        # 小字号 kicker 一律用提亮版。
+        "dark": "#16191D", "darkink": "#F4F4F4", "darkbody": "#A8ACB0",
+        "ondark": "#9BA6AE",
     },
     "color-block": {
-        "layout": "colorblock", "name": "色块", "paper": "#FFFFFF",
-        "ink": "#14283C", "body": "#3D4E5E", "muted": "#66747F",
-        "accent": "#1B5E8C", "soft": "#EDF3F8", "line": "#D3E0EA",
-        "underline": "border-bottom:2px solid #A9CBE2;font-weight:600;",
+        "layout": "colorblock", "name": "玄章", "paper": "#FFFFFF",
+        "ink": "#1A1A1A", "body": "#3D3D3D", "muted": "#6E6E6E",
+        "accent": "#1F1F1F", "soft": "#F4F4F4", "line": "#DEDEDE",
+        "underline": "border-bottom:2px solid #C7C7C7;font-weight:600;",
         "radius": "0", "shadow": "none",
-        "block": "#1B5E8C", "blockink": "#FFFFFF",
+        "block": "#1F1F1F", "blockink": "#FFFFFF",
     },
     # ── 新闻 / 正式报道组：不用渐变、投影和营销式 CTA。三套分别承担
     #    快讯长文、沉重事件、专题报告，不能只靠换色冒充不同风格。────────
     "news-wire": {
-        "layout": "newswire", "name": "新闻线",
+        "layout": "newswire", "name": "专电",
         "paper": "#FFFFFF", "ink": "#111827", "body": "#303844",
         "muted": "#5F6873", "accent": "#273746", "soft": "#F5F6F7",
         "line": "#D8DCE1",
@@ -104,7 +92,7 @@ THEMES = {
         "radius": "0", "shadow": "none",
     },
     "solemn-gray": {
-        "layout": "solemn", "name": "沉静灰",
+        "layout": "solemn", "name": "素笺",
         "paper": "#FDFCFA", "ink": "#1C1B1A", "body": "#3B3835",
         "muted": "#6A645F", "accent": "#712F38", "soft": "#F3F0ED",
         "line": "#D7D1CC",
@@ -112,12 +100,41 @@ THEMES = {
         "radius": "2px", "shadow": "none", "font": SERIF_FONT,
     },
     "formal-brief": {
-        "layout": "briefing", "name": "正式简报",
+        "layout": "briefing", "name": "文告",
         "paper": "#FFFFFF", "ink": "#152334", "body": "#354455",
         "muted": "#627184", "accent": "#234E70", "soft": "#F2F5F8",
         "line": "#CFD8E2",
         "underline": "border-bottom:2px solid #AFC2D4;font-weight:650;",
         "radius": "4px", "shadow": "none",
+    },
+    # ── 垂类氛围组：一套管一个内容垂类，视觉母题跟着垂类的阅读预期走。
+    #    三套都沿用「深色/浓色只出现在 hero，正文回浅底」的成熟结构。──────
+    "aurora-violet": {
+        "layout": "aurora", "name": "霓灰", "paper": "#FFFFFF",
+        "ink": "#201D28", "body": "#3F3D47", "muted": "#6E6C75",
+        "accent": "#4A4458", "soft": "#F5F4F7", "line": "#DDDBE1",
+        "underline": "border-bottom:2px solid #C9C6CF;font-weight:600;",
+        "radius": "12px", "shadow": "0 5px 18px rgba(0,0,0,0.08)",
+        # 深灰紫 hero 上的组合：accent 直接压 dark 不够亮，kicker 一律用 ondark。
+        "dark": "#1D1B24", "darkink": "#F3F2F6", "darkbody": "#C4C2C9",
+        "ondark": "#A9A5B2",
+    },
+    "peach-soft": {
+        "layout": "capsule", "name": "陶然", "paper": "#FDFBF8",
+        "ink": "#2B2724", "body": "#453F3A", "muted": "#6E6862",
+        "accent": "#7A4A38", "soft": "#F6F0EB", "line": "#E0D6CF",
+        "underline": "border-bottom:2px solid #D3C4BA;font-weight:600;",
+        "radius": "16px", "shadow": "0 6px 16px rgba(0,0,0,0.06)",
+    },
+    "noir-gold": {
+        "layout": "noir", "name": "金石", "paper": "#FFFFFF",
+        "ink": "#141414", "body": "#3A3A3A", "muted": "#6E6E6E",
+        "accent": "#7A6A45", "soft": "#F6F4EF", "line": "#DFDAD0",
+        "underline": "border-bottom:2px solid #C9BEA4;font-weight:650;",
+        "radius": "2px", "shadow": "none",
+        # 灰金只做细节：深底上的文字一律用提亮灰金 ondark，不用 accent。
+        "dark": "#141414", "darkink": "#F5F3EE", "darkbody": "#C4C0B6",
+        "ondark": "#C6B894",
     },
 }
 
@@ -210,7 +227,7 @@ def render_inline(value, theme):
 
 
 def atomic_text(path, value):
-    path.parent.mkdir(parents=True, exist_ok=True)
+    os.makedirs(path.parent, exist_ok=True)
     temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
     temporary.write_text(value, encoding="utf-8")
     os.replace(temporary, path)
@@ -373,43 +390,28 @@ def render_hero(title, intro, theme):
     title_html = leaf(title)
     if layout == "magazine":
         return (
-            '<section style="margin:0 0 30px;background:#FFFFFF;border:1.5px solid rgba(5,150,105,0.16);border-radius:20px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.06);">'
+            '<section style="margin:0 0 30px;background:#FFFFFF;border:1.5px solid rgba(0,0,0,0.10);border-radius:20px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.06);">'
             '<section style="padding:26px 24px 22px;"><section style="display:flex;align-items:center;margin-bottom:20px;">'
-            '<span style="width:7px;height:7px;background:#059669;border-radius:50%;display:inline-block;">'
-            f'{leaf(" ")}</span><p style="margin:0 10px;font-size:10px;color:#059669;font-weight:700;letter-spacing:3px;">{leaf("TECH INSIGHT")}</p>'
-            f'<section style="flex:1;height:1px;background:linear-gradient(to right,#A7F3D0,transparent);">{leaf(" ")}</section></section>'
-            f'<p style="font-size:25px;font-weight:900;color:#111827;margin:0 0 14px;line-height:1.25;letter-spacing:-0.6px;">{title_html}</p>'
-            f'<section style="width:52px;height:3px;background:linear-gradient(to right,#059669,#34D399);border-radius:2px;margin-bottom:13px;">{leaf(" ")}</section>'
-            f'<p style="font-size:14px;color:#6B7280;margin:0;line-height:1.8;">{intro_html}</p></section>'
-            '<section style="background:linear-gradient(135deg,#059669,#10B981);padding:10px 24px;display:flex;justify-content:space-between;">'
+            f'<span style="width:7px;height:7px;background:{theme["accent"]};border-radius:50%;display:inline-block;">'
+            f'{leaf(" ")}</span><p style="margin:0 10px;font-size:10px;color:{theme["accent"]};font-weight:700;letter-spacing:3px;">{leaf("TECH INSIGHT")}</p>'
+            f'<section style="flex:1;height:1px;background:linear-gradient(to right,{theme["line"]},transparent);">{leaf(" ")}</section></section>'
+            f'<p style="font-size:25px;font-weight:900;color:{theme["ink"]};margin:0 0 14px;line-height:1.25;letter-spacing:-0.6px;">{title_html}</p>'
+            f'<section style="width:52px;height:3px;background:linear-gradient(to right,{theme["accent"]},{theme["muted"]});border-radius:2px;margin-bottom:13px;">{leaf(" ")}</section>'
+            f'<p style="font-size:14px;color:{theme["muted"]};margin:0;line-height:1.8;">{intro_html}</p></section>'
+            f'<section style="background:#1F1F1F;padding:10px 24px;display:flex;justify-content:space-between;">'
             f'<p style="margin:0;font-size:11px;color:#FFFFFF;font-weight:600;">{leaf("科技 · 产业 · 人")}</p>'
-            f'<p style="margin:0;font-size:9px;color:#D1FAE5;letter-spacing:2px;">{leaf("深度观察")}</p></section></section>'
-        )
-    if layout == "ticket":
-        return (
-            '<section style="background:#FFFEF8;border:2px solid #1A1A1A;box-shadow:4px 4px 0 #1A1A1A;margin:0 4px 34px;">'
-            '<section style="background:#059669;padding:10px 18px;display:flex;justify-content:space-between;">'
-            f'<p style="margin:0;color:#FFFFFF;font-size:10px;letter-spacing:3px;font-weight:700;">{leaf("TECH FIELD NOTE")}</p>'
-            f'<p style="margin:0;color:#FFFFFF;font-size:10px;letter-spacing:2px;">{leaf("★★★★★")}</p></section>'
-            '<section style="display:flex;"><section style="flex:1;padding:22px 18px;border-right:2px dashed #A7F3D0;">'
-            f'<p style="font-size:23px;font-weight:900;color:#1A1A1A;margin:0 0 12px;line-height:1.3;">{title_html}</p>'
-            f'<p style="font-size:13px;color:#555555;line-height:1.8;margin:0;padding:12px;background:#F0FDF4;border:1px solid #A7F3D0;">{intro_html}</p></section>'
-            '<section style="width:46px;padding:14px 3px;background:#F0FDF4;display:flex;flex-direction:column;align-items:center;justify-content:space-between;">'
-            f'<p style="margin:0;font-size:8px;color:#888888;">{leaf("NO. 001")}</p>'
-            f'<p style="margin:0;font-size:9px;color:#059669;writing-mode:vertical-rl;letter-spacing:3px;">{leaf("深度阅读")}</p>'
-            f'<p style="margin:0;font-size:13px;color:#059669;font-weight:900;">{leaf("A")}</p></section></section>'
-            f'<section style="padding:9px 18px;border-top:1px dashed #A7F3D0;text-align:center;"><p style="margin:0;font-size:9px;color:#888888;letter-spacing:2px;">{leaf("VALID FOR ONE READ · ADMIT ONE")}</p></section></section>'
+            f'<p style="margin:0;font-size:9px;color:#CFCFCF;letter-spacing:2px;">{leaf("深度观察")}</p></section></section>'
         )
     if layout == "journal":
         return (
-            '<section style="background:#FDFDF8;border:1px solid #BFC1B7;border-radius:6px;overflow:hidden;margin-bottom:30px;">'
-            '<section style="padding:25px 22px 20px;"><section style="display:flex;align-items:center;margin-bottom:18px;">'
-            f'<span style="width:8px;height:8px;background:#1E1F23;border-radius:50%;display:inline-block;">{leaf(" ")}</span>'
-            f'<p style="margin:0 9px;font-size:9px;font-weight:700;letter-spacing:3px;color:#65675E;">{leaf("EDITORIAL NOTE")}</p>'
-            f'<span style="height:1px;background:#BFC1B7;flex:1;display:inline-block;">{leaf(" ")}</span></section>'
-            f'<p style="font-size:24px;font-weight:800;color:#23251D;margin:0 0 12px;line-height:1.25;">{title_html}</p>'
-            f'<p style="font-size:13px;color:#65675E;margin:0;line-height:1.8;">{intro_html}</p></section>'
-            f'<section style="background:#1E1F23;padding:10px 22px;"><p style="margin:0;font-size:11px;color:#FFFFFF;font-weight:600;">{leaf("技术进步，最终要落到真实工作与生活")}</p></section></section>'
+            f'<section style="background:{theme["paper"]};border:1px solid {theme["line"]};border-radius:6px;overflow:hidden;margin-bottom:30px;">'
+            f'<section style="padding:25px 22px 20px;"><section style="display:flex;align-items:center;margin-bottom:18px;">'
+            f'<span style="width:8px;height:8px;background:{theme["ink"]};border-radius:50%;display:inline-block;">{leaf(" ")}</span>'
+            f'<p style="margin:0 9px;font-size:9px;font-weight:700;letter-spacing:3px;color:{theme["muted"]};">{leaf("EDITORIAL NOTE")}</p>'
+            f'<span style="height:1px;background:{theme["line"]};flex:1;display:inline-block;">{leaf(" ")}</span></section>'
+            f'<p style="font-size:24px;font-weight:800;color:{theme["ink"]};margin:0 0 12px;line-height:1.25;">{title_html}</p>'
+            f'<p style="font-size:13px;color:{theme["muted"]};margin:0;line-height:1.8;">{intro_html}</p></section>'
+            f'<section style="background:{theme["ink"]};padding:10px 22px;"><p style="margin:0;font-size:11px;color:#FFFFFF;font-weight:600;">{leaf("技术进步，最终要落到真实工作与生活")}</p></section></section>'
         )
     if layout == "newswire":
         # 新闻线：报纸栏线 + 明确的报道属性，不用卡片、渐变或投影。
@@ -500,115 +502,69 @@ def render_hero(title, intro, theme):
             f'<section style="height:10px;background:#00000026;margin:0 -22px;line-height:0;">{leaf(" ")}</section>'
             f'</section>'
         )
+    if layout == "aurora":
+        # 霓灰：深灰紫 hero，收口在一条灰调渐变细线上，正文回白底。
+        dark, darkink = theme.get("dark", theme["ink"]), theme.get("darkink", "#FFFFFF")
+        return (
+            f'<section style="margin:0 0 34px;padding:30px 22px 0;background:{dark};">'
+            f'<p style="margin:0 0 15px;font-size:10px;font-weight:700;letter-spacing:3px;'
+            f'color:{theme.get("ondark", theme["accent"])};">{leaf("AURORA LAB · 前沿观察")}</p>'
+            f'<p style="margin:0 0 15px;font-size:24px;font-weight:800;line-height:1.45;'
+            f'letter-spacing:-0.3px;color:{darkink};">{title_html}</p>'
+            f'<p style="margin:0 0 26px;font-size:14px;line-height:1.95;'
+            f'color:{theme.get("darkbody", theme["muted"])};">{intro_html}</p>'
+            f'<section style="height:3px;background:linear-gradient(90deg,#3A3841,#8E8B95);'
+            f'margin:0 -22px;line-height:0;">{leaf(" ")}</section></section>'
+        )
+    if layout == "capsule":
+        # 陶然：奶油圆角卡片 + 胶囊母题，生活感的松弛气质。
+        return (
+            f'<section style="margin:0 8px 32px;background:{theme["paper"]};'
+            f'border:1.5px solid {theme["line"]};border-radius:22px;overflow:hidden;'
+            f'box-shadow:{theme["shadow"]};">'
+            f'<section style="padding:26px 20px 18px;">'
+            f'<span style="display:inline-block;background:{theme["soft"]};'
+            f'color:{theme["accent"]};border-radius:999px;padding:5px 14px;'
+            f'font-size:10px;font-weight:800;letter-spacing:2px;">{leaf("DAILY NOTE · 生活手帐")}</span>'
+            f'<p style="margin:14px 0 12px;font-size:24px;font-weight:900;line-height:1.4;'
+            f'letter-spacing:-0.3px;color:{theme["ink"]};">{title_html}</p>'
+            f'<p style="margin:0 0 18px;font-size:14px;line-height:1.9;'
+            f'color:{theme["body"]};">{intro_html}</p></section>'
+            f'<section style="margin:0 14px 14px;background:{theme["soft"]};'
+            f'border-radius:999px;padding:8px 16px;display:flex;justify-content:space-between;align-items:center;">'
+            f'<p style="margin:0;font-size:11px;font-weight:700;color:{theme["accent"]};">{leaf("生活 · 书影 · 食光")}</p>'
+            f'<p style="margin:0;font-size:9px;letter-spacing:1px;color:{theme["muted"]};">{leaf("慢慢来，比较快")}</p></section></section>'
+        )
+    if layout == "noir":
+        # 金石：黑色刊头配灰金细节，像一本商业杂志的封面页。
+        dark, darkink = theme.get("dark", theme["ink"]), theme.get("darkink", "#FFFFFF")
+        return (
+            f'<section style="margin:0 0 34px;background:{dark};">'
+            f'<section style="height:3px;background:{theme.get("ondark", theme["accent"])};'
+            f'line-height:0;">{leaf(" ")}</section>'
+            f'<section style="padding:24px 20px 18px;">'
+            f'<section style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">'
+            f'<p style="margin:0;font-size:10px;font-weight:800;letter-spacing:3px;'
+            f'color:{theme.get("ondark", theme["accent"])};">{leaf("NOIR BRIEF")}</p>'
+            f'<p style="margin:0;font-size:9px;letter-spacing:2px;'
+            f'color:{theme.get("darkbody", theme["muted"])};">{leaf("商业观察 · 长期主义")}</p></section>'
+            f'<p style="margin:0 0 14px;font-size:25px;font-weight:800;line-height:1.42;'
+            f'letter-spacing:-0.3px;color:{darkink};">{title_html}</p>'
+            f'<p style="margin:0;font-size:14px;line-height:1.9;'
+            f'color:{theme.get("darkbody", theme["muted"])};">{intro_html}</p></section>'
+            f'<section style="border-top:1px solid #FFFFFF26;padding:9px 20px;'
+            f'display:flex;justify-content:space-between;">'
+            f'<p style="margin:0;font-size:10px;color:{theme.get("darkbody", theme["muted"])};">{leaf("商业 · 财经 · 组织")}</p>'
+            f'<p style="margin:0;font-size:9px;letter-spacing:2px;'
+            f'color:{theme.get("ondark", theme["accent"])};">{leaf("NO. 001")}</p></section></section>'
+        )
     # editorial（也是未知 layout 的防御性兜底；argparse 已限定 THEMES 内取值）
     return (
-        '<section style="margin:10px 10px 34px;background:#FFFFFF;border-radius:12px;box-shadow:0 4px 24px -4px rgba(220,38,38,0.15);padding:26px 22px;">'
-        f'<p style="font-size:42px;color:#DC2626;font-weight:900;margin:0;line-height:0.65;">{leaf("“")}</p>'
-        f'<p style="font-size:16px;font-weight:750;color:#1C1917;margin:12px 0 0;line-height:1.8;">{intro_html}</p></section>'
+        f'<section style="margin:10px 10px 34px;background:#FFFFFF;border-radius:12px;box-shadow:0 4px 24px -4px rgba(0,0,0,0.10);padding:26px 22px;">'
+        f'<p style="font-size:42px;color:{theme["accent"]};font-weight:900;margin:0;line-height:0.65;">{leaf("“")}</p>'
+        f'<p style="font-size:16px;font-weight:750;color:{theme["ink"]};margin:12px 0 0;line-height:1.8;">{intro_html}</p></section>'
     )
 
-
-def render_toc(headings, theme):
-    items = headings[:3]
-    if len(items) < 2:
-        return ""
-    layout = theme["layout"]
-    label = "本文看点"
-    if layout in SOBER_LAYOUTS:
-        labels = {
-            "newswire": "报道提要",
-            "solemn": "事件脉络",
-            "briefing": "报告目录",
-        }
-        rows = []
-        for index, heading in enumerate(items, 1):
-            if layout == "solemn":
-                row = (
-                    f'<section style="display:flex;align-items:flex-start;padding:11px 0;'
-                    f'border-bottom:1px solid {theme["line"]};">'
-                    f'<span style="display:inline-block;margin:1px 11px 0 0;padding:2px 6px;'
-                    f'border:1px solid {theme["accent"]};font-size:10px;font-weight:700;'
-                    f'color:{theme["accent"]};">{leaf(f"{index:02d}")}</span>'
-                    f'<span style="font-size:14px;font-weight:650;line-height:1.55;'
-                    f'color:{theme["ink"]};">{leaf(heading)}</span></section>'
-                )
-            elif layout == "briefing":
-                row = (
-                    f'<section style="display:flex;align-items:center;margin-bottom:6px;'
-                    f'background:{theme["soft"]};border-left:3px solid {theme["accent"]};'
-                    f'padding:10px 12px;">'
-                    f'<span style="width:29px;font-size:10px;font-weight:800;letter-spacing:1px;'
-                    f'color:{theme["accent"]};">{leaf(f"{index:02d}")}</span>'
-                    f'<span style="font-size:13.5px;font-weight:700;line-height:1.5;'
-                    f'color:{theme["ink"]};">{leaf(heading)}</span></section>'
-                )
-            else:
-                row = (
-                    f'<section style="display:flex;align-items:flex-start;padding:10px 0;'
-                    f'border-bottom:1px solid {theme["line"]};">'
-                    f'<span style="width:31px;font-size:10px;font-weight:800;letter-spacing:1px;'
-                    f'color:{theme["accent"]};">{leaf(f"{index:02d}")}</span>'
-                    f'<span style="font-size:13.5px;font-weight:700;line-height:1.55;'
-                    f'color:{theme["ink"]};">{leaf(heading)}</span></section>'
-                )
-            rows.append(row)
-        return (
-            f'<section style="margin:0 14px 38px;">'
-            f'<p style="margin:0 0 8px;font-size:10px;font-weight:700;letter-spacing:2px;'
-            f'color:{theme["muted"]};">{leaf(labels[layout])}</p>'
-            f'<section style="border-top:1px solid {theme["line"]};">{"".join(rows)}</section>'
-            f'</section>'
-        )
-    if layout in {"plain", "serif-rule"}:
-        # 极简两套不用卡片：编号 + 标题竖排成一份目录，靠细线分隔。
-        rows = "".join(
-            f'<section style="padding:9px 0;border-bottom:1px solid {theme["line"]};">'
-            f'<span style="font-size:11px;font-weight:800;color:{theme["accent"]};'
-            f'letter-spacing:1px;margin-right:10px;">{leaf(f"{index:02d}")}</span>'
-            f'<span style="font-size:13.5px;font-weight:600;color:{theme["ink"]};">{leaf(heading)}</span>'
-            f'</section>'
-            for index, heading in enumerate(items, 1)
-        )
-        return (
-            f'<section style="margin:0 14px 36px;">'
-            f'<p style="font-size:11px;color:{theme["muted"]};margin:0 0 6px;letter-spacing:2px;">{leaf(label)}</p>'
-            f'<section style="border-top:1px solid {theme["line"]};">{rows}</section></section>'
-        )
-    if layout == "colorblock":
-        # 色块：目录做成一列浅底条，左侧一道主色粗边，与章节色条呼应。
-        rows = "".join(
-            f'<section style="background:{theme["soft"]};border-left:5px solid {theme.get("block", theme["accent"])};'
-            f'padding:10px 12px;margin-bottom:6px;">'
-            f'<span style="font-size:11px;font-weight:800;color:{theme.get("block", theme["accent"])};'
-            f'margin-right:9px;">{leaf(f"{index:02d}")}</span>'
-            f'<span style="font-size:13px;font-weight:700;color:{theme["ink"]};">{leaf(heading)}</span>'
-            f'</section>'
-            for index, heading in enumerate(items, 1)
-        )
-        return (
-            f'<section style="margin:0 14px 36px;">'
-            f'<p style="font-size:11px;color:{theme["muted"]};margin:0 0 10px;letter-spacing:2px;">{leaf(label)}</p>'
-            f'{rows}</section>'
-        )
-    cards = []
-    for index, heading in enumerate(items, 1):
-        if layout == "editorial":
-            card = (
-                f'<section style="flex:1;background:#FEF2F2;border:1px solid #FEE2E2;border-radius:9px;padding:14px 10px;text-align:center;">'
-                f'<p style="display:inline-block;background:#DC2626;color:#FFFFFF;font-size:11px;font-weight:800;padding:2px 9px;border-radius:4px;margin:0 0 7px;">{leaf(f"{index:02d}")}</p>'
-                f'<p style="font-size:12px;font-weight:700;color:#1C1917;margin:0;line-height:1.5;">{leaf(heading)}</p></section>'
-            )
-        else:
-            card = (
-                f'<section style="flex:1;background:{theme["soft"]};border:1px solid {theme["line"]};border-radius:{theme["radius"]};padding:13px 10px;">'
-                f'<p style="font-size:10px;color:{theme["accent"]};font-weight:800;margin:0 0 6px;">{leaf(f"{index:02d}")}</p>'
-                f'<p style="font-size:12px;font-weight:700;color:{theme["ink"]};margin:0;line-height:1.5;">{leaf(heading)}</p></section>'
-            )
-        cards.append(card)
-    return (
-        f'<section style="margin:0 12px 38px;"><p style="font-size:11px;color:{theme["muted"]};margin:0 0 13px;letter-spacing:2px;">{leaf(label)}</p>'
-        f'<section style="display:flex;gap:8px;">{"".join(cards)}</section></section>'
-    )
 
 
 def render_heading(heading, index, total, theme):
@@ -645,12 +601,44 @@ def render_heading(heading, index, total, theme):
             f'<p style="margin:0;font-size:18px;font-weight:800;line-height:1.5;'
             f'color:{theme["ink"]};">{leaf(heading)}</p></section>'
         )
-    if layout == "editorial":
+    if layout == "aurora":
+        # 霓灰：竖向灰调渐变短棒（hero 细线的纵向回声）+ 序号 + 延伸细线。
         return (
-            '<section style="margin:48px 10px 25px;display:flex;align-items:center;padding-bottom:13px;border-bottom:3px solid #DC2626;">'
-            f'<p style="background:#DC2626;color:#FFFFFF;font-size:17px;font-weight:900;padding:4px 13px;border-radius:6px;margin:0 13px 0 0;">{leaf(number)}</p>'
-            f'<section><p style="font-size:9px;color:#DC2626;font-weight:700;letter-spacing:3px;margin:0 0 2px;">{leaf(tag)}</p>'
-            f'<p style="font-size:18px;font-weight:800;color:#1C1917;margin:0;line-height:1.45;">{leaf(heading)}</p></section></section>'
+            f'<section style="margin:44px 14px 20px;">'
+            f'<section style="display:flex;align-items:center;margin-bottom:10px;">'
+            f'<span style="display:inline-block;width:4px;height:30px;border-radius:2px;'
+            f'background:linear-gradient(180deg,#3A3841,#8E8B95);margin-right:11px;">{leaf(" ")}</span>'
+            f'<span style="font-size:10px;font-weight:800;letter-spacing:2px;'
+            f'color:{theme["accent"]};margin-right:9px;">{leaf(number)}</span>'
+            f'<span style="flex:1;height:1px;background:{theme["line"]};">{leaf(" ")}</span></section>'
+            f'<p style="margin:0;font-size:18px;font-weight:800;line-height:1.5;'
+            f'color:{theme["ink"]};">{leaf(heading)}</p></section>'
+        )
+    if layout == "capsule":
+        # 陶然：深陶色胶囊序号 + 一枚软色胶囊短棒，圆角贯穿。
+        return (
+            f'<section style="margin:44px 12px 22px;">'
+            f'<section style="display:flex;align-items:center;">'
+            f'<span style="display:inline-block;background:{theme["accent"]};color:#FFFFFF;'
+            f'border-radius:999px;padding:4px 12px;font-size:11px;font-weight:800;'
+            f'letter-spacing:1px;margin-right:11px;">{leaf(number)}</span>'
+            f'<span style="flex:1;height:4px;border-radius:2px;background:{theme["soft"]};">'
+            f'{leaf(" ")}</span></section>'
+            f'<p style="margin:10px 0 0;font-size:18px;font-weight:800;line-height:1.5;'
+            f'color:{theme["ink"]};">{leaf(heading)}</p></section>'
+        )
+    if layout == "noir":
+        # 金石：黑底灰金字的期号方块 + 一段灰金短棒延伸，压住商业感。
+        dark = theme.get("dark", theme["ink"])
+        return (
+            f'<section style="margin:46px 14px 20px;">'
+            f'<section style="display:flex;align-items:center;margin-bottom:12px;">'
+            f'<span style="display:inline-block;background:{dark};'
+            f'color:{theme.get("ondark", theme["accent"])};font-size:11px;font-weight:800;'
+            f'letter-spacing:1px;padding:5px 10px;margin-right:11px;">{leaf(number)}</span>'
+            f'<span style="flex:1;height:3px;background:{theme["line"]};">{leaf(" ")}</span></section>'
+            f'<p style="margin:0;font-size:19px;font-weight:800;line-height:1.5;'
+            f'color:{theme["ink"]};">{leaf(heading)}</p></section>'
         )
     if layout == "plain":
         # 素白：大号浅色数字压在标题上方，是全篇唯一的「大」元素。
@@ -693,30 +681,24 @@ def render_heading(heading, index, total, theme):
             f'<span style="font-size:17px;font-weight:800;color:{blockink};line-height:1.4;">{leaf(heading)}</span>'
             f'</section></section>'
         )
-    if layout == "ticket":
-        return (
-            '<section style="margin:44px 20px 24px;display:flex;align-items:center;padding-bottom:12px;border-bottom:2px solid #1A1A1A;">'
-            f'<p style="background:#059669;color:#FFFFFF;font-size:11px;font-weight:800;padding:6px 11px;letter-spacing:2px;margin:0 11px 0 0;">{leaf(number)}</p>'
-            f'<p style="font-size:18px;font-weight:800;color:#1A1A1A;margin:0;line-height:1.4;">{leaf(heading)}</p></section>'
-        )
     if layout == "journal":
         return (
-            '<section style="margin:38px 8px 22px;display:flex;align-items:center;gap:13px;">'
-            f'<section style="text-align:center;"><p style="margin:0;font-size:24px;font-weight:800;color:#23251D;line-height:1;letter-spacing:-2px;">{leaf(number)}</p></section>'
-            f'<span style="width:1px;height:36px;background:#BFC1B7;display:inline-block;">{leaf(" ")}</span>'
-            f'<section><p style="margin:0 0 2px;font-size:17px;font-weight:800;color:#23251D;">{leaf(heading)}</p>'
-            f'<p style="margin:0;font-size:9px;color:#65675E;letter-spacing:1.5px;">{leaf(tag)}</p></section></section>'
+            f'<section style="margin:38px 8px 22px;display:flex;align-items:center;gap:13px;">'
+            f'<section style="text-align:center;"><p style="margin:0;font-size:24px;font-weight:800;color:{theme["ink"]};line-height:1;letter-spacing:-2px;">{leaf(number)}</p></section>'
+            f'<span style="width:1px;height:36px;background:{theme["line"]};display:inline-block;">{leaf(" ")}</span>'
+            f'<section><p style="margin:0 0 2px;font-size:17px;font-weight:800;color:{theme["ink"]};">{leaf(heading)}</p>'
+            f'<p style="margin:0;font-size:9px;color:{theme["muted"]};letter-spacing:1.5px;">{leaf(tag)}</p></section></section>'
         )
     return (
-        '<section style="margin:44px 20px 24px;display:flex;align-items:center;gap:11px;">'
-        f'<p style="margin:0;background:#059669;color:#FFFFFF;font-size:11px;font-weight:800;padding:6px 10px;border-radius:5px;">{leaf(number)}</p>'
-        f'<section><p style="margin:0 0 2px;font-size:9px;color:#059669;letter-spacing:2px;font-weight:700;">{leaf(tag)}</p>'
-        f'<p style="margin:0;font-size:18px;font-weight:800;color:#111827;line-height:1.45;">{leaf(heading)}</p></section></section>'
+        f'<section style="margin:44px 20px 24px;display:flex;align-items:center;gap:11px;">'
+        f'<p style="margin:0;background:{theme["accent"]};color:#FFFFFF;font-size:11px;font-weight:800;padding:6px 10px;border-radius:5px;">{leaf(number)}</p>'
+        f'<section><p style="margin:0 0 2px;font-size:9px;color:{theme["accent"]};letter-spacing:2px;font-weight:700;">{leaf(tag)}</p>'
+        f'<p style="margin:0;font-size:18px;font-weight:800;color:{theme["ink"]};line-height:1.45;">{leaf(heading)}</p></section></section>'
     )
 
 
 def card_style(theme, extra=""):
-    border = "2px solid #1A1A1A" if theme["layout"] == "ticket" else f"1px solid {theme['line']}"
+    border = f"1px solid {theme['line']}"
     return (
         f"margin:24px 12px;padding:18px;background:{theme['paper']};border:{border};"
         f"border-radius:{theme['radius']};box-shadow:{theme['shadow']};{extra}"
@@ -730,8 +712,6 @@ def render_module(module, theme):
         "process": "WORKFLOW", "metrics": "DATA POINTS",
     }
     extra = f"border-top:4px solid {theme['accent']};"
-    if theme["layout"] == "ticket":
-        extra = f"border-left:8px solid {theme['accent']};"
     output = [
         f'<section style="{card_style(theme, extra)}">',
         f'<p style="margin:0 0 9px;font-size:9px;line-height:1.5;letter-spacing:2px;color:{theme["accent"]};font-weight:800;">',
@@ -844,7 +824,7 @@ def render_block(block, theme):
     kind = block["kind"]
     if kind == "paragraph":
         side = "14px"
-        size = "14px" if theme["layout"] in {"magazine", "ticket"} else "15px"
+        size = "14px" if theme["layout"] == "magazine" else "15px"
         return (
             f'<p style="margin:0 {side} 21px;font-size:{size};line-height:1.9;letter-spacing:0.15px;text-align:justify;color:{theme["body"]};">'
             f'{render_inline(block.get("raw", block["text"]), theme)}</p>'
@@ -973,10 +953,6 @@ def render_follow_cta(theme):
         container = (f'margin:44px 8px 0;background:{theme["ink"]};'
                      f'border-radius:{theme["radius"]};padding:18px 20px;')
         label_color, text_color, lead_color = theme["line"], "#EDEEE8", "#FFFFFF"
-    elif layout == "ticket":
-        container = (f'margin:44px 12px 0;background:{theme["soft"]};'
-                     f'border:2px solid {theme["ink"]};padding:16px 18px;')
-        label_color, text_color, lead_color = accent, theme["body"], theme["ink"]
     elif layout == "colorblock":
         # 与 hero、章节色条统一：CTA 也做成通栏色块反白。
         # 注意强调色必须改成白：accent 本身就是这块底色，压上去会看不见。
@@ -984,6 +960,19 @@ def render_follow_cta(theme):
         container = f'margin:44px 0 0;background:{block};padding:18px 18px;'
         label_color, text_color, lead_color = "#FFFFFFB3", "#FFFFFFD9", theme.get("blockink", "#FFFFFF")
         emphasis_color = "#FFFFFF"
+    elif layout == "capsule":
+        # 与 hero 呼应：软桃色大圆角卡片，不压顶线不加左边条。
+        container = (f'margin:44px 10px 0;background:{theme["soft"]};'
+                     f'border-radius:20px;padding:18px 20px;')
+        label_color, text_color, lead_color = accent, theme["body"], theme["ink"]
+    elif layout == "noir":
+        # 黑卡收尾：灰金边条 + 提亮灰金强调，accent 只出现在边条上（深底可读）。
+        dark, darkink = theme.get("dark", theme["ink"]), theme.get("darkink", "#FFFFFF")
+        container = (f'margin:44px 14px 0;background:{dark};'
+                     f'border-left:4px solid {accent};padding:18px 20px;')
+        label_color = theme.get("ondark", accent)
+        text_color, lead_color = theme.get("darkbody", theme["body"]), darkink
+        emphasis_color = theme.get("ondark", "#FFFFFF")
     elif layout in {"plain", "serif-rule"}:
         # 极简两套不用色块，只用一根上边线把 CTA 与正文分开。
         rule = theme.get("rule", theme["line"])
@@ -1026,16 +1015,30 @@ def render_end(theme):
             f'<p style="margin:0;font-size:9px;color:{theme["muted"]};letter-spacing:3px;">'
             f'{leaf(labels[layout])}</p></section>'
         )
-    if layout == "ticket":
-        return (
-            '<section style="margin:42px 20px 12px;text-align:center;border-top:2px solid #1A1A1A;padding-top:16px;">'
-            f'<p style="margin:0;font-size:10px;color:#888888;letter-spacing:3px;">{leaf("END OF TICKET")}</p></section>'
-        )
     if layout == "journal":
         return (
-            '<section style="margin:44px 8px 8px;background:#1E1F23;padding:13px 18px;display:flex;justify-content:space-between;">'
+            f'<section style="margin:44px 8px 8px;background:{theme["ink"]};padding:13px 18px;display:flex;justify-content:space-between;">'
             f'<p style="margin:0;color:#FFFFFF;font-size:10px;letter-spacing:2px;">{leaf("END NOTE")}</p>'
-            f'<p style="margin:0;color:#BFC1B7;font-size:10px;">{leaf("保持观察")}</p></section>'
+            f'<p style="margin:0;color:{theme["line"]};font-size:10px;">{leaf("保持观察")}</p></section>'
+        )
+    if layout == "capsule":
+        # 陶然：一枚软色胶囊收尾，不拉通栏线。
+        return (
+            f'<section style="margin:44px 14px 10px;text-align:center;">'
+            f'<span style="display:inline-block;background:{theme["soft"]};'
+            f'border-radius:999px;padding:7px 20px;font-size:9px;letter-spacing:3px;'
+            f'color:{theme["muted"]};">{leaf("PEACH END")}</span></section>'
+        )
+    if layout == "noir":
+        # 金石：黑色收尾条，灰金刊号，与 hero 首尾呼应。
+        dark = theme.get("dark", theme["ink"])
+        return (
+            f'<section style="margin:44px 14px 8px;background:{dark};'
+            f'padding:12px 18px;display:flex;justify-content:space-between;">'
+            f'<p style="margin:0;color:{theme.get("ondark", theme["accent"])};'
+            f'font-size:10px;letter-spacing:2px;">{leaf("END OF ISSUE")}</p>'
+            f'<p style="margin:0;color:{theme.get("darkbody", theme["muted"])};'
+            f'font-size:10px;">{leaf("保持长期主义")}</p></section>'
         )
     return (
         f'<section style="margin:48px 14px 8px;text-align:center;"><section style="height:1px;background:{theme["line"]};margin-bottom:14px;">{leaf(" ")}</section>'
@@ -1058,7 +1061,6 @@ def render_document(title, sections, plan_or_theme, theme=None):
     intro = first_paragraph(sections)
     output.append(render_hero(title, intro, theme))
     headings = [section["heading"] for section in sections if section["heading"]]
-    output.append(render_toc(headings, theme))
     intro_consumed = False
     heading_index = 0
     for section_index, section in enumerate(sections):

@@ -88,16 +88,14 @@ python3 scripts/wechat_publish.py --config wechat-accounts.json send \
 
 完整流程固定为：
 
-1. 接收用户 brief（主题 + 思路，硬门禁；缺失则追问，不联网找题）。
+1. 接收用户 brief（主题 + 思路，硬门禁；缺失则追问，不联网找题）。`user-brief.md` 的二级标题必须是 `## 思路`，也认 `论点` / `时间线` / `大纲` / `要点` / `素材`。
 2. `shape --auto` 按轮换计划自动锁定本篇结构（防同质，永不死锁；显式字段可覆盖）。
-3. `begin` 验证 brief、`event_focus` 和结构后输出 `writing_contract` → 写作忠实 brief 的 `article.md`（1500—4000 字），建议补 `digest.txt` 摘要 → `check` 自检到 ok。普通观点稿可用账号强情感声口；公共事件档案覆盖为克制正式。
-4. `humanizer-zh` 一轮去 AI 味，强度与声口服从 brief。
-5. `choose-theme` 先固定主题；`build_inline_visuals.py` 为公共事件生成至多一张只引用正文原句的 HTML 事实脉络，普通稿默认为空。
-6. `gen_inline_images.py --record-stage` 处理 0—3 张正文图（已有图优先；公共事件禁用 AI 图；其他题材仅在有生图能力或 `AGNES_API_KEY` 时生成）。
-7. `gen_cover_image.py --record-stage` 写入封面：正式报道走准确标题 HTML，普通观点稿可脚本生图，再降级到 HTML、Pillow、账号默认素材。
-8. `prepare` 对 humanize 后最终稿执行 score ≥75、blocking=0 的硬门禁并校验标题、字数、图数和路径；`finish` 发布前重检一次，随后排版并创建指定账号草稿。
+3. `begin` 验证 brief、`event_focus` 和结构后输出 `writing_contract` → 写作忠实 brief 的 `article.md`（2500—5000 字，且落在本篇 `body_band`），建议补 `digest.txt` 摘要 → `check` 自检到 ok。普通观点稿可用账号强情感声口；公共事件档案覆盖为克制正式。
+4. `humanizer-zh` 一轮去 AI 味，强度与声口服从 brief；只记一次 `humanize completed`（pending 可直接 completed）。
+5. `prepare` 对最终稿执行 score ≥75、blocking=0，并自动固定主题（编辑稿不含通报皮）、生成信息模块；正文已引用的本地图记为用户供图，没有引用则跳过生图。
+6. `finish` 发布前重检一次，验收封面（用户图 → HTML/Pillow/账号默认，不强制生图），随后排版并创建指定账号草稿。内容指纹未变时复用已有草稿。
 
-云端 Agent 必须使用固定入口：`pipeline_job.py init/topic/history/shape/stage/show` 和 `pipeline_runtime.py begin/check/prepare/finish`。不得为某篇文章临时写排版脚本或视觉检测循环。`finish` 默认创建草稿；只有开发验证时才使用 `--dry-run`。
+云端 Agent 必须使用固定入口：`pipeline_job.py init/topic/history/shape/stage/show` 和 `pipeline_runtime.py begin/check/prepare/finish`。看一眼现状用 `show`（含 `summary`）。不得为某篇文章临时写排版脚本或视觉检测循环。`finish` 默认创建草稿；只有开发验证时才使用 `--dry-run`。
 
 流水线不会公开发布；人工审核发生在微信公众号草稿箱。自动热点发现已默认关闭，仅当账号档案显式开启且用户要求时才可用。
 
@@ -122,7 +120,7 @@ Agent 应落盘 `user-brief.md`，`--source provided`，不得自行换题。详
 
 只排版已有文章并自动提取信息模块：
 
-> 使用 `$wechat-skill`，把 `article.md` 用橄榄手记主题排成公众号 HTML。
+> 使用 `$wechat-skill`，把 `article.md` 用手泽主题排成公众号 HTML。
 
 以下三项须先从 `optional-skills/` 安装对应目录。只生成原生信息模块并一次排好正文：
 
@@ -149,9 +147,10 @@ work/b/current/
 
 ## 8. 常见阻塞
 
-- **缺主题或思路**：流水线停止并追问，不联网找题凑稿。
+- **缺主题或思路**：流水线停止并追问，不联网找题凑稿。写成 `## 背景` 而没有思路/论点等小节，`begin` 会拒绝。
 - **最终稿体检未通过**：humanize 后仍须 score ≥75 且 blocking=0；按报错里的完整报告命令修稿，不补假数字刷分。
-- **字数不在 1500—4000**：`prepare` 拒绝；补真实内容或删冗余，禁止注水。
+- **字数不在本篇 band**：`short` 2500–3300、`mid` 3300–4200、`long` 4200–5000；越界则 `check` / `prepare` / `finish` 拒绝。补真实内容或删冗余，禁止注水。
+- **小节个数过少**：`##` 至少 `heading_count-1` 个（且不少于 2）。
 - **正文图失败**：单图重试一次，仍失败则跳过；全部失败按无图文章继续，不阻塞草稿。
 - **没有生图 API / 没有浏览器**：不是阻塞。运行统一封面命令，它会自动降级到 Pillow：
 

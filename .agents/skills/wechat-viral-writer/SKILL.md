@@ -47,11 +47,11 @@ python3 <SKILL>/scripts/hot_radar.py --force --markdown
 **每次写稿必读**：
 
 - [references/writing-checklist.md](references/writing-checklist.md) —— 一页纸硬要求，写之前读它就够了
-- [references/hook-and-title.md](references/hook-and-title.md) —— 标题公式与开头钩子
-- [references/value-density.md](references/value-density.md) —— 信息量：什么算「具体」，什么是注水
 
 **按需读**：
 
+- [references/hook-and-title.md](references/hook-and-title.md) —— 标题公式与开头钩子
+- [references/value-density.md](references/value-density.md) —— 信息量：什么算「具体」，什么是注水
 - [references/reader-benefit.md](references/reader-benefit.md) —— 利他性：四种形态，按题材选，别硬塞
 - [references/readability.md](references/readability.md) —— 竖屏排版节奏
 - [references/structure-playbook.md](references/structure-playbook.md) —— 六种可选结构与适用题材
@@ -68,26 +68,27 @@ python3 <SKILL>/scripts/hot_radar.py --force --markdown
 
 ## 接入流水线的位置
 
-本 Skill 插在 `wechat-content-pipeline` 的**第 5 步（写作）和第 6 步（check）之间**：
+流水线写作时读 checklist 写 `article.md`。**不要单独再跑一遍 `score_draft.py`**：
+`pipeline_runtime.py check` 已经调用它，`prepare` / `finish` 会把 score ≥75 且 high=0 当硬门禁。
+
+单独用本 Skill（不走流水线）时，才在写完后手动跑 `score_draft.py`。
 
 ```
-init → user-brief.md → topic → shape → begin
-   → 【本 Skill：写 article.md + digest.txt】
-   → 【本 Skill：score_draft.py 体检，修到 ok】     ← 新增的这一步
-   → check → humanize → 配图 → 封面 → prepare → finish
+init → brief → topic → shape → begin
+   → 【本 Skill：按 checklist 写 article.md + digest.txt】
+   → check（内含体检）→ humanize → prepare → finish
 ```
 
-两个脚本的分工不重叠，**都要跑**：
-
-- `pipeline_runtime.py check` 管**结构合法性**：几个标题、字数、图片路径越没越界。
-- `score_draft.py` 管**有没有人读得下去**。它不会拦住你，但它给的每条问题都值 3–9 分。
+- `check` 同时管结构合法性（标题、字数、图片路径）和完读体检。
+- 单独调用 `score_draft.py` 只用于流水线外改稿，或看 markdown 版逐条修法。
 
 ## 硬门禁：不得交付
 
 1. `score_draft.py` 的 `blocking_count > 0`，或 `score < 75`。
 2. 全文没有任何读者可带走的东西（体检里的 `reader_benefit = 0`）——**白看一场**。
 3. **标题没有可指认的主体**（谁 / 什么产品 / 哪件事）。读者在推荐页只看得到标题，
-   说不出这写的是谁就不会点——这比没有刺点更致命。
+   说不出这写的是谁就不会点——这比没有刺点更致命。体检脚本能认出机构/人名
+   （美联储、特朗普、财政部等）；纯中文技术名词仍可能漏判，那是 medium 提醒，不是硬拦。
 4. 标题前 16 字没有刺点：数字、反差、断言、疑问，一个都没有。
 5. 为了凑指标塞假数字、假案例、假亲历。**体检分数是用来发现问题的，不是用来刷的。**
    编一个数字能加 3 分，但会让整个账号失去可信度——这条没得商量。

@@ -1,5 +1,7 @@
 # 公众号写作 Skill：研究、交付与验证报告
 
+> **历史记录（2026-07-27）。** 当前字数门禁是 2500—5000，命令链是 `check → humanize → prepare → finish`。以 `wechat-viral-writer/SKILL.md` 为准。
+
 **日期**：2026-07-27　**分支**：`slim-for-weak-models`　**交付物**：`.agents/skills/wechat-viral-writer/`
 
 ---

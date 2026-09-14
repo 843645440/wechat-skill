@@ -30,9 +30,9 @@ from pathlib import Path
 # ---------------------------------------------------------------- 阈值
 
 THRESHOLDS = {
-    # 正文长度（与流水线硬门禁保持一致，这里只做提示不做拦截）
-    "body_min": 1500,
-    "body_max": 4000,
+    # 正文长度（与流水线硬门禁保持一致；pipeline check 带 --config 时以 writer-config 为准）
+    "body_min": 2500,
+    "body_max": 5000,
     # 标题
     "title_max": 32,
     "title_sting_window": 16,
@@ -50,7 +50,7 @@ THRESHOLDS = {
     "sentence_long_chars": 50,
     "sentence_long_ratio_max": 0.20,
     # 小标题密度：平均每多少字应有一个 ## 小标题
-    "heading_gap_max": 800,
+    "heading_gap_max": 1000,
     # 加粗关键短语：够长的段落里每段 1—3 个
     "bold_para_min_chars": 60,
     "bold_per_para_max": 3,
@@ -114,7 +114,11 @@ SUBJECT_SIGNALS = [
     r"员工|新人|应届生|求职者|老板|甲方|客户|用户|读者|作者|运营|销售|"
     r"运维|测试|设计师|翻译|会计|律师|农民|工人|学生|家长|老人|保安|快递)",
     r"(?:公司|大学|医院|法院|银行|工厂|车间|门店|机场|车站|小区|食堂|车间|园区)",
-    r"[一-龥]{2,4}(?:市|省|县|区|镇|村|店|厂|园|局|院|所|队|团|网|报|台|社)(?![一-龥])",
+    r"[一-龥]{2,4}(?:市|省|县|区|镇|村|店|厂|园|局|院|所|队|团|网|报|台|社|部)(?![一-龥])",
+    r"(?:美联储|联储|央行|白宫|国会|欧盟|联合国|财政部|国务院|证监会|"
+    r"特朗普|拜登|鲍威尔|沃什|沃勒|马斯克|库克|黄仁勋|奥特曼|任正非|雷军)",
+    r"[一-龥]{2,6}(?:储|联储|央行|银行|交易所|委员会)",
+    r"[一-龥]{2,4}(?=要|将|用一次|投票|加息|降息|任命|否决|怼回)",
 ]
 
 # 泛指代词：标题里出现这些又找不到主体，基本可以确定读者不知道你在说什么。
@@ -253,6 +257,12 @@ def body_stream(blocks):
         stream.append(text)
         origins.extend([position] * len(text))
     return "".join(stream), origins, offsets
+
+
+def count_body_chars(article):
+    """与流水线硬门禁同一口径：去掉一级标题和图片，保留小节标题，去掉空白。"""
+    stream, _, _ = body_stream(parse_blocks(article))
+    return len(stream)
 
 
 def structural_anchors(blocks, offsets):
@@ -591,7 +601,7 @@ def check_readability(blocks, thresholds, problems):
             "line": paras[min(len(paras) - 1, 3)]["line"],
             "what": f"正文 {body_chars} 字只有 {len(headings)} 个小标题，"
                     f"建议至少 {expected} 个",
-            "fix": "每 500—800 字给一个 ## 小标题。小标题要能单独读懂，"
+            "fix": "每 800—1000 字给一个 ## 小标题。小标题要能单独读懂，"
                    "本身就是一句结论，不要写「背景介绍」这种目录词",
         })
         score -= 3

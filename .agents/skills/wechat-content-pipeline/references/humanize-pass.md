@@ -15,18 +15,18 @@
 ## 阶段记账
 
 ```bash
-python3 <PIPELINE_ROOT>/scripts/pipeline_job.py stage \
-  --job <WORK_DIR>/job.json --name humanize --status running
-# 就地改写 article.md 一轮
+# 就地改写 article.md 一轮后，只记一次 completed（pending 可直接 completed）
 python3 <PIPELINE_ROOT>/scripts/pipeline_job.py stage \
   --job <WORK_DIR>/job.json --name humanize --status completed \
   --detail 'pass=humanizer-zh;intensity=<strong|restrained>;voice=<brief声口>'
 ```
 
+脚本会写入当时 `article.md` 的 `article_sha256`。之后若再改正文，`prepare` / `finish` 会标 `article_changed_after_humanize`。
+
 ## 硬约束
 
 1. 保留唯一 `#` 标题、必要 `##`、表格、引用、链接和少量关键词强调。
-2. 标题 ≤32 字，纯正文仍为 1500—4000 字。
+2. 标题 ≤32 字，纯正文仍为 2500—5000 字。
 3. 忠实 brief 和 dossier；不改变裁判/调查结论的生效状态，不抬高指控。
 4. 不写伪采访、伪亲历、推测动机或来源没有的现场细节。
 5. 不添加聊天收尾、emoji、关注转发段和海报口号。

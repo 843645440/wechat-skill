@@ -59,7 +59,7 @@ description: 去除中文文本中的 AI 生成痕迹，保留事实、原意和
 
 1. 读取 [`references/wechat-pipeline-constraints.md`](references/wechat-pipeline-constraints.md) 和流水线的 `references/humanize-pass.md`。
 2. 只就地改写任务目录里的 `article.md` 一轮，不修改其他产物，不把说明写进正文。
-3. 保持唯一一级标题、必要二级标题与 Markdown 结构，纯正文字数仍须在 1500—4000。
+3. 保持唯一一级标题、必要二级标题与 Markdown 结构，纯正文字数仍须在 2500—5000。
 4. `user-brief.md` 标有“公共事件档案模式”时使用克制报道声口；其他稿件按 brief 和账号档案决定是否使用强情感第一人称。
 5. 保留 dossier 的结论状态、时间线、来源边界和隐私处理；禁止用修辞强化未被来源支持的指控。
 

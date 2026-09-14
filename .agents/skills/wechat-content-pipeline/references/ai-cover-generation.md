@@ -13,7 +13,7 @@ python3 <PIPELINE>/scripts/gen_cover_image.py --job <job.json> --record-stage
 
 | 顺序 | 条件 | 结果 |
 |---|---|---|
-| 1 | `cover/cover.png` 已存在 | 原样保留，`backend=user_provided` |
+| 1 | `cover/cover.png` 已存在 | 原样保留，`backend=user_provided`（不要写成 `local_file`） |
 | 2 | 公共事件档案、枪击/伤亡/案件等正式报道 | HTML 准确排标题，`backend=html_render`；不生成现场插画 |
 | 3 | 普通观点稿且策略允许生图 | 按类型/色板/渲染/情绪维度生成无文字 2.35:1 主视觉，`backend=image_generate` |
 | 4 | 生图失败或策略禁用生图 | 再试准确标题 HTML；失败后 Pillow，`backend=offline_render` |
@@ -39,6 +39,6 @@ python3 <PIPELINE>/scripts/gen_cover_image.py --job <job.json> --record-stage
 - AI 主视觉不生成任何文字、数字、Logo、水印或签名，避免乱码标题；文章标题由公众号卡片显示。
 - 正式报道封面必须准确排出最终一级标题，不使用案发现场想象图。
 - 不做成容易误认成官方发布会海报的样式，不放长段文字、水印或签名。
-- 不做 Agent 视觉/OCR 循环；`finish` 只做文件存在、魔数与上传可用性检查，观感在草稿箱人工核对。
+- 不做 Agent 视觉/OCR 循环；`finish` 只做文件存在、魔数与上传可用性检查，比例明显偏离 2.35:1 时 warning。观感在草稿箱人工核对。
 
 故障处理见 [pipeline-failure-triage.md](pipeline-failure-triage.md)。

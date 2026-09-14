@@ -353,6 +353,31 @@ def _valid_webp(data):
     return offset == len(data) and has_image_chunk
 
 
+def _repair_image_bytes(data):
+    """Magic bytes 过严时用 Pillow 重编码，消化 JPEG 尾部杂质。"""
+    if Image is None:
+        return data
+    try:
+        image = Image.open(io.BytesIO(data))
+        image.load()
+        buffer = io.BytesIO()
+        fmt = (image.format or "JPEG").upper()
+        if fmt in {"JPEG", "JPG"}:
+            image = image.convert("RGB")
+            image.save(buffer, format="JPEG", quality=95)
+        elif fmt == "PNG":
+            image.save(buffer, format="PNG")
+        elif fmt == "WEBP":
+            image.save(buffer, format="WEBP")
+        else:
+            image = image.convert("RGB")
+            image.save(buffer, format="JPEG", quality=95)
+        repaired = buffer.getvalue()
+        return repaired if repaired else data
+    except Exception:
+        return data
+
+
 def _detected_image_type(data):
     if (
         len(data) >= 24
@@ -459,6 +484,11 @@ def read_image(source, base_dir, allow_outside=False, strict_declared=True):
     if not content_type or not content_type.startswith("image/"):
         raise PublishError(f"文件不是可识别的图片：{source}")
     detected_type = _detected_image_type(data)
+    if not detected_type:
+        repaired = _repair_image_bytes(data)
+        if repaired != data:
+            data = repaired
+            detected_type = _detected_image_type(data)
     if not detected_type:
         raise PublishError(f"图片内容格式无法识别：{source}")
     decoded_type = _verify_decodable_image(data)

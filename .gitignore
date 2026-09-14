@@ -41,3 +41,8 @@ docs/screenshots/
 
 # WorkBuddy 本地记忆与缓存，不入库
 .workbuddy/
+
+# 本地书籍与素材，不入库
+*.epub
+/imgs/
+/generated-images/

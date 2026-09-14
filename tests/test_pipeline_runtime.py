@@ -18,7 +18,7 @@ pipeline_runtime = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(pipeline_runtime)
 
 
-# 一篇结构合法且写作体检能过线的样例正文（约 1700 字）。
+# 一篇结构合法且写作体检能过线的样例正文（须 ≥2500 字）。
 # 段落短、有小标题、有加粗、有具体数字、有读者落点、结尾回扣开头。
 PASSING_ARTICLE = """# 上线前那道验收，卡了我们三周
 
@@ -110,6 +110,59 @@ PASSING_ARTICLE = """# 上线前那道验收，卡了我们三周
 描述不出来，说明这个判断本来就还没人做过，那就先去把判断定下来。
 
 **没有人做过的判断，自动化不了。**这句话我们花了三周才真正接受。
+
+## 权限不在文档里，链就会停
+
+那三周里还出现过一次 40164。IP 不在白名单，技术上五分钟能改。
+
+流程上要找到有权限改配置的人，而那个人当时在休假。整条链停在那里，
+演示环境里从来不会发生这种事，因为演示没有白名单，也没有休假。
+
+**权限写不进脚本，就等于把停工写进代码。**后来我们把「谁能改这一项」也做成字段，
+和「谁验收」放在同一页。两行配置，比再写一个告警机器人有用。
+
+## 超时到底算没做，还是做了但读不回来
+
+一次调用失败之后，只有两种可能：要么根本没执行，要么执行了但结果没读回来。
+
+这两种情况看起来一模一样，都是一条报错，处置方式完全相反。
+前者可以直接重跑。后者重跑就会出双份。
+
+我们踩过一次：一个超时被当成失败重跑，草稿箱里躺了两篇。
+**分不清这两种情况，就一定会出双份。**
+
+后来的做法是让发布器自己回答：它明确知道请求有没有发出去，
+就把 `draft_may_exist=true|false` 写进错误信息里，而不是让调用方去猜错误码。
+
+## 抽查比例是新工作，不是省下来的工作
+
+自动化之后，人工环节没有消失，只是变贵了。
+
+抽查比例定多少、什么结果必须逐项复核、异常时谁有权暂停——这些都是新增的判断。
+**流程越自动，剩下的人工环节越是要担责的环节**，没有一个能靠熟练度加速。
+
+我们后来把抽查写成三个数：日常 10%、异常必查、涉及对外发布的 100%。
+不是因为 10% 有什么科学依据，而是因为「抽一些」没法交接。数字能交接，感觉不能。
+
+如果你也在把人工流程改成自动流程，先别写脚本。先把这三个数写下来。
+写不下来，说明判断还没人做过，自动化只会把模糊放大。
+
+## 失败信息必须能被下一班人看懂
+
+演示能跑通，不代表交接能跑通。
+
+我们最早的错误日志只有一句「微信 API 请求失败」。下一班的人看到它，只能重跑。
+重跑在「没发出去」时是对的，在「已经建了草稿」时是灾难。
+
+后来要求每条失败日志回答三个问题：**请求发出去了没有、能不能安全重跑、下一步具体做什么**。
+写不满这三项，就不算一条可用的错误信息。
+
+这比再包一层重试循环便宜。重试循环解决的是瞬时网络，解决不了「不知道刚才发生了什么」。
+
+同一 `run_id` 成功后必须复用原结果。新的 `run_id` 才允许再创建一篇。
+**幂等不是礼貌，是防双草稿的硬门禁。** 不确定时停下来核对草稿箱，不要自动重发。
+草稿 ID 对不上账号、对不上 run_id，或者看起来像 dummy/test 占位符，都算没完成。
+人工核对草稿箱这一步不能省，脚本代替不了眼睛。
 
 ## 回到那三周
 
@@ -255,6 +308,17 @@ class PipelineRuntimeTests(unittest.TestCase):
             with self.assertRaisesRegex(pipeline_runtime.RuntimeFailure, "结构尚未锁定"):
                 pipeline_runtime.cmd_begin(self.args(job_path))
 
+    def test_begin_accepts_outline_heading_aliases(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            job_path = self.make_job(tmp)
+            (job_path.parent / "user-brief.md").write_text(
+                "# Brief\n\n## 主题\n测试主题\n\n## 论点\n"
+                "- 解释核心变化发生的机制\n- 写清谁承担成本以及适用边界\n",
+                encoding="utf-8",
+            )
+            result = pipeline_runtime.cmd_begin(self.args(job_path))
+        self.assertEqual("ok", result["status"])
+
     def test_prepare_accepts_zero_images_and_no_sources(self):
         with tempfile.TemporaryDirectory() as tmp:
             job_path = self.make_job(tmp)
@@ -273,6 +337,64 @@ class PipelineRuntimeTests(unittest.TestCase):
         )
         self.assertFalse((job_path.parent / "sources.md").exists())
 
+    def test_prepare_skips_pending_illustrations_and_fixes_theme(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            job_path = self.make_job(tmp)
+            pipeline_runtime.cmd_begin(self.args(job_path))
+            job = pipeline_runtime.pipeline_job.load_job(job_path)
+            job["stages"]["humanize"] = pipeline_runtime.pipeline_job.stage_record(
+                "completed", job["created_at"], "humanize complete"
+            )
+            pipeline_runtime.pipeline_job.save_job(job_path, job)
+            self.write_article(job_path)
+            result = pipeline_runtime.cmd_prepare(self.args(job_path))
+            prepared = pipeline_runtime.pipeline_job.load_job(job_path)
+            self.assertEqual("ok", result["status"])
+            self.assertTrue(result["theme"])
+            self.assertEqual("skipped", prepared["stages"]["illustrations"]["status"])
+            self.assertEqual(
+                result["theme"],
+                prepared["stages"]["format"]["details"]["theme"],
+            )
+            self.assertTrue((job_path.parent / "inline-visuals.json").is_file())
+
+    def test_prepare_marks_user_provided_when_article_has_images(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            job_path = self.make_job(tmp)
+            pipeline_runtime.cmd_begin(self.args(job_path))
+            job = pipeline_runtime.pipeline_job.load_job(job_path)
+            job["stages"]["humanize"] = pipeline_runtime.pipeline_job.stage_record(
+                "completed", job["created_at"], "humanize complete"
+            )
+            pipeline_runtime.pipeline_job.save_job(job_path, job)
+            imgs = job_path.parent / "imgs"
+            imgs.mkdir()
+            (imgs / "one.png").write_bytes(
+                b"\x89PNG\r\n\x1a\n" + b"0" * 64
+            )
+            self.write_article(job_path, ["imgs/one.png"])
+            result = pipeline_runtime.cmd_prepare(self.args(job_path))
+            prepared = pipeline_runtime.pipeline_job.load_job(job_path)
+            self.assertEqual("ok", result["status"])
+            self.assertEqual(1, result["image_count"])
+            self.assertEqual("completed", prepared["stages"]["illustrations"]["status"])
+            self.assertEqual(
+                "user_provided",
+                prepared["stages"]["illustrations"]["details"]["backend"],
+            )
+
+    def test_prepare_rejects_body_outside_shape_band(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            job_path = self.make_job(tmp)
+            job = pipeline_runtime.pipeline_job.load_job(job_path)
+            job["article_shape"]["body_band"] = "mid"
+            pipeline_runtime.pipeline_job.save_job(job_path, job)
+            pipeline_runtime.cmd_begin(self.args(job_path))
+            self.complete_agent_stages(job_path, "skipped")
+            self.write_article(job_path)
+            with self.assertRaisesRegex(pipeline_runtime.RuntimeFailure, "mid 档"):
+                pipeline_runtime.cmd_prepare(self.args(job_path))
+
     def test_prepare_rechecks_quality_after_humanize(self):
         """humanize 可能改坏节奏；prepare 必须检查最终稿，而不是相信更早的 check。"""
         with tempfile.TemporaryDirectory() as tmp:
@@ -280,7 +402,7 @@ class PipelineRuntimeTests(unittest.TestCase):
             self.complete_agent_stages(job_path, "skipped")
             (job_path.parent / "article.md").write_text(
                 "# 关于行业发展的一些观察与思考\n\n"
-                + "这件事情引发了广泛的关注，相关方面表示将持续推进后续工作。" * 60,
+                + "这件事情引发了广泛的关注，相关方面表示将持续推进后续工作。" * 90,
                 encoding="utf-8",
             )
             with self.assertRaisesRegex(
@@ -296,7 +418,7 @@ class PipelineRuntimeTests(unittest.TestCase):
             pipeline_runtime.cmd_prepare(self.args(job_path))
             (job_path.parent / "article.md").write_text(
                 "# 关于行业发展的一些观察与思考\n\n"
-                + "这件事情引发了广泛的关注，相关方面表示将持续推进后续工作。" * 60,
+                + "这件事情引发了广泛的关注，相关方面表示将持续推进后续工作。" * 90,
                 encoding="utf-8",
             )
             with mock.patch.object(
@@ -505,8 +627,8 @@ class PipelineRuntimeTests(unittest.TestCase):
         contract = result["writing_contract"]
         self.assertEqual("article.md", contract["output_file"])
         self.assertIn("32", contract["title"])
-        self.assertIn("1500", contract["body_chars"])
-        self.assertIn("2600—4000", contract["body_chars"])
+        self.assertIn("2500", contract["body_chars"])
+        self.assertIn("4200—5000", contract["body_chars"])
         self.assertEqual("industry_game", contract["shape"]["structure_id"])
 
     def test_check_reports_all_problems_without_state_change(self):
@@ -577,7 +699,7 @@ class PipelineRuntimeTests(unittest.TestCase):
             self.assertIn(key, gates)
         self.assertIn("300", gates["value_anchor"])
         self.assertIn("75", gates["scored_by"])
-        self.assertIn("1500", contract["length_plan"])
+        self.assertIn("2500", contract["length_plan"])
 
     def test_check_carries_writing_health(self):
         """check 顺带跑写作体检：模型已经会跑 check，多一条命令就多一个会被忘掉的步骤。"""
@@ -597,7 +719,7 @@ class PipelineRuntimeTests(unittest.TestCase):
             job_path = self.make_job(tmp)
             (job_path.parent / "article.md").write_text(
                 "# 关于行业发展的一些观察与思考\n\n"
-                + "这件事情引发了广泛的关注，相关方面表示将持续推进后续工作。" * 60,
+                + "这件事情引发了广泛的关注，相关方面表示将持续推进后续工作。" * 90,
                 encoding="utf-8",
             )
             result = pipeline_runtime.cmd_check(self.args(job_path))
@@ -643,7 +765,7 @@ class PipelineRuntimeTests(unittest.TestCase):
             job_path = self.make_job(tmp)
             self.write_article(job_path)
             cover = job_path.parent / "cover" / "cover.png"
-            cover.parent.mkdir(parents=True, exist_ok=True)
+            os.makedirs(cover.parent, exist_ok=True)
             cover.write_bytes(b"\x89PNG\r\n\x1a\n" + b"0" * 2048)
             result = pipeline_runtime.cmd_check(self.args(job_path))
         self.assertFalse([h for h in result["hints"] if "封面" in h])

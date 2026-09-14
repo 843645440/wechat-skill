@@ -26,8 +26,8 @@ RUNTIME_SPEC.loader.exec_module(pipeline_runtime)
 class SimplifiedPipelineTests(unittest.TestCase):
     def init_job(self, tmp, topic=None):
         root = Path(tmp)
-        (root / "config").mkdir(exist_ok=True)
-        (root / "references").mkdir(exist_ok=True)
+        os.makedirs(root / "config", exist_ok=True)
+        os.makedirs(root / "references", exist_ok=True)
         (root / "config/wechat-content-profiles.json").write_text(json.dumps({
             "version": 6,
             "profiles": {"a": {
@@ -165,7 +165,8 @@ class SimplifiedPipelineTests(unittest.TestCase):
             for name, status in (("humanize", "completed"), ("illustrations", "skipped")):
                 job["stages"][name] = pipeline_job.stage_record(status, job["created_at"])
             pipeline_job.save_job(job_path, job)
-            body = "这是经过核实的完整正文，用来验证无来源文件和无正文图片时仍可继续。" * 65
+            chunk = "这是经过核实的完整正文，用来验证无来源文件和无正文图片时仍可继续。" * 16
+            body = "\n\n".join(f"## 小节{index}\n\n{chunk}" for index in range(1, 6))
             (job_path.parent / "article.md").write_text(
                 f"# 测试主题进入真实流程\n\n{body}\n", encoding="utf-8"
             )

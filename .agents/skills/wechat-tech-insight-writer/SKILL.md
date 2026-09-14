@@ -1,6 +1,6 @@
 ---
 name: wechat-tech-insight-writer
-description: 按用户给定主题与思路，以懂行者的主观第一人称撰写中文微信公众号文章；强情感、有行业洞察，并轮换文章结构。覆盖科技、AI、中国高新技术、企业竞争、产业链、就业、民生、历史科技事件复盘和非投资类财经。用于用户给出选题、大纲、时间线、资料或观点并要求“写公众号文章”时；默认1500—4000字Markdown。不得擅自换题或自动另找热点；不得编造亲历或高风险个性化建议。
+description: 按用户给定主题与思路，以懂行者的主观第一人称撰写中文微信公众号文章；强情感、有行业洞察，并轮换文章结构。覆盖科技、AI、中国高新技术、企业竞争、产业链、就业、民生、历史科技事件复盘和非投资类财经。用于用户给出选题、大纲、时间线、资料或观点并要求“写公众号文章”时；默认2500—5000字Markdown。不得擅自换题或自动另找热点；不得编造亲历或高风险个性化建议。
 ---
 
 # 科技、AI 与民生 · 主观强情感写作助手
@@ -12,15 +12,16 @@ description: 按用户给定主题与思路，以懂行者的主观第一人称�
 
 ## 资源路由
 
-- **每次必读**：[references/safety-boundaries.md](references/safety-boundaries.md)、[references/affected-groups-perspective.md](references/affected-groups-perspective.md)、[references/style-guide.md](references/style-guide.md)、[references/semantic-layout.md](references/semantic-layout.md)、[references/article-structures.md](references/article-structures.md)、[references/audience-bridging.md](references/audience-bridging.md)、[references/reader-takeaway.md](references/reader-takeaway.md)。
+- **每次必读**：`../wechat-viral-writer/references/writing-checklist.md`、[references/safety-boundaries.md](references/safety-boundaries.md)。
+- **按需**：声口与结构 [references/style-guide.md](references/style-guide.md)、[references/article-structures.md](references/article-structures.md)；语义标记 [references/semantic-layout.md](references/semantic-layout.md)；读者增量 [references/reader-takeaway.md](references/reader-takeaway.md)；陌生主体 [references/audience-bridging.md](references/audience-bridging.md)；受影响群体 [references/affected-groups-perspective.md](references/affected-groups-perspective.md)。
 - **流水线命题入口**：`../wechat-content-pipeline/references/user-brief.md`。
 - **涉及时效/企业/数据/政策**：[references/fact-checking.md](references/fact-checking.md)（仅核实文中要用的事实，不借机换题）。
 - **流水线结构轮换**：`../wechat-content-pipeline/references/structure-rotation.md`。
-- **声口示例**：[examples/09-title-and-voice.md](examples/09-title-and-voice.md)、[examples/10-full-voice-sample.md](examples/10-full-voice-sample.md)；其余按题材按需。
+- **声口示例**：[examples/09-title-and-voice.md](examples/09-title-and-voice.md)、[examples/10-full-voice-sample.md](examples/10-full-voice-sample.md)。
 
 ## 默认行为
 
-- 简体中文；字数 **1500—4000**（流水线硬门禁）。
+- 简体中文；字数 **2500—5000**（流水线硬门禁；快评/新闻偏短，机制/产业偏长）。
 - 标题 ≤32 字：信息锚点 + 情感/判断刺点（可润色用户主题，不改事件）。
 - 情绪强度：按账号；第一人称「我」可用。
 - **结构从池中选且轮换**，但内容骨架优先服从用户大纲/时间线。

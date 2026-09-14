@@ -136,12 +136,24 @@ class ArticleRendererTests(unittest.TestCase):
                 self.assertIn(theme["accent"], cta[:1200])
                 self.assertNotIn("<span leaf=\"\"><span", cta[:1200])
 
+    def test_no_theme_emits_a_toc_module(self):
+        """看点目录模块已全线移除：文章从 hero 直接进入第一节。"""
+        _, sections = renderer.parse_article(ARTICLE)
+        for theme_name, theme in renderer.THEMES.items():
+            with self.subTest(theme=theme_name):
+                output = renderer.render_document(
+                    "测试标题", sections,
+                    {"version": 1, "theme": theme_name, "modules": []}, theme,
+                )
+                for token in ("本文看点", "报道提要", "事件脉络", "报告目录", "本期看点"):
+                    self.assertNotIn(token, output)
+
     def test_follow_cta_sits_between_body_and_end_marker(self):
         _, sections = renderer.parse_article(ARTICLE)
-        theme = renderer.THEMES["red-white"]
+        theme = renderer.THEMES["moyu-green"]
         output = renderer.render_document(
             "测试标题", sections,
-            {"version": 1, "theme": "red-white", "modules": []}, theme,
+            {"version": 1, "theme": "moyu-green", "modules": []}, theme,
         )
         self.assertLess(output.index("写在最后"), output.rindex(">END<"))
 
@@ -149,18 +161,20 @@ class ArticleRendererTests(unittest.TestCase):
         _, sections = renderer.parse_article(ARTICLE)
         expected = {
             "moyu-green": ("TECH INSIGHT", "linear-gradient", "01"),
-            "red-white": ("本文看点", "background:#DC2626", "WORKFLOW"),
-            "moyu-ticket": ("VALID FOR ONE READ", "END OF TICKET", "NO. 001"),
             "olive-journal": ("EDITORIAL NOTE", "END NOTE", "letter-spacing:-2px"),
             # 低噪音 / 强母题组
-            "plain-white": ("本文看点", "font-size:34px", "letter-spacing:-1px"),
-            "ink-rule": ("本文看点", "Songti SC", "background:#111111"),
-            "deep-pool": ("DEEP DIVE", "background:#16202B", "#6FBCC9"),
-            "color-block": ("DEEP DIVE", "background:#1B5E8C", "color:#1B5E8C"),
+            "plain-white": ("font-size:34px", "letter-spacing:-1px", "border-bottom:1px solid #EAEAE8"),
+            "ink-rule": ("Songti SC", "background:#111111", ">END<"),
+            "deep-pool": ("DEEP DIVE", "background:#16191D", "#9BA6AE"),
+            "color-block": ("DEEP DIVE", "background:#1F1F1F", "color:#1F1F1F"),
             # 新闻 / 正式报道组
-            "news-wire": ("NEWS DESK", "报道提要", "REPORT 01"),
-            "solemn-gray": ("SPECIAL REPORT", "事件脉络", "阅读说明"),
-            "formal-brief": ("BRIEFING", "报告目录", "SECTION 01"),
+            "news-wire": ("NEWS DESK", "REPORT 01", "信息说明"),
+            "solemn-gray": ("SPECIAL REPORT", "阅读说明", "等待事实更新"),
+            "formal-brief": ("BRIEFING", "SECTION 01", "报告说明"),
+            # 垂类氛围组
+            "aurora-violet": ("AURORA LAB", "linear-gradient(90deg,#3A3841,#8E8B95)", "linear-gradient(180deg,#3A3841,#8E8B95)"),
+            "peach-soft": ("DAILY NOTE", "border-radius:999px", "PEACH END"),
+            "noir-gold": ("NOIR BRIEF", "END OF ISSUE", "color:#C6B894"),
         }
         for theme_name, tokens in expected.items():
             with self.subTest(theme=theme_name):
@@ -171,7 +185,9 @@ class ArticleRendererTests(unittest.TestCase):
                 )
                 for token in tokens:
                     self.assertIn(token, output)
-                self.assertGreater(output.count("<section"), 8)
+                # 看点目录模块移除后，最简主题（素白）的结构数上限降到 7；
+                # 阈值 6 仍能拦住「退化成纯文本段落」的主题。
+                self.assertGreaterEqual(output.count("<section"), 6)
 
     def test_sober_themes_avoid_promotional_visuals_and_copy(self):
         _, sections = renderer.parse_article(ARTICLE)
@@ -384,6 +400,21 @@ class ThemeContrastTests(unittest.TestCase):
                         f"{ratio:.2f}:1，低于 {floor}:1",
                     )
 
+    def test_accent_is_dark_enough_for_emphasis(self):
+        """稳重灰调规范：accent 是重点标注色，压纸面必须达到大字号下限。
+
+        曾有主题的 accent 是饱和亮色（如 #DC2626 正红、#7C3AED 亮紫），
+        视觉上跳脱；现在统一收进「深色调点缀」，用 3.0:1 卡住亮度上限。
+        """
+        for name, theme in renderer.THEMES.items():
+            with self.subTest(theme=name):
+                ratio = self._ratio(theme["accent"], theme["paper"])
+                self.assertGreaterEqual(
+                    round(ratio, 2), 3.0,
+                    f"{name} 的 accent 压在 paper 上只有 {ratio:.2f}:1，"
+                    f"作为重点色太亮，应换更深的颜色",
+                )
+
     def test_required_theme_keys_present(self):
         """缺键会在渲染时才 KeyError，这里提前拦住。"""
         required = {"layout", "name", "paper", "ink", "body", "muted",
@@ -394,8 +425,9 @@ class ThemeContrastTests(unittest.TestCase):
 
     def test_dark_layouts_declare_their_on_dark_colors(self):
         """深色 layout 必须自带 dark 系色值，不能退回浅色主题色。"""
+        dark_hero_layouts = {"darkhero", "aurora", "noir"}
         for name, theme in renderer.THEMES.items():
-            if theme["layout"] == "darkhero":
+            if theme["layout"] in dark_hero_layouts:
                 with self.subTest(theme=name):
                     for key in ("dark", "darkink", "darkbody", "ondark"):
                         self.assertIn(key, theme)
