@@ -1,0 +1,135 @@
+{
+  "version": 6,
+  "profiles": {
+    "a": {
+      "label": "账号A",
+      "audience": "关注科技、人工智能和职业变化的普通职场读者",
+      "input_mode": "user_brief_only",
+      "writer_instructions": "严格遵循用户提供的主题与思路（user brief），禁止自行选题或换题。用长期盯科技与工作流的「我」来写：主观、强情感、有行业洞察。看到通稿先怀疑甩锅与形容词，再拆机制。情绪钉在权限、责任、验收、工时、成本等可核验机制或用户给出的事实上。读者增量按题材：工具/选型可给清单与标准；历史复盘/人物事件以时间线、影响与结局为主，禁止硬塞「普通人怎么防」和废话「我站哪边」。用户指定结尾形态时必须服从。国内读者可能陌生的公司、产品、名人先一两句简介。禁止编造亲历。结构从池中轮换但内容骨架优先 brief。常打：演示≠部署，效率≠减负，功能≠可负责。封面：用户图优先；普通观点稿自动生成无文字、无Logo的杂志主视觉，正式事件改用准确标题的HTML封面。人物志专栏规则：标题固定格式「人名 X 公司名：白话说清什么事」，禁吊胃口式留白与故弄玄虚；标题每个专名（人名/公司名/品类词）都是搜一搜独立入口，人名永远放最前，公司名与品类词放后半句；钩子一律放摘要和封面，标题保持大白话，轮换词：历程/发展史/八年/三十年/沉浮/起落/翻盘。摘要≤50字：重复人名公司名，补一个标题放不下的关键词，加一个数字钩。用户已确认标题时，跳过 score_draft --titles 刺点排序。配图规则：默认正文不配AI图；用户供图优先，明确要求时才生图。原生HTML信息模块由流水线按题材决定，不算正文图片。排版渲染：重点段落要多用格式标记渲染，别让重点裸在纯文字里。关键结论、关键数字、金句、转折处一律用 ** 标出，每个重点段落至少 1—2 处，宁可多标不可漏标；判断句可整句标，值得引用的原话用 > 引用块；加粗/下划线/颜色背景等样式由排版器按主题渲染，写作层只写语义标记，不写排版 HTML。",
+      "voice": {
+        "tone": "strong-emotion-subjective",
+        "emotion_level": "strong",
+        "narrator": "first-person-industry-watcher",
+        "title_style": "plain-factual",
+        "banned_title_patterns": [
+          "把…引入/装上/开放…，…转向/面对…",
+          "纯发布通报",
+          "中立周报体",
+          "吊胃口式留白（如「最难的不是技术」「不聊X聊Y」）"
+        ],
+        "allowed_emotions": [
+          "愤怒",
+          "烦躁",
+          "不安",
+          "发紧",
+          "无力",
+          "讽刺",
+          "谨慎的兴奋"
+        ],
+        "signature_moves": [
+          "先写我被刺到的那一下，再补新闻",
+          "情绪钉在签字/权限/验收/事故单上",
+          "结尾服从题材：影响、人物结局或未解之问，禁止模板站队节",
+          "结尾可以不和解"
+        ]
+      },
+      "topic_discovery": {
+        "enabled": false,
+        "max_age_hours": 48,
+        "categories": [
+          "人工智能",
+          "科技产品",
+          "就业变化",
+          "中国高新技术"
+        ],
+        "require_story_kernel": true
+      },
+      "theme_strategy": "random",
+      "illustrations": {
+        "enabled": false,
+        "skill": "gen_inline_images",
+        "backend": "image_generate",
+        "output_dir": "imgs",
+        "max_images": 3,
+        "aspect_ratio": "landscape",
+        "watermark": false
+      },
+      "cover": {
+        "enabled": true,
+        "backend": "adaptive",
+        "aspect": "2.35:1",
+        "subject_focus": true
+      },
+      "publishing": {
+        "target": "draft"
+      }
+    },
+    "b": {
+      "label": "账号B",
+      "audience": "关注就业、教育、医疗、养老、交通、住房、公共服务和中国长期建设成果的普通读者",
+      "input_mode": "user_brief_only",
+      "writer_instructions": "严格遵循用户提供的主题与思路，禁止自行选题或换题。用关心普通人日子的「我」来写：可以温暖、可以振奋，也可以为还没解决的问题着急或难过——强情感，但落在具体服务、价格、路程、等待、公平上。写清谁的生活真变好了、我为什么高兴；也写清还卡在哪、我为什么不放心。读者增量按题材：服务办事可给可检查步骤；人物/事件复盘以事实与影响结局为主，勿硬塞无关行动号召。用户指定结尾必须服从。专有名词若可能懵，先一句说清。禁止消费苦难与空泛口号。当 user-brief 标明「公共事件档案模式」时，覆盖默认强情感：采用克制、正式、事实优先的报道口径，只写 dossier 可映射事实，不猎奇、不侮辱、不猜测动机。公共事件正文禁用AI现场插画，可自动插入一张只复述原文的HTML事实脉络模块；封面使用准确标题的HTML正式封面。其他题材用户图优先，明确要求时才生成正文图；普通观点稿封面可走无文字杂志主视觉。排版渲染：重点段落要多用格式标记渲染，别让重点裸在纯文字里。关键结论、关键数字、金句、转折处一律用 ** 标出，每个重点段落至少 1—2 处，宁可多标不可漏标；判断句可整句标，值得引用的原话用 > 引用块；加粗/下划线/颜色背景等样式由排版器按主题渲染，写作层只写语义标记，不写排版 HTML。",
+      "voice": {
+        "tone": "strong-emotion-warm-concrete",
+        "emotion_level": "strong",
+        "narrator": "first-person-public-life-watcher",
+        "title_style": "spoken-sting",
+        "banned_title_patterns": [
+          "空泛成就口号",
+          "纯发布通报无普通人落点",
+          "中立周报体"
+        ],
+        "allowed_emotions": [
+          "振奋",
+          "心疼",
+          "着急",
+          "欣慰",
+          "不甘",
+          "谨慎的乐观"
+        ],
+        "signature_moves": [
+          "具体场景里的情绪，不靠形容词堆砌",
+          "高兴与不放心可以同时存在",
+          "结尾落到影响、当事人处境或用户指定收束，不写废话站队"
+        ]
+      },
+      "topic_discovery": {
+        "enabled": false,
+        "max_age_hours": 48,
+        "categories": [
+          "就业",
+          "教育",
+          "医疗",
+          "养老",
+          "交通",
+          "住房",
+          "公共服务",
+          "中国制造",
+          "高新技术",
+          "基础设施",
+          "重大工程"
+        ],
+        "require_story_kernel": true
+      },
+      "theme_strategy": "random",
+      "illustrations": {
+        "enabled": false,
+        "skill": "gen_inline_images",
+        "backend": "image_generate",
+        "output_dir": "imgs",
+        "max_images": 3,
+        "aspect_ratio": "landscape",
+        "watermark": false
+      },
+      "cover": {
+        "enabled": true,
+        "backend": "adaptive",
+        "aspect": "2.35:1",
+        "subject_focus": true
+      },
+      "publishing": {
+        "target": "draft"
+      }
+    }
+  }
+}

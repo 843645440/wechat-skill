@@ -1,0 +1,1196 @@
+#!/usr/bin/env python3
+"""Deterministically render semantic Markdown with rich WeChat theme components."""
+
+import argparse
+import html
+import importlib.util
+import json
+import os
+import re
+import sys
+import time
+from pathlib import Path
+
+
+DEFAULT_FONT = (
+    "-apple-system,BlinkMacSystemFont,Segoe UI,PingFang SC,"
+    "Hiragino Sans GB,Microsoft YaHei,sans-serif"
+)
+SERIF_FONT = "Songti SC,SimSun,Georgia,Times New Roman,serif"
+MONO_FONT = "SF Mono,Consolas,Monaco,monospace"
+
+# 主题字典是**主题的唯一真相源**（Markdown 组件库已归档到 archive/themes-v2/）。
+# 必需键：layout / name / paper / ink / body / muted / accent / soft / line /
+#         underline / radius / shadow。可选键：font（默认无衬线）、以及各
+#         layout 自己用的附加色（dark / darkink / block / blockink / num）。
+# 全库统一「稳重灰调」规范：正文区一律灰阶；主题色只以深色调点缀出现在
+# 强调、编号与细节线上（accent 必须足够深，可当重点色用）。
+# 目录模块已全线移除：文章从 hero 直接进入第一节。
+THEMES = {
+    "moyu-green": {
+        "layout": "magazine", "name": "松烟", "paper": "#FFFFFF",
+        "ink": "#1A1A1A", "body": "#3D3D3D", "muted": "#6E6E6E",
+        "accent": "#31544A", "soft": "#F4F6F5", "line": "#D9DEDB",
+        "underline": "border-bottom:2px solid #C9D2CE;font-weight:600;",
+        "radius": "14px", "shadow": "0 5px 16px rgba(0,0,0,0.07)",
+    },
+    "olive-journal": {
+        "layout": "journal", "name": "手泽", "paper": "#FDFDF8",
+        "ink": "#1F201B", "body": "#3F403A", "muted": "#6B6C64",
+        "accent": "#6B573F", "soft": "#F2F1EB", "line": "#D4D2C9",
+        "underline": "border-bottom:2px solid #C3BCA9;font-weight:600;",
+        "radius": "6px", "shadow": "0 5px 18px rgba(0,0,0,0.07)",
+    },
+    # ── 以下 4 套为「低噪音 / 强母题」组，装饰集中在 hero 和章节标题，
+    #    正文区一律浅底 + 高行高，长文不累眼。────────────────────────────
+    "plain-white": {
+        "layout": "plain", "name": "留白", "paper": "#FFFFFF",
+        # muted 是 plain 布局里 hero 引言的正文色，必须过 4.5:1，
+        # 不能为了「更淡」压到 #9A9A9A 那种 2.8:1 的水平。
+        "ink": "#1A1A1A", "body": "#3D3D3D", "muted": "#7D746B",
+        "accent": "#8C8378", "soft": "#FAFAF9", "line": "#EAEAE8",
+        "underline": "border-bottom:2px solid #D8D4CE;font-weight:600;",
+        "radius": "0", "shadow": "none",
+        "num": "#E8E6E3",          # 章节大号数字的浅色
+    },
+    "ink-rule": {
+        "layout": "serif-rule", "name": "墨栏", "paper": "#FFFFFF",
+        "ink": "#111111", "body": "#333333", "muted": "#767676",
+        "accent": "#111111", "soft": "#F6F6F6", "line": "#CFCFCF",
+        "underline": "border-bottom:1.5px solid #111111;font-weight:600;",
+        "radius": "0", "shadow": "none",
+        "font": SERIF_FONT,
+        "rule": "#111111",         # 分节黑线；line 留给表格等通用边框
+    },
+    "deep-pool": {
+        "layout": "darkhero", "name": "静渊", "paper": "#FFFFFF",
+        "ink": "#16191D", "body": "#3D4247", "muted": "#6E7276",
+        "accent": "#3E4C57", "soft": "#F4F5F6", "line": "#DFE2E4",
+        "underline": "border-bottom:2px solid #C2C9CE;font-weight:600;",
+        "radius": "8px", "shadow": "0 4px 16px rgba(0,0,0,0.07)",
+        # onDark 是深色 hero 上的强调色：accent 一类深色压深底不够亮，
+        # 小字号 kicker 一律用提亮版。
+        "dark": "#16191D", "darkink": "#F4F4F4", "darkbody": "#A8ACB0",
+        "ondark": "#9BA6AE",
+    },
+    "color-block": {
+        "layout": "colorblock", "name": "玄章", "paper": "#FFFFFF",
+        "ink": "#1A1A1A", "body": "#3D3D3D", "muted": "#6E6E6E",
+        "accent": "#1F1F1F", "soft": "#F4F4F4", "line": "#DEDEDE",
+        "underline": "border-bottom:2px solid #C7C7C7;font-weight:600;",
+        "radius": "0", "shadow": "none",
+        "block": "#1F1F1F", "blockink": "#FFFFFF",
+    },
+    # ── 新闻 / 正式报道组：不用渐变、投影和营销式 CTA。三套分别承担
+    #    快讯长文、沉重事件、专题报告，不能只靠换色冒充不同风格。────────
+    "news-wire": {
+        "layout": "newswire", "name": "专电",
+        "paper": "#FFFFFF", "ink": "#111827", "body": "#303844",
+        "muted": "#5F6873", "accent": "#273746", "soft": "#F5F6F7",
+        "line": "#D8DCE1",
+        "underline": "border-bottom:1.5px solid #7B8793;font-weight:650;",
+        "radius": "0", "shadow": "none",
+    },
+    "solemn-gray": {
+        "layout": "solemn", "name": "素笺",
+        "paper": "#FDFCFA", "ink": "#1C1B1A", "body": "#3B3835",
+        "muted": "#6A645F", "accent": "#712F38", "soft": "#F3F0ED",
+        "line": "#D7D1CC",
+        "underline": "border-bottom:1.5px solid #9F7F83;font-weight:650;",
+        "radius": "2px", "shadow": "none", "font": SERIF_FONT,
+    },
+    "formal-brief": {
+        "layout": "briefing", "name": "文告",
+        "paper": "#FFFFFF", "ink": "#152334", "body": "#354455",
+        "muted": "#627184", "accent": "#234E70", "soft": "#F2F5F8",
+        "line": "#CFD8E2",
+        "underline": "border-bottom:2px solid #AFC2D4;font-weight:650;",
+        "radius": "4px", "shadow": "none",
+    },
+    # ── 垂类氛围组：一套管一个内容垂类，视觉母题跟着垂类的阅读预期走。
+    #    三套都沿用「深色/浓色只出现在 hero，正文回浅底」的成熟结构。──────
+    "aurora-violet": {
+        "layout": "aurora", "name": "霓灰", "paper": "#FFFFFF",
+        "ink": "#201D28", "body": "#3F3D47", "muted": "#6E6C75",
+        "accent": "#4A4458", "soft": "#F5F4F7", "line": "#DDDBE1",
+        "underline": "border-bottom:2px solid #C9C6CF;font-weight:600;",
+        "radius": "12px", "shadow": "0 5px 18px rgba(0,0,0,0.08)",
+        # 深灰紫 hero 上的组合：accent 直接压 dark 不够亮，kicker 一律用 ondark。
+        "dark": "#1D1B24", "darkink": "#F3F2F6", "darkbody": "#C4C2C9",
+        "ondark": "#A9A5B2",
+    },
+    "peach-soft": {
+        "layout": "capsule", "name": "陶然", "paper": "#FDFBF8",
+        "ink": "#2B2724", "body": "#453F3A", "muted": "#6E6862",
+        "accent": "#7A4A38", "soft": "#F6F0EB", "line": "#E0D6CF",
+        "underline": "border-bottom:2px solid #D3C4BA;font-weight:600;",
+        "radius": "16px", "shadow": "0 6px 16px rgba(0,0,0,0.06)",
+    },
+    "noir-gold": {
+        "layout": "noir", "name": "金石", "paper": "#FFFFFF",
+        "ink": "#141414", "body": "#3A3A3A", "muted": "#6E6E6E",
+        "accent": "#7A6A45", "soft": "#F6F4EF", "line": "#DFDAD0",
+        "underline": "border-bottom:2px solid #C9BEA4;font-weight:650;",
+        "radius": "2px", "shadow": "none",
+        # 灰金只做细节：深底上的文字一律用提亮灰金 ondark，不用 accent。
+        "dark": "#141414", "darkink": "#F5F3EE", "darkbody": "#C4C0B6",
+        "ondark": "#C6B894",
+    },
+}
+
+SOBER_LAYOUTS = {"newswire", "solemn", "briefing"}
+
+HEADING_RE = re.compile(r"^(#{1,3})\s+(.+?)\s*$")
+INLINE_RE = re.compile(
+    r"(`[^`\n]+`|\*\*\S(?:.*?\S)?\*\*|__\S(?:.*?\S)?__|"
+    r"==\S(?:.*?\S)?==|\+\+\S(?:.*?\S)?\+\+|<u>.+?</u>)"
+)
+TABLE_SEPARATOR_RE = re.compile(
+    r"^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$"
+)
+END_HEADING_RE = re.compile(r"结语|结论|总结|写在最后|最后的话|尾声")
+IMAGE_RE = re.compile(r"^!\[([^\]\n]*)\]\(([^()\s]+)(?:\s+\"[^\"]*\")?\)$")
+
+
+class RenderError(RuntimeError):
+    pass
+
+
+def normalized(value):
+    return " ".join(str(value).split())
+
+
+def plain_text(value):
+    value = str(value)
+    return normalized(INLINE_RE.sub(lambda match: re.sub(
+        r"^(?:\*\*|__|==|\+\+|`|<u>)|(?:\*\*|__|==|\+\+|`|</u>)$",
+        "",
+        match.group(0),
+        flags=re.I,
+    ), value))
+
+
+def leaf(value, style=""):
+    style_attr = f' style="{style}"' if style else ""
+    return f'<span leaf=""{style_attr}>{html.escape(str(value), quote=True)}</span>'
+
+
+def code_leaf(value):
+    """Escape one code line and lock in significant whitespace as &nbsp;.
+
+    WeChat's paste pipeline collapses runs of literal spaces, which would
+    destroy indentation and column alignment in code blocks. Leading spaces
+    and any interior run of 2+ spaces are converted to non-breaking spaces
+    (real, non-collapsible characters) after escaping so entities like
+    ``&nbsp;`` are not themselves re-escaped. Single interior spaces are left
+    alone so long lines can still wrap at a word boundary.
+    """
+    escaped = html.escape(str(value), quote=True)
+    escaped = re.sub(r"^ +", lambda match: "&nbsp;" * len(match.group(0)), escaped)
+    escaped = re.sub(r"  +", lambda match: "&nbsp;" * len(match.group(0)), escaped)
+    if not escaped:
+        escaped = "&nbsp;"
+    return f'<span leaf="">{escaped}</span>'
+
+
+def render_inline(value, theme):
+    output = []
+    for part in INLINE_RE.split(str(value)):
+        if not part:
+            continue
+        if part.startswith("**") and part.endswith("**"):
+            output.append(
+                f'<span style="{theme["underline"]}">{leaf(part[2:-2])}</span>'
+            )
+        elif part.startswith("==") and part.endswith("=="):
+            output.append(
+                f'<span style="background:{theme["line"]};color:{theme["ink"]};'
+                f'padding:1px 3px;font-weight:600;">{leaf(part[2:-2])}</span>'
+            )
+        elif part.startswith("++") and part.endswith("++"):
+            output.append(
+                f'<span style="{theme["underline"]}">{leaf(part[2:-2])}</span>'
+            )
+        elif part.lower().startswith("<u>") and part.lower().endswith("</u>"):
+            output.append(
+                f'<span style="{theme["underline"]}">{leaf(part[3:-4])}</span>'
+            )
+        elif part.startswith("`") and part.endswith("`"):
+            output.append(
+                f'<span style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;'
+                f'background:{theme["soft"]};color:{theme["accent"]};padding:1px 5px;'
+                f'border-radius:3px;">{leaf(part[1:-1])}</span>'
+            )
+        else:
+            output.append(leaf(part))
+    return "".join(output)
+
+
+def atomic_text(path, value):
+    os.makedirs(path.parent, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    temporary.write_text(value, encoding="utf-8")
+    os.replace(temporary, path)
+
+
+def atomic_json(path, value):
+    atomic_text(path, json.dumps(value, ensure_ascii=False, indent=2) + "\n")
+
+
+def table_cells(line):
+    value = line.strip()
+    if value.startswith("|"):
+        value = value[1:]
+    if value.endswith("|"):
+        value = value[:-1]
+    return [cell.strip() for cell in value.split("|")]
+
+
+def parse_article(source):
+    title = None
+    sections = [{"heading": None, "blocks": []}]
+    paragraph = []
+    bullets = []
+    lines = source.splitlines()
+
+    def flush_paragraph():
+        if paragraph:
+            raw = " ".join(paragraph)
+            sections[-1]["blocks"].append(
+                {"kind": "paragraph", "raw": raw, "text": plain_text(raw)}
+            )
+            paragraph.clear()
+
+    def flush_bullets():
+        if bullets:
+            sections[-1]["blocks"].append({
+                "kind": "list",
+                "items": [plain_text(item) for item in bullets],
+                "raw_items": bullets[:],
+            })
+            bullets.clear()
+
+    index = 0
+    while index < len(lines):
+        line = lines[index].strip()
+        match = HEADING_RE.match(line)
+        if match:
+            flush_paragraph()
+            flush_bullets()
+            level, heading_raw = len(match.group(1)), match.group(2)
+            heading = plain_text(heading_raw)
+            if level == 1:
+                if title is not None:
+                    raise RenderError("article.md 只能包含一个一级标题")
+                title = heading
+            elif level == 2:
+                sections.append({"heading": heading, "blocks": []})
+            else:
+                sections[-1]["blocks"].append(
+                    {"kind": "subheading", "raw": heading_raw, "text": heading}
+                )
+        elif (
+            line.startswith("|")
+            and index + 1 < len(lines)
+            and TABLE_SEPARATOR_RE.match(lines[index + 1].strip())
+        ):
+            flush_paragraph()
+            flush_bullets()
+            headers_raw = table_cells(line)
+            index += 2
+            rows_raw = []
+            while index < len(lines) and lines[index].strip().startswith("|"):
+                rows_raw.append(table_cells(lines[index]))
+                index += 1
+            width = len(headers_raw)
+            if width < 2 or any(len(row) != width for row in rows_raw):
+                raise RenderError("Markdown 表格列数不一致")
+            sections[-1]["blocks"].append({
+                "kind": "table",
+                "headers": [plain_text(item) for item in headers_raw],
+                "raw_headers": headers_raw,
+                "rows": [[plain_text(item) for item in row] for row in rows_raw],
+                "raw_rows": rows_raw,
+            })
+            continue
+        elif line.startswith("```"):
+            flush_paragraph()
+            flush_bullets()
+            lang = line[3:].strip()
+            index += 1
+            code_lines = []
+            while index < len(lines) and lines[index].strip() != "```":
+                code_lines.append(lines[index])
+                index += 1
+            if index < len(lines):
+                index += 1  # skip the closing fence
+            # Unclosed fence: falls through with index == len(lines), i.e. the
+            # rest of the file is treated as the code block's content — no
+            # exception, no infinite loop.
+            sections[-1]["blocks"].append({
+                "kind": "code", "lang": lang, "code": "\n".join(code_lines),
+            })
+            continue
+        elif image := IMAGE_RE.match(line):
+            flush_paragraph()
+            flush_bullets()
+            sections[-1]["blocks"].append({
+                "kind": "image", "alt": image.group(1), "src": image.group(2),
+            })
+        elif not line:
+            flush_paragraph()
+            flush_bullets()
+        elif line.startswith(("- ", "* ", "+ ")):
+            flush_paragraph()
+            bullets.append(line[2:])
+        elif line.startswith("> "):
+            flush_paragraph()
+            flush_bullets()
+            raw = line[2:]
+            sections[-1]["blocks"].append(
+                {"kind": "quote", "raw": raw, "text": plain_text(raw)}
+            )
+        else:
+            flush_bullets()
+            paragraph.append(line)
+        index += 1
+
+    flush_paragraph()
+    flush_bullets()
+    sections = [item for item in sections if item["heading"] or item["blocks"]]
+    if not title:
+        raise RenderError("article.md 第一行必须是唯一一级标题")
+    if not any(section["blocks"] for section in sections):
+        raise RenderError("article.md 没有正文")
+    return title, sections
+
+
+def first_paragraph(sections):
+    for section in sections:
+        for block in section["blocks"]:
+            if block["kind"] == "paragraph":
+                return block
+    return None
+
+
+def english_tag(heading):
+    mapping = (
+        ("成本", "COST & VALUE"), ("效率", "EFFICIENCY"),
+        ("数据", "DATA CHECK"), ("企业", "BUSINESS"),
+        ("员工", "PEOPLE"), ("技术", "TECHNOLOGY"),
+        ("流程", "WORKFLOW"), ("影响", "IMPACT"),
+        ("风险", "RISK"), ("结", "CONCLUSION"),
+    )
+    return next((tag for keyword, tag in mapping if keyword in heading), "KEY INSIGHT")
+
+
+def render_hero(title, intro, theme):
+    layout = theme["layout"]
+    intro_html = render_inline(intro.get("raw", intro["text"]), theme) if intro else ""
+    title_html = leaf(title)
+    if layout == "magazine":
+        return (
+            '<section style="margin:0 0 30px;background:#FFFFFF;border:1.5px solid rgba(0,0,0,0.10);border-radius:20px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.06);">'
+            '<section style="padding:26px 24px 22px;"><section style="display:flex;align-items:center;margin-bottom:20px;">'
+            f'<span style="width:7px;height:7px;background:{theme["accent"]};border-radius:50%;display:inline-block;">'
+            f'{leaf(" ")}</span><p style="margin:0 10px;font-size:10px;color:{theme["accent"]};font-weight:700;letter-spacing:3px;">{leaf("TECH INSIGHT")}</p>'
+            f'<section style="flex:1;height:1px;background:linear-gradient(to right,{theme["line"]},transparent);">{leaf(" ")}</section></section>'
+            f'<p style="font-size:25px;font-weight:900;color:{theme["ink"]};margin:0 0 14px;line-height:1.25;letter-spacing:-0.6px;">{title_html}</p>'
+            f'<section style="width:52px;height:3px;background:linear-gradient(to right,{theme["accent"]},{theme["muted"]});border-radius:2px;margin-bottom:13px;">{leaf(" ")}</section>'
+            f'<p style="font-size:14px;color:{theme["muted"]};margin:0;line-height:1.8;">{intro_html}</p></section>'
+            f'<section style="background:#1F1F1F;padding:10px 24px;display:flex;justify-content:space-between;">'
+            f'<p style="margin:0;font-size:11px;color:#FFFFFF;font-weight:600;">{leaf("科技 · 产业 · 人")}</p>'
+            f'<p style="margin:0;font-size:9px;color:#CFCFCF;letter-spacing:2px;">{leaf("深度观察")}</p></section></section>'
+        )
+    if layout == "journal":
+        return (
+            f'<section style="background:{theme["paper"]};border:1px solid {theme["line"]};border-radius:6px;overflow:hidden;margin-bottom:30px;">'
+            f'<section style="padding:25px 22px 20px;"><section style="display:flex;align-items:center;margin-bottom:18px;">'
+            f'<span style="width:8px;height:8px;background:{theme["ink"]};border-radius:50%;display:inline-block;">{leaf(" ")}</span>'
+            f'<p style="margin:0 9px;font-size:9px;font-weight:700;letter-spacing:3px;color:{theme["muted"]};">{leaf("EDITORIAL NOTE")}</p>'
+            f'<span style="height:1px;background:{theme["line"]};flex:1;display:inline-block;">{leaf(" ")}</span></section>'
+            f'<p style="font-size:24px;font-weight:800;color:{theme["ink"]};margin:0 0 12px;line-height:1.25;">{title_html}</p>'
+            f'<p style="font-size:13px;color:{theme["muted"]};margin:0;line-height:1.8;">{intro_html}</p></section>'
+            f'<section style="background:{theme["ink"]};padding:10px 22px;"><p style="margin:0;font-size:11px;color:#FFFFFF;font-weight:600;">{leaf("技术进步，最终要落到真实工作与生活")}</p></section></section>'
+        )
+    if layout == "newswire":
+        # 新闻线：报纸栏线 + 明确的报道属性，不用卡片、渐变或投影。
+        return (
+            f'<section style="margin:0 14px 36px;border-top:4px solid {theme["accent"]};padding-top:17px;">'
+            f'<section style="display:flex;align-items:center;margin-bottom:16px;">'
+            f'<p style="margin:0 12px 0 0;font-size:10px;font-weight:800;letter-spacing:2.5px;'
+            f'color:{theme["accent"]};">{leaf("NEWS DESK · 事实报道")}</p>'
+            f'<section style="flex:1;height:1px;background:{theme["line"]};line-height:0;">{leaf(" ")}</section></section>'
+            f'<p style="margin:0 0 16px;font-size:26px;font-weight:850;line-height:1.38;'
+            f'letter-spacing:-0.35px;color:{theme["ink"]};">{title_html}</p>'
+            f'<p style="margin:0;padding:14px 0;border-top:1px solid {theme["line"]};'
+            f'border-bottom:1px solid {theme["line"]};font-size:14px;line-height:1.9;'
+            f'color:{theme["body"]};">{intro_html}</p>'
+            f'<p style="margin:10px 0 0;font-size:10px;letter-spacing:2px;color:{theme["muted"]};">'
+            f'{leaf("事实 · 进展 · 边界")}</p></section>'
+        )
+    if layout == "solemn":
+        # 沉静灰：暖灰纸面、宋体与细酒红线。视觉重量来自留白，不来自大黑块。
+        return (
+            f'<section style="margin:0 8px 38px;background:{theme["soft"]};'
+            f'border-top:6px solid {theme["ink"]};padding:26px 20px 24px;">'
+            f'<p style="margin:0 0 16px;font-size:10px;font-weight:700;letter-spacing:2.5px;'
+            f'color:{theme["accent"]};">{leaf("SPECIAL REPORT · 重大事件")}</p>'
+            f'<p style="margin:0 0 17px;font-size:25px;font-weight:700;line-height:1.48;'
+            f'color:{theme["ink"]};">{title_html}</p>'
+            f'<section style="width:44px;height:1px;background:{theme["accent"]};'
+            f'line-height:0;margin-bottom:15px;">{leaf(" ")}</section>'
+            f'<p style="margin:0;font-size:14px;line-height:2;color:{theme["body"]};">{intro_html}</p>'
+            f'</section>'
+        )
+    if layout == "briefing":
+        # 正式简报：文档页眉 + 摘要区，适合政策、机构和专题进展说明。
+        return (
+            f'<section style="margin:0 10px 36px;border:1px solid {theme["line"]};">'
+            f'<section style="background:{theme["accent"]};padding:10px 18px;display:flex;'
+            f'align-items:center;justify-content:space-between;">'
+            f'<p style="margin:0;font-size:10px;font-weight:800;letter-spacing:2.5px;color:#FFFFFF;">'
+            f'{leaf("BRIEFING · 专题简报")}</p>'
+            f'<p style="margin:0;font-size:9px;letter-spacing:1.5px;color:#FFFFFF;">'
+            f'{leaf("FACT / CONTEXT / FINDING")}</p></section>'
+            f'<section style="padding:24px 20px 22px;">'
+            f'<p style="margin:0 0 15px;font-size:25px;font-weight:800;line-height:1.42;'
+            f'color:{theme["ink"]};letter-spacing:-0.25px;">{title_html}</p>'
+            f'<p style="margin:0;padding:13px 14px;background:{theme["soft"]};'
+            f'border-left:3px solid {theme["accent"]};font-size:14px;line-height:1.9;'
+            f'color:{theme["body"]};">{intro_html}</p></section></section>'
+        )
+    if layout == "plain":
+        # 素白：唯一装饰是一条极浅分隔线，靠字号与留白分层。
+        return (
+            f'<section style="margin:0 14px 34px;padding-bottom:22px;border-bottom:1px solid {theme["line"]};">'
+            f'<p style="margin:0 0 14px;font-size:23px;font-weight:700;line-height:1.42;'
+            f'color:{theme["ink"]};letter-spacing:-0.2px;">{title_html}</p>'
+            f'<p style="margin:0;font-size:14px;line-height:1.9;color:{theme["muted"]};">{intro_html}</p></section>'
+        )
+    if layout == "serif-rule":
+        # 墨线：上下两根黑线夹住标题，像纸质书内页。
+        rule = theme.get("rule", theme["ink"])
+        return (
+            f'<section style="margin:0 14px 36px;">'
+            f'<section style="height:2px;background:{rule};line-height:0;margin-bottom:20px;">{leaf(" ")}</section>'
+            f'<p style="margin:0 0 16px;font-size:25px;font-weight:700;line-height:1.4;color:{theme["ink"]};">{title_html}</p>'
+            f'<p style="margin:0 0 18px;font-size:14px;line-height:1.95;color:{theme["body"]};">{intro_html}</p>'
+            f'<section style="height:1px;background:{theme["line"]};line-height:0;">{leaf(" ")}</section></section>'
+        )
+    if layout == "darkhero":
+        # 深潭：深色卡片只用在开头，正文回浅底，整篇不压。
+        dark, darkink = theme.get("dark", theme["ink"]), theme.get("darkink", "#FFFFFF")
+        return (
+            f'<section style="margin:0 0 34px;padding:32px 22px 28px;background:{dark};">'
+            f'<p style="margin:0 0 15px;font-size:10px;font-weight:700;letter-spacing:3px;'
+            f'color:{theme.get("ondark", theme["accent"])};">{leaf("DEEP DIVE")}</p>'
+            f'<p style="margin:0 0 15px;font-size:24px;font-weight:750;line-height:1.45;color:{darkink};">{title_html}</p>'
+            f'<p style="margin:0;font-size:14px;line-height:1.95;'
+            f'color:{theme.get("darkbody", theme["muted"])};">{intro_html}</p></section>'
+        )
+    if layout == "colorblock":
+        # 色块：整块主色反白，底部一道压深的窄条收口。
+        block, blockink = theme.get("block", theme["accent"]), theme.get("blockink", "#FFFFFF")
+        return (
+            f'<section style="margin:0 0 30px;background:{block};padding:34px 22px 0;">'
+            f'<p style="margin:0 0 16px;font-size:10px;font-weight:800;letter-spacing:3.5px;'
+            f'color:#FFFFFFB3;">{leaf("DEEP DIVE")}</p>'
+            f'<p style="margin:0 0 16px;font-size:25px;font-weight:800;line-height:1.42;'
+            f'color:{blockink};letter-spacing:-0.3px;">{title_html}</p>'
+            f'<p style="margin:0 0 26px;font-size:14px;line-height:1.95;color:#FFFFFFD9;">{intro_html}</p>'
+            f'<section style="height:10px;background:#00000026;margin:0 -22px;line-height:0;">{leaf(" ")}</section>'
+            f'</section>'
+        )
+    if layout == "aurora":
+        # 霓灰：深灰紫 hero，收口在一条灰调渐变细线上，正文回白底。
+        dark, darkink = theme.get("dark", theme["ink"]), theme.get("darkink", "#FFFFFF")
+        return (
+            f'<section style="margin:0 0 34px;padding:30px 22px 0;background:{dark};">'
+            f'<p style="margin:0 0 15px;font-size:10px;font-weight:700;letter-spacing:3px;'
+            f'color:{theme.get("ondark", theme["accent"])};">{leaf("AURORA LAB · 前沿观察")}</p>'
+            f'<p style="margin:0 0 15px;font-size:24px;font-weight:800;line-height:1.45;'
+            f'letter-spacing:-0.3px;color:{darkink};">{title_html}</p>'
+            f'<p style="margin:0 0 26px;font-size:14px;line-height:1.95;'
+            f'color:{theme.get("darkbody", theme["muted"])};">{intro_html}</p>'
+            f'<section style="height:3px;background:linear-gradient(90deg,#3A3841,#8E8B95);'
+            f'margin:0 -22px;line-height:0;">{leaf(" ")}</section></section>'
+        )
+    if layout == "capsule":
+        # 陶然：奶油圆角卡片 + 胶囊母题，生活感的松弛气质。
+        return (
+            f'<section style="margin:0 8px 32px;background:{theme["paper"]};'
+            f'border:1.5px solid {theme["line"]};border-radius:22px;overflow:hidden;'
+            f'box-shadow:{theme["shadow"]};">'
+            f'<section style="padding:26px 20px 18px;">'
+            f'<span style="display:inline-block;background:{theme["soft"]};'
+            f'color:{theme["accent"]};border-radius:999px;padding:5px 14px;'
+            f'font-size:10px;font-weight:800;letter-spacing:2px;">{leaf("DAILY NOTE · 生活手帐")}</span>'
+            f'<p style="margin:14px 0 12px;font-size:24px;font-weight:900;line-height:1.4;'
+            f'letter-spacing:-0.3px;color:{theme["ink"]};">{title_html}</p>'
+            f'<p style="margin:0 0 18px;font-size:14px;line-height:1.9;'
+            f'color:{theme["body"]};">{intro_html}</p></section>'
+            f'<section style="margin:0 14px 14px;background:{theme["soft"]};'
+            f'border-radius:999px;padding:8px 16px;display:flex;justify-content:space-between;align-items:center;">'
+            f'<p style="margin:0;font-size:11px;font-weight:700;color:{theme["accent"]};">{leaf("生活 · 书影 · 食光")}</p>'
+            f'<p style="margin:0;font-size:9px;letter-spacing:1px;color:{theme["muted"]};">{leaf("慢慢来，比较快")}</p></section></section>'
+        )
+    if layout == "noir":
+        # 金石：黑色刊头配灰金细节，像一本商业杂志的封面页。
+        dark, darkink = theme.get("dark", theme["ink"]), theme.get("darkink", "#FFFFFF")
+        return (
+            f'<section style="margin:0 0 34px;background:{dark};">'
+            f'<section style="height:3px;background:{theme.get("ondark", theme["accent"])};'
+            f'line-height:0;">{leaf(" ")}</section>'
+            f'<section style="padding:24px 20px 18px;">'
+            f'<section style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">'
+            f'<p style="margin:0;font-size:10px;font-weight:800;letter-spacing:3px;'
+            f'color:{theme.get("ondark", theme["accent"])};">{leaf("NOIR BRIEF")}</p>'
+            f'<p style="margin:0;font-size:9px;letter-spacing:2px;'
+            f'color:{theme.get("darkbody", theme["muted"])};">{leaf("商业观察 · 长期主义")}</p></section>'
+            f'<p style="margin:0 0 14px;font-size:25px;font-weight:800;line-height:1.42;'
+            f'letter-spacing:-0.3px;color:{darkink};">{title_html}</p>'
+            f'<p style="margin:0;font-size:14px;line-height:1.9;'
+            f'color:{theme.get("darkbody", theme["muted"])};">{intro_html}</p></section>'
+            f'<section style="border-top:1px solid #FFFFFF26;padding:9px 20px;'
+            f'display:flex;justify-content:space-between;">'
+            f'<p style="margin:0;font-size:10px;color:{theme.get("darkbody", theme["muted"])};">{leaf("商业 · 财经 · 组织")}</p>'
+            f'<p style="margin:0;font-size:9px;letter-spacing:2px;'
+            f'color:{theme.get("ondark", theme["accent"])};">{leaf("NO. 001")}</p></section></section>'
+        )
+    # editorial（也是未知 layout 的防御性兜底；argparse 已限定 THEMES 内取值）
+    return (
+        f'<section style="margin:10px 10px 34px;background:#FFFFFF;border-radius:12px;box-shadow:0 4px 24px -4px rgba(0,0,0,0.10);padding:26px 22px;">'
+        f'<p style="font-size:42px;color:{theme["accent"]};font-weight:900;margin:0;line-height:0.65;">{leaf("“")}</p>'
+        f'<p style="font-size:16px;font-weight:750;color:{theme["ink"]};margin:12px 0 0;line-height:1.8;">{intro_html}</p></section>'
+    )
+
+
+
+def render_heading(heading, index, total, theme):
+    number = "∞" if index == total and END_HEADING_RE.search(heading) else f"{index:02d}"
+    tag = "THE END" if number == "∞" else english_tag(heading)
+    layout = theme["layout"]
+    if layout == "newswire":
+        return (
+            f'<section style="margin:46px 14px 21px;border-top:2px solid {theme["ink"]};'
+            f'padding-top:12px;">'
+            f'<p style="margin:0 0 5px;font-size:9px;font-weight:800;letter-spacing:2px;'
+            f'color:{theme["accent"]};">{leaf(f"REPORT {number}")}</p>'
+            f'<p style="margin:0;font-size:19px;font-weight:800;line-height:1.5;'
+            f'color:{theme["ink"]};">{leaf(heading)}</p></section>'
+        )
+    if layout == "solemn":
+        return (
+            f'<section style="margin:48px 14px 22px;">'
+            f'<section style="display:flex;align-items:center;margin-bottom:10px;">'
+            f'<span style="display:inline-block;margin-right:11px;padding:3px 8px;'
+            f'border:1px solid {theme["accent"]};font-size:10px;font-weight:700;'
+            f'color:{theme["accent"]};">{leaf(number)}</span>'
+            f'<span style="flex:1;height:1px;background:{theme["line"]};line-height:0;">'
+            f'{leaf(" ")}</span></section>'
+            f'<p style="margin:0;font-size:19px;font-weight:700;line-height:1.6;'
+            f'color:{theme["ink"]};">{leaf(heading)}</p></section>'
+        )
+    if layout == "briefing":
+        return (
+            f'<section style="margin:46px 14px 22px;border-left:4px solid {theme["accent"]};'
+            f'padding:2px 0 2px 13px;">'
+            f'<p style="margin:0 0 4px;font-size:9px;font-weight:800;letter-spacing:2px;'
+            f'color:{theme["accent"]};">{leaf(f"SECTION {number}")}</p>'
+            f'<p style="margin:0;font-size:18px;font-weight:800;line-height:1.5;'
+            f'color:{theme["ink"]};">{leaf(heading)}</p></section>'
+        )
+    if layout == "aurora":
+        # 霓灰：竖向灰调渐变短棒（hero 细线的纵向回声）+ 序号 + 延伸细线。
+        return (
+            f'<section style="margin:44px 14px 20px;">'
+            f'<section style="display:flex;align-items:center;margin-bottom:10px;">'
+            f'<span style="display:inline-block;width:4px;height:30px;border-radius:2px;'
+            f'background:linear-gradient(180deg,#3A3841,#8E8B95);margin-right:11px;">{leaf(" ")}</span>'
+            f'<span style="font-size:10px;font-weight:800;letter-spacing:2px;'
+            f'color:{theme["accent"]};margin-right:9px;">{leaf(number)}</span>'
+            f'<span style="flex:1;height:1px;background:{theme["line"]};">{leaf(" ")}</span></section>'
+            f'<p style="margin:0;font-size:18px;font-weight:800;line-height:1.5;'
+            f'color:{theme["ink"]};">{leaf(heading)}</p></section>'
+        )
+    if layout == "capsule":
+        # 陶然：深陶色胶囊序号 + 一枚软色胶囊短棒，圆角贯穿。
+        return (
+            f'<section style="margin:44px 12px 22px;">'
+            f'<section style="display:flex;align-items:center;">'
+            f'<span style="display:inline-block;background:{theme["accent"]};color:#FFFFFF;'
+            f'border-radius:999px;padding:4px 12px;font-size:11px;font-weight:800;'
+            f'letter-spacing:1px;margin-right:11px;">{leaf(number)}</span>'
+            f'<span style="flex:1;height:4px;border-radius:2px;background:{theme["soft"]};">'
+            f'{leaf(" ")}</span></section>'
+            f'<p style="margin:10px 0 0;font-size:18px;font-weight:800;line-height:1.5;'
+            f'color:{theme["ink"]};">{leaf(heading)}</p></section>'
+        )
+    if layout == "noir":
+        # 金石：黑底灰金字的期号方块 + 一段灰金短棒延伸，压住商业感。
+        dark = theme.get("dark", theme["ink"])
+        return (
+            f'<section style="margin:46px 14px 20px;">'
+            f'<section style="display:flex;align-items:center;margin-bottom:12px;">'
+            f'<span style="display:inline-block;background:{dark};'
+            f'color:{theme.get("ondark", theme["accent"])};font-size:11px;font-weight:800;'
+            f'letter-spacing:1px;padding:5px 10px;margin-right:11px;">{leaf(number)}</span>'
+            f'<span style="flex:1;height:3px;background:{theme["line"]};">{leaf(" ")}</span></section>'
+            f'<p style="margin:0;font-size:19px;font-weight:800;line-height:1.5;'
+            f'color:{theme["ink"]};">{leaf(heading)}</p></section>'
+        )
+    if layout == "plain":
+        # 素白：大号浅色数字压在标题上方，是全篇唯一的「大」元素。
+        return (
+            f'<section style="margin:44px 14px 20px;">'
+            f'<p style="margin:0 0 2px;font-size:34px;font-weight:800;line-height:1;'
+            f'color:{theme.get("num", theme["line"])};letter-spacing:-1px;">{leaf(number)}</p>'
+            f'<p style="margin:0;font-size:18px;font-weight:700;line-height:1.5;color:{theme["ink"]};">{leaf(heading)}</p></section>'
+        )
+    if layout == "serif-rule":
+        # 墨线：实心黑方块编号 + 标题 + 细线收尾。
+        rule = theme.get("rule", theme["ink"])
+        return (
+            f'<section style="margin:46px 14px 20px;">'
+            f'<section style="margin-bottom:12px;">'
+            f'<span style="display:inline-block;padding:5px 9px;background:{rule};color:#FFFFFF;'
+            f'font-size:12px;font-weight:700;letter-spacing:1px;">{leaf(number)}</span></section>'
+            f'<p style="margin:0 0 10px;font-size:19px;font-weight:700;line-height:1.5;color:{theme["ink"]};">{leaf(heading)}</p>'
+            f'<section style="height:1px;background:{theme["line"]};line-height:0;">{leaf(" ")}</section></section>'
+        )
+    if layout == "darkhero":
+        # 深潭：小方块编号（取 hero 的深色）+ 一道横线延伸到右边。
+        dark = theme.get("dark", theme["ink"])
+        return (
+            f'<section style="margin:44px 14px 20px;">'
+            f'<section style="display:flex;align-items:center;margin-bottom:10px;">'
+            f'<span style="display:inline-block;width:22px;height:22px;background:{dark};color:#FFFFFF;'
+            f'font-size:11px;font-weight:800;text-align:center;line-height:22px;">{leaf(number)}</span>'
+            f'<span style="flex:1;height:1px;background:{theme["line"]};margin-left:10px;">{leaf(" ")}</span></section>'
+            f'<p style="margin:0;font-size:18px;font-weight:750;line-height:1.5;color:{theme["ink"]};">{leaf(heading)}</p></section>'
+        )
+    if layout == "colorblock":
+        # 色块：标题整条反白压在主色上，通栏出血，是这套的核心识别点。
+        block, blockink = theme.get("block", theme["accent"]), theme.get("blockink", "#FFFFFF")
+        return (
+            f'<section style="margin:44px 0 22px;background:{block};padding:11px 18px;">'
+            f'<section style="display:flex;align-items:center;">'
+            f'<span style="display:inline-block;background:#FFFFFF;color:{block};font-size:12px;'
+            f'font-weight:800;padding:3px 9px;margin-right:11px;">{leaf(number)}</span>'
+            f'<span style="font-size:17px;font-weight:800;color:{blockink};line-height:1.4;">{leaf(heading)}</span>'
+            f'</section></section>'
+        )
+    if layout == "journal":
+        return (
+            f'<section style="margin:38px 8px 22px;display:flex;align-items:center;gap:13px;">'
+            f'<section style="text-align:center;"><p style="margin:0;font-size:24px;font-weight:800;color:{theme["ink"]};line-height:1;letter-spacing:-2px;">{leaf(number)}</p></section>'
+            f'<span style="width:1px;height:36px;background:{theme["line"]};display:inline-block;">{leaf(" ")}</span>'
+            f'<section><p style="margin:0 0 2px;font-size:17px;font-weight:800;color:{theme["ink"]};">{leaf(heading)}</p>'
+            f'<p style="margin:0;font-size:9px;color:{theme["muted"]};letter-spacing:1.5px;">{leaf(tag)}</p></section></section>'
+        )
+    return (
+        f'<section style="margin:44px 20px 24px;display:flex;align-items:center;gap:11px;">'
+        f'<p style="margin:0;background:{theme["accent"]};color:#FFFFFF;font-size:11px;font-weight:800;padding:6px 10px;border-radius:5px;">{leaf(number)}</p>'
+        f'<section><p style="margin:0 0 2px;font-size:9px;color:{theme["accent"]};letter-spacing:2px;font-weight:700;">{leaf(tag)}</p>'
+        f'<p style="margin:0;font-size:18px;font-weight:800;color:{theme["ink"]};line-height:1.45;">{leaf(heading)}</p></section></section>'
+    )
+
+
+def card_style(theme, extra=""):
+    border = f"1px solid {theme['line']}"
+    return (
+        f"margin:24px 12px;padding:18px;background:{theme['paper']};border:{border};"
+        f"border-radius:{theme['radius']};box-shadow:{theme['shadow']};{extra}"
+    )
+
+
+def render_module(module, theme):
+    kind = module["kind"]
+    labels = {
+        "insight": "KEY INSIGHTS", "comparison": "SIDE BY SIDE",
+        "process": "WORKFLOW", "metrics": "DATA POINTS",
+    }
+    extra = f"border-top:4px solid {theme['accent']};"
+    output = [
+        f'<section style="{card_style(theme, extra)}">',
+        f'<p style="margin:0 0 9px;font-size:9px;line-height:1.5;letter-spacing:2px;color:{theme["accent"]};font-weight:800;">',
+        leaf(labels[kind]),
+        f'</p><p style="margin:0 0 16px;font-size:18px;line-height:1.5;color:{theme["ink"]};font-weight:800;">',
+        leaf(module["title"]), "</p>",
+    ]
+    if kind == "insight":
+        for item in module["items"]:
+            output.extend([
+                f'<section style="margin:9px 0;padding:12px;background:{theme["soft"]};border-left:3px solid {theme["accent"]};">',
+                f'<p style="margin:0 0 4px;font-size:13px;color:{theme["accent"]};font-weight:750;">{leaf(item["label"])}</p>',
+                f'<p style="margin:0;font-size:14px;line-height:1.75;color:{theme["body"]};">{leaf(item["text"])}</p></section>',
+            ])
+    elif kind == "comparison":
+        output.append('<section style="display:flex;gap:9px;">')
+        for side in (module["left"], module["right"]):
+            output.extend([
+                f'<section style="flex:1;min-width:0;padding:13px;background:{theme["soft"]};border-top:2px solid {theme["accent"]};">',
+                f'<p style="margin:0 0 9px;font-size:14px;color:{theme["accent"]};font-weight:800;">{leaf(side["heading"])}</p>',
+            ])
+            for item in side["items"]:
+                output.append(
+                    f'<p style="margin:7px 0;font-size:13px;line-height:1.65;color:{theme["body"]};">{leaf("• ")}{leaf(item)}</p>'
+                )
+            output.append("</section>")
+        output.append("</section>")
+    elif kind == "process":
+        for index, item in enumerate(module["steps"], 1):
+            output.extend([
+                '<section style="display:flex;align-items:flex-start;margin:11px 0;">',
+                f'<p style="flex:0 0 28px;margin:0 10px 0 0;padding:3px 0;text-align:center;background:{theme["accent"]};color:#FFFFFF;font-size:12px;line-height:22px;">{leaf(index)}</p>',
+                f'<section style="flex:1;min-width:0;"><p style="margin:0 0 2px;font-size:13px;color:{theme["accent"]};font-weight:800;">{leaf(item["label"])}</p>',
+                f'<p style="margin:0;font-size:14px;line-height:1.7;color:{theme["body"]};">{leaf(item["text"])}</p></section></section>',
+            ])
+    elif kind == "metrics":
+        output.append('<section style="display:flex;gap:9px;flex-wrap:wrap;">')
+        for item in module["metrics"]:
+            output.extend([
+                f'<section style="flex:1;min-width:125px;padding:13px;text-align:center;background:{theme["soft"]};border-bottom:3px solid {theme["accent"]};">',
+                f'<p style="margin:0 0 3px;font-size:24px;color:{theme["accent"]};font-weight:850;line-height:1.25;">{leaf(item["value"])}</p>',
+                f'<p style="margin:0 0 3px;font-size:13px;color:{theme["ink"]};font-weight:750;">{leaf(item["label"])}</p>',
+                f'<p style="margin:0;font-size:11px;color:{theme["muted"]};line-height:1.55;">{leaf(item["note"])}</p></section>',
+            ])
+        output.append("</section>")
+    output.append("</section>")
+    return "".join(output)
+
+
+def render_table(block, theme):
+    rows = []
+    for row_index, row in enumerate(block["raw_rows"]):
+        cells = []
+        for cell in row:
+            cells.append(
+                f'<td style="padding:10px 8px;border:1px solid {theme["line"]};font-size:12px;line-height:1.6;color:{theme["body"]};vertical-align:top;">{render_inline(cell, theme)}</td>'
+            )
+        background = theme["soft"] if row_index % 2 else theme["paper"]
+        rows.append(f'<tr style="background:{background};">{"".join(cells)}</tr>')
+    headers = "".join(
+        f'<th style="padding:10px 8px;border:1px solid {theme["line"]};background:{theme["accent"]};font-size:12px;line-height:1.5;color:#FFFFFF;text-align:left;">{render_inline(item, theme)}</th>'
+        for item in block["raw_headers"]
+    )
+    return (
+        f'<section style="margin:24px 12px;overflow-x:auto;border-radius:{theme["radius"]};">'
+        f'<table style="width:100%;border-collapse:collapse;table-layout:fixed;"><thead><tr>{headers}</tr></thead>'
+        f'<tbody>{"".join(rows)}</tbody></table></section>'
+    )
+
+
+def render_code(block, theme):
+    """Fenced code block (```lang ... ```) → WeChat-safe literal rendering.
+
+    Constraints that shape this markup (visual spec originally from
+    archive/themes-v2/common-components.md §1, adapted here to use theme colors
+    instead of the doc's hardcoded palette; this function is now authoritative):
+    - WeChat strips <pre>/class, so everything is inline style on <section>.
+    - white-space:pre is unreliable after paste, so each source line becomes
+      its own block-level <p style="margin:0">, not one <pre> blob.
+    - Leading/aligning spaces are converted to &nbsp; by code_leaf() because
+      plain spaces collapse in the editor.
+    - No inline markdown parsing runs over code content — lines go through
+      code_leaf() (escape + whitespace lock) only, so **/==/`` etc. stay
+      literal.
+    """
+    mono = "'SF Mono',Consolas,Monaco,monospace"
+    lang = (block.get("lang") or "").strip()
+    lines = block["code"].split("\n")
+    header = ""
+    if lang:
+        header = (
+            f'<section style="padding:9px 14px;border-bottom:1px solid {theme["line"]};">'
+            f'<span style="font-size:12px;color:{theme["muted"]};font-family:{mono};'
+            f'letter-spacing:1px;">{leaf(lang)}</span></section>'
+        )
+    body = "".join(
+        f'<p style="margin:0;font-family:{mono};font-size:13px;line-height:1.6;'
+        f'color:{theme["ink"]};">{code_leaf(raw.expandtabs(4))}</p>'
+        for raw in lines
+    )
+    return (
+        f'<section style="margin:24px 12px;border-radius:{theme["radius"]};overflow:hidden;'
+        f'background:{theme["soft"]};border:1px solid {theme["line"]};'
+        f'border-left:3px solid {theme["accent"]};">'
+        f'{header}<section style="padding:11px 14px;">{body}</section></section>'
+    )
+
+
+def render_block(block, theme):
+    kind = block["kind"]
+    if kind == "paragraph":
+        side = "14px"
+        size = "14px" if theme["layout"] == "magazine" else "15px"
+        return (
+            f'<p style="margin:0 {side} 21px;font-size:{size};line-height:1.9;letter-spacing:0.15px;text-align:justify;color:{theme["body"]};">'
+            f'{render_inline(block.get("raw", block["text"]), theme)}</p>'
+        )
+    if kind == "subheading":
+        return (
+            f'<section style="margin:28px 14px 15px;display:flex;align-items:center;gap:8px;">'
+            f'<span style="width:4px;height:17px;background:{theme["accent"]};display:inline-block;">{leaf(" ")}</span>'
+            f'<p style="margin:0;font-size:16px;font-weight:800;color:{theme["ink"]};">{render_inline(block.get("raw", block["text"]), theme)}</p></section>'
+        )
+    if kind == "list":
+        items = "".join(
+            f'<section style="display:flex;align-items:flex-start;margin:9px 0;">'
+            f'<p style="margin:0 9px 0 0;color:{theme["accent"]};font-weight:900;">{leaf(f"{index:02d}")}</p>'
+            f'<p style="margin:0;flex:1;font-size:14px;line-height:1.75;color:{theme["body"]};">{render_inline(raw, theme)}</p></section>'
+            for index, raw in enumerate(block.get("raw_items", block["items"]), 1)
+        )
+        style = card_style(theme, f"background:{theme['soft']};")
+        return f'<section style="{style}">{items}</section>'
+    if kind == "quote":
+        style = card_style(
+            theme,
+            f"background:{theme['soft']};border-left:4px solid {theme['accent']};box-shadow:none;",
+        )
+        return (
+            f'<section style="{style}">'
+            f'<p style="margin:0;font-size:15px;line-height:1.85;color:{theme["ink"]};font-weight:650;">{render_inline(block.get("raw", block["text"]), theme)}</p></section>'
+        )
+    if kind == "table":
+        return render_table(block, theme)
+    if kind == "code":
+        return render_code(block, theme)
+    if kind == "image":
+        src = html.escape(block["src"], quote=True)
+        alt = html.escape(block["alt"], quote=True)
+        return (
+            f'<section style="margin:28px 14px;text-align:center;">'
+            f'<img src="{src}" alt="{alt}" style="display:block;width:100%;height:auto;border-radius:{theme["radius"]};">'
+            "</section>"
+        )
+    raise RenderError(f"不支持的正文块：{kind}")
+
+
+def module_map(plan, sections):
+    headings = {section["heading"] for section in sections if section["heading"]}
+    anchors = {}
+    for module in plan["modules"]:
+        placement = module["placement"]
+        heading = normalized(placement["after_heading"])
+        anchor = normalized(placement["after_text"])
+        if heading not in headings:
+            raise RenderError(f"信息模块章节不存在：{heading}")
+        match = None
+        for section_index, section in enumerate(sections):
+            if section["heading"] != heading:
+                continue
+            for block_index, block in enumerate(section["blocks"]):
+                if block["kind"] == "table":
+                    values = block["headers"] + [cell for row in block["rows"] for cell in row]
+                    haystack = normalized(" ".join(values))
+                elif block["kind"] == "list":
+                    haystack = normalized(" ".join(block["items"]))
+                elif block["kind"] == "code":
+                    haystack = normalized(block["code"])
+                else:
+                    haystack = normalized(block["text"])
+                if anchor in haystack:
+                    match = (section_index, block_index)
+                    break
+        if match is None:
+            raise RenderError(f"信息模块锚点不存在：{anchor}")
+        if match in anchors:
+            raise RenderError("两个信息模块不能使用同一插入位置")
+        anchors[match] = module
+    return anchors
+
+
+def render_follow_cta(theme):
+    """Render a topic-appropriate footer.
+
+    General themes keep the engagement CTA. News and report layouts use a
+    restrained editorial note instead: asking for likes beside casualties or
+    unresolved allegations would undermine the entire sober theme.
+    """
+    layout = theme["layout"]
+    accent = theme["accent"]
+    emphasis_color = accent      # 各 layout 可覆盖（深底上必须换成浅色）
+    if layout in SOBER_LAYOUTS:
+        copy = {
+            "newswire": (
+                "信息说明",
+                "本文按公开信息整理，事实更新与文中判断应分开阅读。",
+                "后续进展以权威发布与可核验报道为准。",
+            ),
+            "solemn": (
+                "阅读说明",
+                "对受影响者保持克制，对尚未查清的事实保留边界。",
+                "不消费苦难，也不替调查和司法补写结论。",
+            ),
+            "briefing": (
+                "报告说明",
+                "本文区分事实、解释与判断，资料口径以文中说明为准。",
+                "信息发生变化时，应先修订事实层，再调整结论。",
+            ),
+        }
+        label, body, close = copy[layout]
+        if layout == "briefing":
+            container = (
+                f'margin:46px 14px 0;background:{theme["soft"]};'
+                f'border-left:4px solid {accent};padding:17px 18px;'
+            )
+        else:
+            container = (
+                f'margin:46px 14px 0;border-top:1px solid {accent};padding:17px 0 0;'
+            )
+        return (
+            f'<section style="{container}">'
+            f'<p style="margin:0 0 9px;font-size:10px;font-weight:800;letter-spacing:2.5px;'
+            f'color:{accent};">{leaf(label)}</p>'
+            f'<p style="margin:0 0 7px;font-size:14px;line-height:1.85;'
+            f'color:{theme["body"]};">{leaf(body)}</p>'
+            f'<p style="margin:0;font-size:13px;line-height:1.8;font-weight:700;'
+            f'color:{theme["ink"]};">{leaf(close)}</p></section>'
+        )
+    if layout == "journal":
+        container = (f'margin:44px 8px 0;background:{theme["ink"]};'
+                     f'border-radius:{theme["radius"]};padding:18px 20px;')
+        label_color, text_color, lead_color = theme["line"], "#EDEEE8", "#FFFFFF"
+    elif layout == "colorblock":
+        # 与 hero、章节色条统一：CTA 也做成通栏色块反白。
+        # 注意强调色必须改成白：accent 本身就是这块底色，压上去会看不见。
+        block = theme.get("block", accent)
+        container = f'margin:44px 0 0;background:{block};padding:18px 18px;'
+        label_color, text_color, lead_color = "#FFFFFFB3", "#FFFFFFD9", theme.get("blockink", "#FFFFFF")
+        emphasis_color = "#FFFFFF"
+    elif layout == "capsule":
+        # 与 hero 呼应：软桃色大圆角卡片，不压顶线不加左边条。
+        container = (f'margin:44px 10px 0;background:{theme["soft"]};'
+                     f'border-radius:20px;padding:18px 20px;')
+        label_color, text_color, lead_color = accent, theme["body"], theme["ink"]
+    elif layout == "noir":
+        # 黑卡收尾：灰金边条 + 提亮灰金强调，accent 只出现在边条上（深底可读）。
+        dark, darkink = theme.get("dark", theme["ink"]), theme.get("darkink", "#FFFFFF")
+        container = (f'margin:44px 14px 0;background:{dark};'
+                     f'border-left:4px solid {accent};padding:18px 20px;')
+        label_color = theme.get("ondark", accent)
+        text_color, lead_color = theme.get("darkbody", theme["body"]), darkink
+        emphasis_color = theme.get("ondark", "#FFFFFF")
+    elif layout in {"plain", "serif-rule"}:
+        # 极简两套不用色块，只用一根上边线把 CTA 与正文分开。
+        rule = theme.get("rule", theme["line"])
+        container = f'margin:44px 14px 0;border-top:1px solid {rule};padding:18px 0 0;'
+        label_color, text_color, lead_color = theme["muted"], theme["body"], theme["ink"]
+    else:
+        container = (f'margin:44px 12px 0;background:{theme["soft"]};'
+                     f'border-radius:{theme["radius"]};border-left:4px solid {accent};'
+                     f'padding:18px 18px;')
+        label_color, text_color, lead_color = accent, theme["body"], theme["ink"]
+    emphasis = f'font-weight:800;color:{emphasis_color};'
+    return (
+        f'<section style="{container}">'
+        f'<p style="margin:0 0 10px;font-size:11px;font-weight:800;letter-spacing:3px;'
+        f'color:{label_color};">{leaf("写在最后")}</p>'
+        f'<p style="margin:0 0 8px;font-size:14px;line-height:1.85;color:{text_color};">'
+        f'{leaf("看到这儿，说明你把它读完了。这类文章能走多远，只取决于两件事：你的")}'
+        f'<span style="{emphasis}">{leaf("在看")}</span>{leaf("和")}'
+        f'<span style="{emphasis}">{leaf("转发")}</span>{leaf("。")}</p>'
+        f'<p style="margin:0;font-size:14px;line-height:1.85;font-weight:700;'
+        f'color:{lead_color};">{leaf("顺手")}'
+        f'<span style="{emphasis}">{leaf("关注")}</span>'
+        f'{leaf("并设为星标，下一篇更新第一时间见。")}</p>'
+        f'</section>'
+    )
+
+
+def render_end(theme):
+    layout = theme["layout"]
+    if layout in SOBER_LAYOUTS:
+        labels = {
+            "newswire": "END OF REPORT",
+            "solemn": "记录结束 · 等待事实更新",
+            "briefing": "REPORT END",
+        }
+        return (
+            f'<section style="margin:46px 14px 8px;text-align:center;">'
+            f'<section style="height:1px;background:{theme["line"]};margin-bottom:13px;'
+            f'line-height:0;">{leaf(" ")}</section>'
+            f'<p style="margin:0;font-size:9px;color:{theme["muted"]};letter-spacing:3px;">'
+            f'{leaf(labels[layout])}</p></section>'
+        )
+    if layout == "journal":
+        return (
+            f'<section style="margin:44px 8px 8px;background:{theme["ink"]};padding:13px 18px;display:flex;justify-content:space-between;">'
+            f'<p style="margin:0;color:#FFFFFF;font-size:10px;letter-spacing:2px;">{leaf("END NOTE")}</p>'
+            f'<p style="margin:0;color:{theme["line"]};font-size:10px;">{leaf("保持观察")}</p></section>'
+        )
+    if layout == "capsule":
+        # 陶然：一枚软色胶囊收尾，不拉通栏线。
+        return (
+            f'<section style="margin:44px 14px 10px;text-align:center;">'
+            f'<span style="display:inline-block;background:{theme["soft"]};'
+            f'border-radius:999px;padding:7px 20px;font-size:9px;letter-spacing:3px;'
+            f'color:{theme["muted"]};">{leaf("PEACH END")}</span></section>'
+        )
+    if layout == "noir":
+        # 金石：黑色收尾条，灰金刊号，与 hero 首尾呼应。
+        dark = theme.get("dark", theme["ink"])
+        return (
+            f'<section style="margin:44px 14px 8px;background:{dark};'
+            f'padding:12px 18px;display:flex;justify-content:space-between;">'
+            f'<p style="margin:0;color:{theme.get("ondark", theme["accent"])};'
+            f'font-size:10px;letter-spacing:2px;">{leaf("END OF ISSUE")}</p>'
+            f'<p style="margin:0;color:{theme.get("darkbody", theme["muted"])};'
+            f'font-size:10px;">{leaf("保持长期主义")}</p></section>'
+        )
+    return (
+        f'<section style="margin:48px 14px 8px;text-align:center;"><section style="height:1px;background:{theme["line"]};margin-bottom:14px;">{leaf(" ")}</section>'
+        f'<p style="margin:0;font-size:9px;color:{theme["muted"]};letter-spacing:4px;">{leaf("END")}</p></section>'
+    )
+
+
+def render_document(title, sections, plan_or_theme, theme=None):
+    """Render the article, optionally inserting validated native HTML modules."""
+    if theme is None:
+        theme = plan_or_theme
+        anchors = {}
+    else:
+        anchors = module_map(plan_or_theme, sections)
+    # 字体可由主题覆盖（墨线用衬线）；未声明的主题沿用原来的无衬线栈。
+    font = theme.get("font", DEFAULT_FONT)
+    output = [
+        f'<section style="box-sizing:border-box;max-width:677px;margin:0 auto;padding:8px 0 30px;background:{theme["paper"]};color:{theme["body"]};font-family:{font};overflow-x:hidden;">'
+    ]
+    intro = first_paragraph(sections)
+    output.append(render_hero(title, intro, theme))
+    headings = [section["heading"] for section in sections if section["heading"]]
+    intro_consumed = False
+    heading_index = 0
+    for section_index, section in enumerate(sections):
+        if section["heading"]:
+            heading_index += 1
+            output.append(render_heading(section["heading"], heading_index, len(headings), theme))
+        for block_index, block in enumerate(section["blocks"]):
+            if block is intro and not intro_consumed:
+                intro_consumed = True
+            else:
+                output.append(render_block(block, theme))
+            module = anchors.get((section_index, block_index))
+            if module:
+                output.append(render_module(module, theme))
+    output.append(render_follow_cta(theme))
+    output.append(render_end(theme))
+    output.append("</section>")
+    return "".join(output)
+
+
+def coerce_plan_shape(plan, theme):
+    """Keep modules when agents omit top-level version/theme shell fields."""
+    if not isinstance(plan, dict):
+        return plan
+    out = dict(plan)
+    version = out.get("version", 1)
+    if version in (None, "", "1", 1, 1.0):
+        out["version"] = 1
+    if not out.get("theme"):
+        out["theme"] = theme
+    if "modules" not in out or out.get("modules") is None:
+        out["modules"] = []
+    return out
+
+
+def validate_plan_shape(plan, theme):
+    if not isinstance(plan, dict):
+        raise RenderError("inline-visuals.json 结构无效")
+    # Allow only the three top-level fields after coercion.
+    unknown = sorted(set(plan) - {"version", "theme", "modules"})
+    if unknown:
+        raise RenderError(f"inline-visuals.json 包含未知字段：{', '.join(unknown)}")
+    missing = sorted({"version", "theme", "modules"} - set(plan))
+    if missing:
+        raise RenderError(f"inline-visuals.json 缺少字段：{', '.join(missing)}")
+    if plan["version"] != 1 or plan["theme"] != theme or not isinstance(plan["modules"], list):
+        raise RenderError("信息模块版本、主题或 modules 无效")
+    if len(plan["modules"]) > 3:
+        raise RenderError("信息模块不能超过 3 个")
+
+
+def validate_plan_content(plan, source, theme):
+    """Require evidence/anchors to be literal article text before rendering."""
+    project_root = Path(__file__).resolve().parents[4]
+    validator_path = (
+        project_root / "optional-skills" / "wechat-inline-visuals"
+        / "scripts" / "validate_plan.py"
+    )
+    if not validator_path.is_file():
+        raise RenderError("原生信息模块校验器未安装，已降级为纯正文")
+    spec = importlib.util.spec_from_file_location(
+        "render_inline_plan_validator", validator_path
+    )
+    validator = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(validator)
+    raw = validator.coerce_plan(plan, fallback_theme=theme)
+    try:
+        validator.validate_plan(raw, source, set(THEMES))
+    except validator.PlanError as exc:
+        raise RenderError(str(exc)) from exc
+    return raw
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="一次生成丰富主题正文与原生信息模块")
+    parser.add_argument("--article", required=True)
+    parser.add_argument("--theme", choices=tuple(THEMES), required=True)
+    parser.add_argument("--output", required=True)
+    parser.add_argument(
+        "--inline-plan",
+        help="可选 inline-visuals.json；无效模块自动降级为纯正文",
+    )
+    return parser.parse_args()
+
+
+def main():
+    args = parse_args()
+    started = time.monotonic()
+    article_path, output_path = map(Path, (args.article, args.output))
+    try:
+        source = article_path.read_text(encoding="utf-8")
+        title, sections = parse_article(source)
+        plan = {"version": 1, "theme": args.theme, "modules": []}
+        inline_degraded = False
+        inline_reason = ""
+        if args.inline_plan:
+            try:
+                plan = json.loads(Path(args.inline_plan).read_text(encoding="utf-8"))
+                plan = coerce_plan_shape(plan, args.theme)
+                validate_plan_shape(plan, args.theme)
+                plan = validate_plan_content(plan, source, args.theme)
+            except (OSError, json.JSONDecodeError, RenderError) as exc:
+                plan = {"version": 1, "theme": args.theme, "modules": []}
+                inline_degraded = True
+                inline_reason = str(exc)
+        try:
+            rendered = render_document(title, sections, plan, THEMES[args.theme])
+        except (RenderError, KeyError, TypeError, IndexError) as exc:
+            plan = {"version": 1, "theme": args.theme, "modules": []}
+            rendered = render_document(title, sections, plan, THEMES[args.theme])
+            inline_degraded = True
+            inline_reason = str(exc)
+        atomic_text(output_path, rendered + "\n")
+    except (OSError, RenderError) as exc:
+        print(json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False), file=sys.stderr)
+        return 1
+    result = {
+        "status": "ok", "title": title, "theme": args.theme,
+        "image_count": sum(
+            1 for section in sections for block in section["blocks"] if block["kind"] == "image"
+        ),
+        "module_count": len(plan["modules"]),
+        "module_kinds": [item.get("kind") for item in plan["modules"]],
+        "inline_degraded": inline_degraded,
+        "inline_degrade_reason": inline_reason,
+        "duration_ms": round((time.monotonic() - started) * 1000),
+    }
+    print(json.dumps(result, ensure_ascii=False))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

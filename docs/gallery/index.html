@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>wechat-skill · 12 套主题排版预览</title>
+<style>
+  body{margin:0;background:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif;color:#1f2937}
+  header{padding:32px 24px 8px;max-width:1480px;margin:0 auto}
+  h1{font-size:24px;margin:0 0 8px}
+  .sub{color:#6b7280;font-size:14px;line-height:1.7;margin:0 0 4px}
+  .grid{display:flex;flex-wrap:wrap;gap:24px;padding:16px 24px 32px;max-width:1480px;margin:0 auto}
+  .card{background:#fff;border-radius:14px;box-shadow:0 4px 16px -6px rgba(0,0,0,.12);overflow:hidden;width:380px;display:flex;flex-direction:column}
+  .bar{display:flex;align-items:center;gap:10px;padding:13px 18px;border-bottom:1px solid #f0f0f0}
+  .dot{width:14px;height:14px;border-radius:50%;flex-shrink:0;border:1px solid rgba(0,0,0,.06)}
+  .tname{font-weight:700;font-size:15px}
+  .tmeta{margin-left:auto;font-size:11px;color:#9ca3af;font-family:monospace}
+  .tag{display:inline-block;font-size:11px;padding:1px 8px;border-radius:10px;background:#ecfdf5;color:#059669;margin-left:6px}
+  iframe{width:100%;height:680px;border:0;background:#fff}
+  footer{max-width:1480px;margin:0 auto;padding:8px 24px 40px;color:#9ca3af;font-size:13px}
+</style>
+</head>
+<body>
+<header>
+  <h1>wechat-skill · 12 套主题排版预览</h1>
+  <p class="sub">同一篇样稿用 12 套注册主题各排一遍。每个画框约等于公众号手机宽度，可在框内滚动查看全文。</p>
+  <p class="sub">全线稳重灰调：黑白灰为主，主题色只以深色点缀强调重点；看点目录模块已移除，文章从首屏直接进入第一节。全部正文 HTML 均通过公众号合规校验。</p>
+</header>
+<div class="grid" id="grid"></div>
+<footer>主题清单见 references/theme-index.md</footer>
+<script>
+  const THEMES=[
+    ["松烟（默认）","#31544A","moyu-green.html","default"],
+    ["手泽","#6B573F","olive-journal.html","内刊"],
+    ["留白","#8C8378","plain-white.html","低噪音"],
+    ["墨栏","#111111","ink-rule.html","衬线"],
+    ["静渊","#3E4C57","deep-pool.html","调查"],
+    ["玄章","#1F1F1F","color-block.html","观点"],
+    ["专电","#273746","news-wire.html","新闻"],
+    ["素笺","#712F38","solemn-gray.html","沉重新闻"],
+    ["文告","#234E70","formal-brief.html","报告"],
+    ["霓灰","#4A4458","aurora-violet.html","AIGC"],
+    ["陶然","#7A4A38","peach-soft.html","生活"],
+    ["金石","#7A6A45","noir-gold.html","财经"],
+  ];
+  const grid=document.getElementById('grid');
+  THEMES.forEach(function(t){
+    var name=t[0],color=t[1],file=t[2],tag=t[3];
+    var slug=file.replace('.html','');
+    var card=document.createElement('div');
+    card.className='card';
+    card.innerHTML=
+      '<div class="bar">'+
+        '<span class="dot" style="background:'+color+'"></span>'+
+        '<span class="tname">'+name+(tag?'<span class="tag">'+tag+'</span>':'')+'</span>'+
+        '<span class="tmeta">'+slug+'</span>'+
+      '</div>'+
+      '<iframe src="'+file+'" loading="lazy" title="'+name+'"></iframe>';
+    grid.appendChild(card);
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,1287 @@
+#!/usr/bin/env python3
+"""Run the deterministic half of the WeChat content pipeline.
+
+The agent supplies topic judgment and article.md. Deterministic helpers handle
+optional illustrations and the cover degradation chain. HTML cover rendering is
+retired. This runner owns state transitions, final writing-quality gates, theme
+selection, body rendering, cover acceptance, and optional draft creation.
+"""
+
+import argparse
+import contextlib
+import fcntl
+import hashlib
+import importlib.util
+import io
+import json
+import os
+import re
+import shlex
+import subprocess
+import sys
+from pathlib import Path
+
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+import pipeline_job
+
+
+TITLE_RE = re.compile(r"^#\s+(.+?)\s*$", re.MULTILINE)
+MARKDOWN_IMAGE_RE = re.compile(r"!\[[^\]]*\]\(([^)]+)\)")
+FENCE_RE = re.compile(r"```.*?```", re.DOTALL)
+MARKDOWN_NOISE_RE = re.compile(r"[#>*_`~\[\]()!|\\\-]+")
+BRIEF_IDEAS_RE = re.compile(
+    r"^##\s+(?:思路|论点|时间线|大纲|要点|素材)\s*$\n(?P<body>.*?)(?=^##\s+|\Z)",
+    re.MULTILINE | re.DOTALL,
+)
+TRANSIENT_RE = re.compile(
+    r"TLS|EOF|connection reset|timed? out|timeout|HTTP\s+5\d\d|微信 API 请求失败",
+    re.IGNORECASE,
+)
+MIN_BODY_CHARS = pipeline_job.JOB_MIN_BODY_CHARS
+MAX_BODY_CHARS = pipeline_job.JOB_MAX_BODY_CHARS
+WRITING_PASS_SCORE = 75
+
+# 写作体检（wechat-viral-writer）。check 提前反馈，prepare 和 finish 则把 humanize 后的
+# 最终稿分数与 high 级问题作为硬门禁，防止「check 通过 → humanize 改坏 → 直接发布」。
+# check 保持软依赖以便排障；prepare/finish 对仓库内置 scorer 缺失或异常时失败关闭。
+VIRAL_SCORER = (
+    SCRIPT_DIR.parent.parent / "wechat-viral-writer" / "scripts" / "score_draft.py"
+)
+VIRAL_CONFIG = (
+    SCRIPT_DIR.parent.parent / "wechat-viral-writer" / "config" / "writer-config.json"
+)
+
+
+class RuntimeFailure(RuntimeError):
+    pass
+
+
+# wechat_publish.py 在失败时会往 stderr 打一行结论：draft_may_exist=true|false。
+# false 表示远端一定没有草稿（取 token 被拒、图片上传失败、服务端对 draft/add
+# 明确返回 errcode……），重跑安全；true 只出现在 draft/add 已发出但结果读不到
+# 的情况（连接重置/超时/响应无法解析）。
+DRAFT_MAY_EXIST_RE = re.compile(r"^draft_may_exist=(true|false)$", re.MULTILINE)
+
+# 兜底：万一发布器是不带上述标记的旧版本，仍按这些本地配置错误判定可安全重跑。
+# 新代码不应该继续往这里加错误码——语义判断属于 wechat_publish.py。
+LEGACY_PREFLIGHT_RE = re.compile(
+    r"未设置 App(?:ID|Secret) 环境变量"
+    r"|配置中没有账号"
+    r"|账号 .+ 缺少 (?:appid_env|secret_env)"
+)
+
+
+# 只在「远端可能已经有草稿」时出现。这段话是给人看的操作指引，不要精简成
+# 一句「结果不确定」——真踩到的人需要知道下一步具体做什么。
+UNCERTAIN_DRAFT_MESSAGE = (
+    "上次 draft/add 结果不确定：请求已发出但没读到响应，微信侧可能已经建了草稿。\n"
+    "  自动重发会产生双草稿，所以这里必须人工核对：\n"
+    "  1. 打开公众号后台草稿箱，确认这篇是否已经存在。\n"
+    "  2a. 已存在 → 不要重跑，直接以后台那篇为准；本次任务到此为止。\n"
+    "  2b. 不存在 → 重置后重跑尾段（正文不用改）：\n"
+    "      pipeline_job.py stage --job {job} --name draft --status pending\n"
+    "      pipeline_runtime.py finish --job {job} --config <wechat-accounts.json>"
+)
+
+
+def draft_failure_is_retry_safe(message):
+    """这次 draft 失败之后，能不能直接重跑而不会产生双草稿？
+
+    优先读发布器给的结论标记；标记缺失时退回旧正则；两者都没有就保守判为
+    「不确定」（False），让人先去草稿箱核对。
+    """
+    match = DRAFT_MAY_EXIST_RE.search(message or "")
+    if match:
+        return match.group(1) == "false"
+    return bool(LEGACY_PREFLIGHT_RE.search(message or ""))
+
+
+def load_json(path, label):
+    try:
+        return json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeFailure(f"无法读取{label}：{exc}") from exc
+
+
+def run_json(command):
+    result = subprocess.run(command, text=True, capture_output=True)
+    if result.returncode:
+        detail = (result.stderr or result.stdout).strip()
+        raise RuntimeFailure(detail or f"命令失败：{' '.join(command[:2])}")
+    try:
+        return json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeFailure(f"命令没有返回合法 JSON：{result.stdout[:200]}") from exc
+
+
+def run_plain(command):
+    result = subprocess.run(command, text=True, capture_output=True)
+    if result.returncode:
+        detail = (result.stderr or result.stdout).strip()
+        raise RuntimeFailure(detail or f"命令失败：{' '.join(command[:2])}")
+    return result.stdout
+
+
+def ngram_recall(source, target, size=2):
+    """source 的字符 n-gram 有多少比例出现在 target 里。
+
+    中文没有空格，靠正则「提词」会把句子切成无意义的定长碎片。字符 n-gram 是这里
+    唯一稳的相似度度量，也是判断「摘要是不是在复述标题」的依据。
+    """
+    def grams(text):
+        flat = re.sub(r"\s+", "", text)
+        return {flat[i:i + size] for i in range(max(0, len(flat) - size + 1))}
+    head = grams(source)
+    if not head:
+        return 0.0
+    return len(head & grams(target)) / len(head)
+
+
+def writing_health(article_path):
+    """跑写作体检，返回结果字典；Skill 缺失或脚本异常时返回 None（不影响 check）。"""
+    if not VIRAL_SCORER.is_file():
+        return None
+    command = [sys.executable, str(VIRAL_SCORER), "--article", str(article_path)]
+    if VIRAL_CONFIG.is_file():
+        command += ["--config", str(VIRAL_CONFIG)]
+    try:
+        result = subprocess.run(command, text=True, capture_output=True, timeout=60)
+        return json.loads(result.stdout)
+    except (subprocess.SubprocessError, OSError, ValueError):
+        return None
+
+
+def writing_report_command(article_path):
+    return f"python3 {VIRAL_SCORER} --article {article_path} --markdown"
+
+
+def require_writing_quality(article_path):
+    """Enforce the final, post-humanize writing gate and return an audit summary."""
+    health = writing_health(article_path)
+    report_command = writing_report_command(article_path)
+    if not isinstance(health, dict):
+        raise RuntimeFailure(
+            "最终稿写作体检不可用，不能确认 humanize 后的稿件质量。"
+            f"请先运行：{report_command}"
+        )
+    score = health.get("score")
+    high = [
+        item for item in (health.get("problems") or [])
+        if isinstance(item, dict) and item.get("severity") == "high"
+    ]
+    blocking_count = health.get("blocking_count", len(high))
+    if not isinstance(blocking_count, int):
+        blocking_count = len(high)
+    if not isinstance(score, (int, float)):
+        raise RuntimeFailure(
+            "最终稿写作体检没有返回有效 score。"
+            f"请检查完整报告：{report_command}"
+        )
+    if score < WRITING_PASS_SCORE or blocking_count > 0 or high:
+        examples = "；".join(
+            str(item.get("what") or item.get("fix") or "high 级问题")
+            for item in high[:2]
+        )
+        detail = f"；{examples}" if examples else ""
+        raise RuntimeFailure(
+            f"最终稿写作体检未通过：score={score}（要求 ≥{WRITING_PASS_SCORE}），"
+            f"blocking={max(blocking_count, len(high))}{detail}。"
+            f"humanize 后必须重跑并修复：{report_command}"
+        )
+    return {
+        "score": score,
+        "grade": health.get("grade"),
+        "blocking_count": 0,
+        "pass_line": WRITING_PASS_SCORE,
+        "checked_after_humanize": True,
+    }
+
+
+def job_paths(job_path):
+    job = pipeline_job.load_job(job_path)
+    job_dir = Path(job_path).resolve().parent
+    if Path(job["job_dir"]).resolve() != job_dir:
+        raise RuntimeFailure("任务清单 job_dir 与当前账号工作区不一致")
+    artifacts = {}
+    for name, value in job["artifacts"].items():
+        try:
+            safe_path, _ = pipeline_job.artifact_path(str(job_path), value)
+        except pipeline_job.JobError as exc:
+            raise RuntimeFailure(str(exc)) from exc
+        artifacts[name] = Path(safe_path)
+    artifacts["cover_spec"] = job_dir / "cover" / "cover.spec.json"
+    artifacts["cover_html"] = job_dir / "cover" / "cover.html"
+    return job, artifacts
+
+
+def mark(job_path, name, status, message=None, details=None, artifacts=None):
+    argv = [
+        "stage", "--job", str(job_path), "--name", name, "--status", status,
+    ]
+    if message is not None:
+        argv.extend(("--message", message))
+    for key, value in (details or {}).items():
+        argv.extend(("--detail", f"{key}={value}"))
+    for key, value in (artifacts or {}).items():
+        argv.extend(("--artifact", f"{key}={value}"))
+    args = pipeline_job.build_parser().parse_args(argv)
+    with contextlib.redirect_stdout(io.StringIO()):
+        pipeline_job.cmd_stage(args)
+
+
+def choose_theme(job_path):
+    args = pipeline_job.build_parser().parse_args(
+        ["choose-theme", "--job", str(job_path)]
+    )
+    output = io.StringIO()
+    with contextlib.redirect_stdout(output):
+        pipeline_job.cmd_choose_theme(args)
+    return output.getvalue().strip()
+
+
+def _viral_scorer():
+    if not VIRAL_SCORER.is_file():
+        return None
+    spec = importlib.util.spec_from_file_location(
+        "wechat_viral_score_draft", VIRAL_SCORER
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def count_body_chars(article):
+    """与 score_draft.py 同一口径，避免卡在 2499/2500 时一边过一边不过。"""
+    try:
+        scorer = _viral_scorer()
+        if scorer is not None:
+            return int(scorer.count_body_chars(article))
+    except Exception:
+        pass
+    lines = []
+    skipped_title = False
+    for line in article.splitlines():
+        if not skipped_title and TITLE_RE.match(line):
+            skipped_title = True
+            continue
+        if line.lstrip().startswith("##"):
+            line = re.sub(r"^#{2,6}\s*", "", line)
+        lines.append(line)
+    text = "\n".join(lines)
+    text = FENCE_RE.sub("", text)
+    text = MARKDOWN_NOISE_RE.sub("", text)
+    return len(re.sub(r"\s+", "", text))
+
+
+def count_h2(article):
+    return sum(1 for line in article.splitlines() if re.match(r"^##\s+", line))
+
+
+def shape_consistency_problems(job, article, body_chars):
+    if pipeline_job.job_lane(job) == "manuscript":
+        return []
+    problems = []
+    shape = job.get("article_shape") or {}
+    expected = shape.get("heading_count")
+    if expected:
+        actual = count_h2(article)
+        minimum = max(2, int(expected) - 1)
+        if actual < minimum:
+            problems.append(
+                f"二级标题 {actual} 个，shape.heading_count={expected}："
+                f"至少 {minimum} 个 ## 小节"
+            )
+    band = shape.get("body_band")
+    ranges = pipeline_job.BODY_BAND_RANGES.get(band)
+    if ranges:
+        low, high = ranges
+        if body_chars < low or body_chars > high:
+            problems.append(
+                f"正文 {body_chars} 字不在 {band} 档 {low}—{high}"
+            )
+    return problems
+
+
+def require_shape_consistency(job, artifacts):
+    article = artifacts["article"].read_text(encoding="utf-8")
+    problems = shape_consistency_problems(job, article, count_body_chars(article))
+    if problems:
+        raise RuntimeFailure("；".join(problems))
+
+
+def article_sha256(path):
+    try:
+        return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    except OSError:
+        return ""
+
+
+def content_fingerprint(artifacts):
+    hasher = hashlib.sha256()
+    for key in ("article", "html", "cover"):
+        path = artifacts.get(key)
+        if path and Path(path).is_file():
+            hasher.update(Path(path).read_bytes())
+    article = artifacts.get("article")
+    if article and Path(article).is_file():
+        text = Path(article).read_text(encoding="utf-8")
+        job_dir = Path(article).parent
+        for ref in MARKDOWN_IMAGE_RE.findall(text):
+            image = job_dir / ref
+            if image.is_file():
+                hasher.update(image.read_bytes())
+    return hasher.hexdigest()
+
+
+def manuscript_quality():
+    return {
+        "score": None,
+        "grade": None,
+        "blocking_count": 0,
+        "pass_line": None,
+        "checked_after_humanize": False,
+        "skipped": True,
+        "reason": "manuscript",
+    }
+
+
+def require_content(artifacts, job=None):
+    try:
+        article = artifacts["article"].read_text(encoding="utf-8").strip()
+    except OSError as exc:
+        raise RuntimeFailure(f"缺少 article 产物：{exc}") from exc
+    if not article:
+        raise RuntimeFailure("article.md 不能为空")
+    matches = TITLE_RE.findall(article)
+    if len(matches) != 1:
+        raise RuntimeFailure("article.md 必须包含且只包含一个一级标题")
+    title = " ".join(matches[0].split())
+    if len(title) > 32:
+        raise RuntimeFailure(f"article.md 标题长度 {len(title)} 超过 32 字")
+    if pipeline_job.job_lane(job) == "manuscript":
+        return title
+    body_chars = count_body_chars(article)
+    if body_chars < MIN_BODY_CHARS or body_chars > MAX_BODY_CHARS:
+        raise RuntimeFailure(
+            f"article.md 正文字数 {body_chars} 不在 {MIN_BODY_CHARS}—{MAX_BODY_CHARS} 字范围内"
+        )
+    return title
+
+
+def require_writing_inputs(job):
+    """Reject the two common command-chain bypasses before writing starts."""
+    if not str(job.get("event_focus") or "").strip():
+        raise RuntimeFailure(
+            "选题尚未固化 event_focus：先按 next_command 运行 pipeline_job.py topic"
+        )
+    shape = job.get("article_shape")
+    if not isinstance(shape, dict) or not all(
+        shape.get(key) not in (None, "")
+        for key in ("structure_id", "opening_type", "ending_type")
+    ):
+        raise RuntimeFailure(
+            "文章结构尚未锁定：先运行 pipeline_job.py shape --auto"
+        )
+    discover = job.get("stages", {}).get("discover", {})
+    source = job.get("topic_source") or (discover.get("details") or {}).get("source")
+    if source != "provided":
+        return
+    brief_path = Path(job["job_dir"]) / "user-brief.md"
+    try:
+        brief = brief_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise RuntimeFailure(
+            f"缺少用户 brief：请先按 references/user-brief.md 写入 {brief_path}"
+        ) from exc
+    match = BRIEF_IDEAS_RE.search(brief)
+    ideas = re.sub(r"[\s#*\-]+", "", match.group("body")) if match else ""
+    if len(ideas) < 10:
+        raise RuntimeFailure(
+            "user-brief.md 缺少可展开的「## 思路」（也认 论点/时间线/大纲/要点/素材）；"
+            "至少写入论点、时间线、素材或大纲，禁止只给一句题目"
+        )
+
+
+def ensure_prepare_media(job_path):
+    """prepare 自动固定主题、生成信息模块；没有正文图则跳过，不调用生图。"""
+    choose_theme(job_path)
+    builder = SCRIPT_DIR / "build_inline_visuals.py"
+    if builder.is_file():
+        try:
+            run_json([sys.executable, str(builder), "--job", str(job_path)])
+        except RuntimeFailure:
+            pass
+    job = pipeline_job.load_job(job_path)
+    job.setdefault("artifacts", {}).setdefault(
+        "inline_visuals", "inline-visuals.json"
+    )
+    pipeline_job.save_job(job_path, job)
+    job, artifacts = job_paths(job_path)
+    existing_refs = []
+    if artifacts["article"].is_file():
+        article = artifacts["article"].read_text(encoding="utf-8")
+        job_dir = artifacts["article"].parent.resolve()
+        for ref in MARKDOWN_IMAGE_RE.findall(article):
+            image_path = (job_dir / ref).resolve()
+            if image_path.is_file():
+                existing_refs.append(ref)
+    if job["stages"]["illustrations"]["status"] == "pending":
+        if existing_refs:
+            mark(
+                job_path, "illustrations", "completed",
+                "正文已引用本地图",
+                {
+                    "backend": "user_provided",
+                    "image_count": str(len(existing_refs)),
+                },
+            )
+        else:
+            mark(
+                job_path, "illustrations", "skipped",
+                "prepare 未配正文图，跳过生图",
+                {"backend": "none"},
+            )
+    return job_paths(job_path)
+
+
+def require_prepare_stages(job):
+    if job["stages"]["discover"]["status"] != "completed":
+        raise RuntimeFailure("prepare 前必须完成阶段 discover")
+    if pipeline_job.job_lane(job) != "manuscript":
+        require_writing_inputs(job)
+    if job["stages"]["write"]["status"] not in ("running", "completed"):
+        raise RuntimeFailure("prepare 前必须通过 begin 启动阶段 write")
+    humanize_status = job["stages"]["humanize"]["status"]
+    if pipeline_job.humanize_enabled(job):
+        if humanize_status != "completed":
+            raise RuntimeFailure("prepare 前必须完成阶段 humanize")
+    elif humanize_status not in ("completed", "skipped"):
+        raise RuntimeFailure("成稿模式未开启去 AI 味时，humanize 必须为 skipped")
+    if job["stages"]["illustrations"]["status"] not in ("completed", "skipped"):
+        raise RuntimeFailure("prepare 前必须完成或跳过阶段 illustrations")
+
+
+def require_illustrations(job, artifacts):
+    article = artifacts["article"].read_text(encoding="utf-8")
+    refs = MARKDOWN_IMAGE_RE.findall(article)
+    if len(refs) > 3:
+        raise RuntimeFailure("正文配图最多 3 张")
+    job_dir = artifacts["article"].parent.resolve()
+    missing = []
+    for ref in refs:
+        image_path = (job_dir / ref).resolve()
+        if image_path != job_dir and job_dir not in image_path.parents:
+            raise RuntimeFailure(f"正文配图路径越界：{ref}")
+        if not image_path.is_file():
+            missing.append(ref)
+    for ref in missing:
+        article = re.sub(
+            rf"!\[[^\]]*\]\({re.escape(ref)}\)\s*",
+            "",
+            article,
+        )
+    if missing:
+        artifacts["article"].write_text(article, encoding="utf-8")
+    return len(refs) - len(missing)
+
+
+def verified_draft_result(job, artifacts):
+    stage = job["stages"]["draft"]
+    if stage["status"] != "completed":
+        return None
+    if stage.get("details", {}).get("run_id") != job["run_id"]:
+        raise RuntimeFailure("已完成草稿阶段的 run_id 与当前任务不一致")
+    result = load_json(artifacts["draft_result"], "草稿结果")
+    if (
+        result.get("account") != job["account"]
+        or result.get("action") != "draft"
+        or result.get("run_id") != job["run_id"]
+        or not result.get("draft_media_id")
+    ):
+        raise RuntimeFailure("已完成草稿的结果文件未通过 run_id、账号、动作或 media_id 校验")
+    return result
+
+
+def draft_resume_response(job, result):
+    article_path = Path(job["job_dir"]) / job["artifacts"].get("article", "article.md")
+    image_count = 0
+    if article_path.is_file():
+        image_count = len(MARKDOWN_IMAGE_RE.findall(article_path.read_text(encoding="utf-8")))
+    return {
+        "status": "ok", "state": "drafted", "account": job["account"],
+        "topic": job["topic"],
+        "theme": job["stages"]["format"].get("details", {}).get("theme"),
+        "image_count": image_count,
+        "cover": job["stages"]["cover"]["status"],
+        "draft": result, "resumed": True,
+        "stage_timings_ms": {
+            name: item.get("duration_ms") for name, item in job["stages"].items()
+        },
+        "artifacts": job["artifacts"],
+    }
+
+
+def default_thumb_available(config_path, account_alias):
+    config = load_json(config_path, "公众号账号配置")
+    account = config.get("accounts", {}).get(account_alias, {})
+    env_name = account.get("default_thumb_media_id_env", "")
+    return bool(account.get("default_thumb_media_id") or (env_name and os.environ.get(env_name)))
+
+
+def command_roots(job):
+    pipeline_root = SCRIPT_DIR.parent
+    return {
+        "pipeline": pipeline_root,
+        "project": SCRIPT_DIR.parents[3],
+    }
+
+
+def resolve_config(value, project_root):
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        path = Path(project_root) / path
+    return path.resolve()
+
+
+BAND_CHAR_HINTS = {
+    "short": "2500—3300 字（快评、单事件、新闻线密）",
+    "mid": "3300—4200 字（默认）",
+    "long": "4200—5000 字（机制、产业、对比多）",
+}
+
+
+def writing_contract(job):
+    """把写作硬门禁压缩成一张机器可读的卡片，弱模型照抄执行，不必翻文档。"""
+    shape = job.get("article_shape", {})
+    band = shape.get("body_band")
+    return {
+        "output_file": "article.md",
+        "title": "唯一一级标题 # ，≤32 字。**必须回答「谁 + 干了什么」**——"
+        "读者在推荐页只看得到标题，说不出这写的是谁、哪件事就不会点，"
+        "这比没有刺点更致命。在有主体的前提下把刺点放前 16 字；禁周报体/通稿体。"
+        "先写 3 个不同刺点的候选（数字/反差/损失），用 "
+        "wechat-viral-writer/scripts/score_draft.py --titles A B C 排序再定",
+        "body_chars": f"可读字符 {MIN_BODY_CHARS}—{MAX_BODY_CHARS}"
+        + (f"（本篇目标 {BAND_CHAR_HINTS[band]}）" if band in BAND_CHAR_HINTS else ""),
+        "voice": "第一人称「我」+ 强情感；情绪钉在机制/事实上；禁编造亲历、人物、数据",
+        "faithful": "忠实用户 brief：不换题、不反转结论、must_avoid 禁区不碰、关键数字全保留",
+        "shape": shape,
+        "shape_note": "shape 只保证轮换合法，不懂题材。felt_sense / tension_type 与本题"
+        "明显相悖时（判决、事故写成「振奋」这类），先跑 "
+        "pipeline_job.py shape --auto --felt-sense <情绪> --tension-type <矛盾> 覆盖再写",
+        "sections": f"用 {shape.get('heading_count', '3—5')} 个 ## 小节；"
+        "每节结尾留一个未解勾子；全文至少 1 句可转发的判断句",
+        "images": "正文图 0—3 张，路径必须在工作区内（imgs/xx）；有说明才写 alt",
+        "digest": "强烈建议另写一句 ≤50 字摘要到 digest.txt（分享卡副标题，补标题第二钩子，"
+                  "不复述标题）；缺失时微信截取正文开头，不阻塞草稿",
+        # 体检的判据必须提前告诉写作方。让模型先写完再被扣分，等于每篇都多返工一轮；
+        # 这些阈值又都是写之前就能满足的，没有理由藏到 check 才说。
+        "readability_gates": {
+            "opening": "前 150 字内必须出现第一个具体信息；禁「在当今/随着…的发展/"
+                       "近年来/众所周知」开场",
+            "value_anchor": "每 300 字至少一个具体信息（数字/对比/因果/可搜索专名/"
+                            "可核实信源），否则那一段大概率本来就没内容",
+            "hook": "每 500 字至少一次转折或提问；全文至少一个问句",
+            "paragraph": "段落 60—150 字，超过 180 字就拆；每段 1—3 处 **加粗**（判断，不是形容词）",
+            "sentence": "超过 50 字的长句占比压到 20% 以下",
+            "takeaway": "至少两种读者可带走的东西（判断标准/适用边界/可执行步骤/"
+                        "可转述结论），且最后四分之一必须有落点；结尾回扣开头",
+            "banned_ending": "禁「让我们拭目以待」「时间会给出答案」「你怎么看」",
+            "scored_by": "check 会自动跑体检（wechat-viral-writer/scripts/score_draft.py）；"
+                         "prepare/finish 会重检 humanize 后最终稿。满分 100，及格 75，"
+                         "high 级问题必须清零。"
+                         "⚠️ 不许为了刷分塞假数字、假案例、假亲历",
+        },
+        "length_plan": "先排篇幅再动笔：开头 200 字 + 已锁定小节各 400—700 字 + 结尾 200 字。"
+                       f"硬门禁 {MIN_BODY_CHARS}—{MAX_BODY_CHARS} 字；小节个数以 shape.heading_count 为准，不另加节凑字。"
+                       "字数不够只有一种解法：补真实机制/人群/成本细节，加过渡段会在信息量上再扣一次",
+        "after_write": [
+            "pipeline_runtime.py check --job <job.json>  # 写完先自检，错误按提示改",
+            "改写 article.md 一轮后：pipeline_job.py stage --name humanize --status completed --detail intensity=strong",
+            "pipeline_runtime.py prepare → finish（主题和信息模块由 prepare 自动完成）",
+        ],
+    }
+
+
+def cmd_begin(args):
+    job, artifacts = job_paths(args.job)
+    if job["stages"]["discover"]["status"] != "completed":
+        raise RuntimeFailure("必须先确定并记录选题")
+    if pipeline_job.job_lane(job) == "manuscript":
+        if not artifacts["article"].is_file() or not artifacts["article"].read_text(
+            encoding="utf-8"
+        ).strip():
+            raise RuntimeFailure("成稿模式必须先把用户文章写入 article.md")
+        if job["stages"]["write"]["status"] not in ("running", "completed"):
+            mark(args.job, "write", "running", "使用用户成稿")
+        if (
+            not pipeline_job.humanize_enabled(job)
+            and job["stages"]["humanize"]["status"] == "pending"
+        ):
+            mark(args.job, "humanize", "skipped", "成稿模式未开启去 AI 味", {
+                "enabled": "false",
+            })
+        return {
+            "status": "ok",
+            "next": "format-content",
+            "job": str(args.job),
+            "lane": "manuscript",
+            "humanize": False,
+            "writing_contract": {
+                "output_file": "article.md",
+                "mode": "manuscript",
+                "gates": "不校验字数和写作分；保留一个一级标题、路径安全和占位符检查",
+                "humanize": "默认关闭；用户要求时再开",
+                "after_write": [
+                    "可选：把已有图写入 imgs/ 并插入正文",
+                    "pipeline_runtime.py prepare → finish",
+                ],
+            },
+        }
+    require_writing_inputs(job)
+    if job["stages"]["write"]["status"] not in ("running", "completed"):
+        mark(args.job, "write", "running", "开始写作")
+    return {
+        "status": "ok",
+        "next": "write-content",
+        "job": str(args.job),
+        "lane": "brief",
+        "humanize": True,
+        "writing_contract": writing_contract(job),
+    }
+
+
+DEFAULT_PROFILES = "config/wechat-content-profiles.json"
+
+
+def account_label(job):
+    """账号显示名，用于封面眉标；读不到就退回账号别名。"""
+    try:
+        roots = command_roots(job)
+        _, profiles = pipeline_job.load_profiles(str(roots["project"]), DEFAULT_PROFILES)
+        label = (profiles.get(job["account"]) or {}).get("label")
+    except Exception:
+        label = None
+    return label or job["account"]
+
+
+def cover_fallback_command(job, artifacts, titles):
+    """封面的推荐命令：一条命令跑完「用户图 → 生图 → 离线兜底」并自动记账。
+
+    以前这里只给离线兜底那一档，等于默认「生图这条路 agent 自己想办法」——
+    结果就是每次都要临场拼 prompt、调后端、再手动记账。现在整条降级链下沉到
+    gen_cover_image.py，这里只负责把命令拼出来。
+    """
+    roots = command_roots(job)
+    script = roots["pipeline"] / "scripts" / "gen_cover_image.py"
+    return " ".join([
+        "python3", shlex.quote(str(script)),
+        "--job", shlex.quote(str(Path(job["job_dir"]) / "job.json")),
+        "--record-stage",
+    ])
+
+
+def cmd_check(args):
+    """写作后自检：一次列出全部问题与修法，不改任何状态（弱模型的早失败护栏）。"""
+    job, artifacts = job_paths(args.job)
+    problems = []
+    hints = []
+    article_path = artifacts["article"]
+    if not article_path.is_file():
+        return {
+            "status": "fail",
+            "problems": ["缺少 article.md：先按 begin 输出的 writing_contract 写正文"],
+        }
+    article = article_path.read_text(encoding="utf-8")
+    titles = TITLE_RE.findall(article)
+    if len(titles) != 1:
+        problems.append(
+            f"一级标题数量为 {len(titles)}，必须恰好 1 个（`# 标题` 开头，其余用 ##）"
+        )
+    else:
+        title = " ".join(titles[0].split())
+        if len(title) > 32:
+            problems.append(
+                f"标题 {len(title)} 字超过 32：压缩到 32 字内，保留前 16 字的刺点"
+            )
+    body_chars = count_body_chars(article)
+    enforce_writing = pipeline_job.job_lane(job) != "manuscript"
+    if enforce_writing:
+        if body_chars < MIN_BODY_CHARS:
+            problems.append(
+                f"正文 {body_chars} 字 < {MIN_BODY_CHARS}：补真实机制/人群/成本细节，禁止注水"
+            )
+        elif body_chars > MAX_BODY_CHARS:
+            problems.append(f"正文 {body_chars} 字 > {MAX_BODY_CHARS}：删冗余段落")
+        problems.extend(shape_consistency_problems(job, article, body_chars))
+    refs = MARKDOWN_IMAGE_RE.findall(article)
+    if len(refs) > 3:
+        problems.append(f"正文图 {len(refs)} 张 > 3：删到 3 张以内")
+    job_dir = article_path.parent.resolve()
+    for ref in refs:
+        image_path = (job_dir / ref).resolve()
+        if image_path != job_dir and job_dir not in image_path.parents:
+            problems.append(f"图片路径越界：{ref}（必须在工作区内，如 imgs/01.jpg）")
+        elif not image_path.is_file():
+            hints.append(f"图片引用未落盘：{ref}（prepare 会自动删除该引用）")
+    placeholder = pipeline_job.PLACEHOLDER_RE.search(article)
+    if placeholder:
+        problems.append(f"存在未替换占位符：{placeholder.group(0)}")
+    digest_path = article_path.parent / "digest.txt"
+    if not digest_path.is_file():
+        hints.append("建议补 digest.txt（一句 ≤50 字摘要，分享卡副标题）")
+    else:
+        digest = " ".join(digest_path.read_text(encoding="utf-8").split())
+        if len(digest) > 64:
+            hints.append(f"digest.txt {len(digest)} 字过长，将被截断到 64 字")
+        elif len(digest) < 12:
+            hints.append(
+                f"digest.txt 只有 {len(digest)} 字，太短撑不起分享卡副标题（目标 20—50 字）"
+            )
+        # 摘要复述标题＝白占一个钩子位。分享卡上标题和摘要是并排出现的，
+        # 说同一句话等于只说了一句。
+        if titles and ngram_recall(" ".join(titles[0].split()), digest) > 0.55:
+            hints.append(
+                "digest.txt 在复述标题：它是分享卡的**第二个钩子**，"
+                "该补标题没说完的部分——关键数字、悬念下半句、或读者的代价"
+            )
+    if (
+        pipeline_job.humanize_enabled(job)
+        and job["stages"]["humanize"]["status"] != "completed"
+    ):
+        hints.append(
+            "humanize 未完成：改写 article.md 一轮后 stage --name humanize --status completed"
+        )
+    if not _cover_file_usable(artifacts["cover"]):
+        hints.append(
+            "封面尚未就位（finish 硬门禁）。跑这一条就够了，它自己走"
+            "「用户图 → 生图 → 离线兜底」并记账，无网络/无 API key 也能出图："
+            + cover_fallback_command(job, artifacts, titles)
+        )
+    # 写作体检：结构合法 ≠ 有人读得下去。high 级问题并进 problems（挡住 status=ok），
+    # 其余进 hints——阈值类问题值得看，但不该让弱模型在这里原地打转。
+    health = writing_health(article_path) if enforce_writing else None
+    writing = None
+    if health:
+        writing = {
+            "score": health.get("score"),
+            "grade": health.get("grade"),
+            "pass_line": WRITING_PASS_SCORE,
+            "dimensions": {k: v["score"] for k, v in
+                           (health.get("dimensions") or {}).items()},
+            "report_command": writing_report_command(article_path),
+        }
+        for item in health.get("problems", []):
+            line = f"[写作·{item['dim']}] 第 {item.get('line', 0)} 行：" \
+                   f"{item['what']} → {item['fix']}"
+            (problems if item["severity"] == "high" else hints).append(line)
+        if health.get("score") is not None and health["score"] < WRITING_PASS_SCORE:
+            problems.append(
+                f"[写作] 体检 {health['score']} 分 < {WRITING_PASS_SCORE}（{health.get('grade')}）："
+                f"按上面的写作问题逐条改，改完重跑 check。"
+                f"完整报告：{writing['report_command']}"
+            )
+
+    return {
+        "status": "fail" if problems else "ok",
+        "body_chars": body_chars,
+        "image_refs": len(refs),
+        "writing": writing,
+        "problems": problems,
+        "hints": hints,
+        "next": (
+            "修复 problems 后重跑 check；全部通过后再进入后续阶段"
+            if problems
+            else (
+                "prepare → finish"
+                if pipeline_job.job_lane(job) == "manuscript"
+                else "humanize（若未做）→ prepare → finish"
+            )
+        ),
+    }
+
+
+def cmd_prepare(args):
+    try:
+        return _cmd_prepare(args)
+    except (RuntimeFailure, pipeline_job.JobError) as exc:
+        try:
+            mark(args.job, "format", "failed", f"prepare 失败：{exc}", {
+                "phase": "prepare", "error": str(exc),
+            })
+        except Exception:
+            pass
+        raise
+
+
+def _cmd_prepare(args):
+    job, artifacts = ensure_prepare_media(args.job)
+    require_prepare_stages(job)
+    title = require_content(artifacts, job)
+    quality = (
+        manuscript_quality()
+        if pipeline_job.job_lane(job) == "manuscript"
+        else require_writing_quality(artifacts["article"])
+    )
+    require_shape_consistency(job, artifacts)
+    image_count = require_illustrations(job, artifacts)
+    mark(
+        args.job, "write", "completed", "正文与最终写作体检均已通过",
+        details={
+            "quality_score": quality["score"] if quality.get("score") is not None else "skipped",
+            "quality_grade": quality.get("grade") or "n/a",
+            "quality_blocking_count": quality["blocking_count"],
+            "quality_checked_after_humanize": (
+                "false" if quality.get("skipped") else "true"
+            ),
+        },
+        artifacts={"article": artifacts["article"]},
+    )
+    theme = choose_theme(args.job)
+    stored_hash = (job["stages"]["humanize"].get("details") or {}).get("article_sha256")
+    current_hash = article_sha256(artifacts["article"])
+    cover_details = job["stages"]["cover"].get("details") or {}
+    return {
+        "status": "ok", "next": "finish", "title": title,
+        "theme": theme,
+        "cover_backend": cover_details.get("backend") or job["stages"]["cover"]["status"],
+        "image_count": image_count,
+        "body_chars": count_body_chars(artifacts["article"].read_text(encoding="utf-8")),
+        "article_changed_after_humanize": bool(
+            stored_hash and current_hash and stored_hash != current_hash
+        ),
+        "writing_quality": quality,
+    }
+
+
+def render_body(job_path, job, artifacts, roots):
+    theme = job["stages"]["format"].get("details", {}).get("theme")
+    if not theme:
+        raise RuntimeFailure("prepare 尚未固定排版主题")
+    mark(job_path, "format", "running", "开始确定性排版", {"theme": theme})
+    command = [
+            sys.executable,
+            str(roots["pipeline"] / "scripts" / "render_article.py"),
+            "--article", str(artifacts["article"]),
+            "--theme", theme,
+            "--output", str(artifacts["html"]),
+    ]
+    inline_plan = artifacts.get("inline_visuals")
+    if inline_plan and inline_plan.is_file():
+        command.extend(("--inline-plan", str(inline_plan)))
+    try:
+        render_result = run_json(command)
+    except RuntimeFailure as exc:
+        mark(job_path, "format", "failed", str(exc)[:180], {"theme": theme})
+        raise
+    mark(
+        job_path, "format", "completed", "确定性正文排版完成",
+        {
+            "theme": theme,
+            "renderer": "pipeline-runtime",
+            "module_count": render_result.get("module_count", 0),
+            "module_kinds": ",".join(render_result.get("module_kinds", [])) or "none",
+            "inline_degraded": str(
+                bool(render_result.get("inline_degraded", False))
+            ).lower(),
+        },
+        {"html": artifacts["html"]},
+    )
+    render_result["reused"] = False
+    return render_result
+
+
+def cover_aspect_note(path, job):
+    try:
+        data = Path(path).read_bytes()
+    except OSError:
+        return ""
+    if not (data.startswith(b"\x89PNG\r\n\x1a\n") and len(data) >= 24):
+        return ""
+    width = int.from_bytes(data[16:20], "big")
+    height = int.from_bytes(data[20:24], "big")
+    if not height:
+        return ""
+    ratio = width / height
+    expected = 2.35
+    profile_aspect = ((job.get("image_policy") or {}).get("cover_aspect")) or "2.35:1"
+    if isinstance(profile_aspect, str) and ":" in profile_aspect:
+        left, right = profile_aspect.split(":", 1)
+        try:
+            expected = float(left) / float(right)
+        except ValueError:
+            expected = 2.35
+    if abs(ratio - expected) / expected > 0.08:
+        return f"{width}x{height} 比例 {ratio:.2f} 偏离 {profile_aspect}"
+    return ""
+
+
+def _cover_file_usable(path):
+    """Accept PNG/JPEG/WebP generated by image APIs; minimal magic-byte check."""
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return False
+    if len(data) < 32:
+        return False
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return True
+    if data[:3] == b"\xff\xd8\xff":
+        return True
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return True
+    return False
+
+
+def accept_cover(job_path, job, artifacts, config_path):
+    """Accept the fixed cover-chain output; do not call the HTML cover renderer."""
+    cover_path = artifacts["cover"]
+    cover_stage = job["stages"].get("cover", {})
+    if cover_stage.get("status") == "completed" and _cover_file_usable(cover_path):
+        backend = (cover_stage.get("details") or {}).get("backend") or "user_provided"
+        return {
+            "status": "completed",
+            "backend": backend,
+            "reused": True,
+        }, True
+
+    mark(job_path, "cover", "running", "验收生图封面")
+    if _cover_file_usable(cover_path):
+        aspect_note = cover_aspect_note(cover_path, job)
+        details = {
+            "backend": "user_provided",
+            "visual_check": "none",
+        }
+        if aspect_note:
+            details["aspect_warning"] = aspect_note
+        mark(
+            job_path, "cover", "completed", "本地封面文件已就绪",
+            details,
+            {"cover": cover_path},
+        )
+        return {"status": "completed", "backend": "user_provided", "reused": False}, True
+
+    has_default = default_thumb_available(config_path, job["account"])
+    if has_default:
+        mark(
+            job_path, "cover", "skipped", "无可用生图封面，使用账号默认封面",
+            {
+                "default_thumb_media_id": "true",
+                "backend": "account_default",
+            },
+        )
+        return {"status": "skipped", "reason": "default-thumb"}, False
+
+    mark(
+        job_path, "cover", "failed",
+        "缺少 cover/cover.png 生图封面，且无默认 thumb_media_id",
+        {"backend": "none"},
+    )
+    raise RuntimeFailure(
+        "封面未生成：请用生图 API 写入 cover/cover.png，"
+        "或配置账号 default_thumb_media_id"
+    )
+
+
+def lightweight_gate(job_path):
+    gate_args = pipeline_job.build_parser().parse_args(
+        ["gate", "--job", str(job_path)]
+    )
+    with contextlib.redirect_stdout(io.StringIO()):
+        pipeline_job.cmd_gate(gate_args)
+
+
+def read_digest(artifacts):
+    """可选摘要：工作区 digest.txt 的第一段非空文本，截断到微信上限 64 字。
+
+    摘要显示在分享卡片与部分列表页，是标题之外的第二打开钩子；
+    缺失时微信自动截取正文开头，允许无摘要继续，不作门禁。
+    """
+    digest_path = artifacts["article"].parent / "digest.txt"
+    if not digest_path.is_file():
+        return ""
+    text = " ".join(digest_path.read_text(encoding="utf-8").split())
+    return text[:64]
+
+
+def publish_draft(args, job, artifacts, roots, generated_cover, config_path):
+    command = [
+        sys.executable,
+        str(roots["project"] / "scripts" / "wechat_publish.py"),
+        "--config", str(config_path), "send",
+        "--account", job["account"],
+        "--html", str(artifacts["html"]),
+        "--title", require_content(artifacts, job),
+        "--action", "draft",
+        "--run-id", job["run_id"],
+        "--result-file", str(artifacts["draft_result"]),
+    ]
+    digest = read_digest(artifacts)
+    if digest:
+        command.extend(("--digest", digest))
+    if generated_cover:
+        command.extend(("--cover", str(artifacts["cover"])))
+    if args.dry_run:
+        command.append("--dry-run")
+    if args.skip_draft:
+        mark(
+            args.job, "draft", "skipped", "按参数跳过草稿 API",
+            {"dry_run": "false", "gate": "passed", "run_id": job["run_id"]},
+        )
+        return {"status": "skipped"}
+    mark(
+        args.job, "draft", "running", "开始创建公众号草稿", {
+            "attempts": "1", "run_id": job["run_id"],
+            "outcome": "pending", "retry_safe": "false",
+        },
+    )
+    try:
+        result = run_json(command)
+    except RuntimeFailure as exc:
+        safe_to_retry = draft_failure_is_retry_safe(str(exc)) or args.dry_run
+        details = {
+            "attempts": "1",
+            "run_id": job["run_id"],
+            "outcome": "preflight-failed" if safe_to_retry else "uncertain",
+            "retry_safe": "true" if safe_to_retry else "false",
+        }
+        mark(args.job, "draft", "failed", str(exc)[:180], details)
+        raise
+    if args.dry_run:
+        mark(
+            args.job, "draft", "skipped", "草稿输入 dry-run 校验通过",
+            {
+                "dry_run": "true", "attempts": "1", "gate": "passed",
+                "run_id": job["run_id"],
+            },
+            {"draft_result": artifacts["draft_result"]},
+        )
+    else:
+        if (
+            result.get("account") != job["account"]
+            or result.get("action") != "draft"
+            or result.get("run_id") != job["run_id"]
+            or not result.get("draft_media_id")
+        ):
+            mark(args.job, "draft", "failed", "草稿结果字段不完整", {
+                "attempts": "1", "run_id": job["run_id"],
+                "outcome": "uncertain", "retry_safe": "false",
+            })
+            raise RuntimeFailure("草稿结果未通过账号、动作或 media_id 校验")
+        mark(
+            args.job, "draft", "completed", "公众号草稿创建成功",
+            # outcome/retry_safe 必须显式覆盖：mark 是合并写入，不覆盖的话
+            # running 阶段留下的 outcome=pending / retry_safe=false 会一直挂在
+            # 一个已经成功的任务上，事后排查时看起来像是失败过。
+            {
+                "attempts": "1", "run_id": job["run_id"],
+                "outcome": "succeeded", "retry_safe": "n/a",
+            },
+            {"draft_result": artifacts["draft_result"]},
+        )
+    return result
+
+
+def cmd_finish(args):
+    lock_path = Path(args.job).resolve().parent / ".finish.lock"
+    pipeline_job.ensure_dir(lock_path.parent)
+    try:
+        with lock_path.open("a+", encoding="utf-8") as lock_file:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            return _cmd_finish(args)
+    finally:
+        try:
+            lock_path.unlink()
+        except OSError:
+            pass
+
+
+def _cmd_finish(args):
+    job, artifacts = job_paths(args.job)
+    roots = command_roots(job)
+    config_path = resolve_config(args.config, roots["project"])
+    draft_stage = job["stages"]["draft"]
+    draft_details = draft_stage.get("details", {})
+    if draft_stage["status"] == "running":
+        interrupted_details = {
+            "attempts": draft_details.get("attempts", "1"),
+            "run_id": draft_details.get("run_id", job["run_id"]),
+            "outcome": "uncertain", "retry_safe": "false",
+        }
+        mark(
+            args.job, "draft", "failed",
+            "draft/add 进程中断，远端结果不确定", interrupted_details,
+        )
+        raise RuntimeFailure(UNCERTAIN_DRAFT_MESSAGE.format(job=args.job))
+    if (
+        draft_stage["status"] == "failed"
+        and draft_details.get("outcome") == "uncertain"
+    ):
+        raise RuntimeFailure(UNCERTAIN_DRAFT_MESSAGE.format(job=args.job))
+    existing_draft = verified_draft_result(job, artifacts)
+    if existing_draft:
+        stored_fp = (
+            draft_details.get("content_fingerprint")
+            or existing_draft.get("content_fingerprint")
+        )
+        current_fp = content_fingerprint(artifacts)
+        if stored_fp and stored_fp != current_fp:
+            mark(
+                args.job, "draft", "pending",
+                "正文或媒体已变化，将新建草稿",
+                {
+                    "previous_draft_media_id": existing_draft.get("draft_media_id") or "",
+                    "content_fingerprint": stored_fp,
+                },
+            )
+            job, artifacts = job_paths(args.job)
+        else:
+            return draft_resume_response(job, existing_draft)
+    # prepare 后文件仍可能被人工编辑；finish 再验一次，保证真正送入渲染器的是合格稿。
+    require_content(artifacts, job)
+    quality = (
+        manuscript_quality()
+        if pipeline_job.job_lane(job) == "manuscript"
+        else require_writing_quality(artifacts["article"])
+    )
+    require_shape_consistency(job, artifacts)
+    mark(
+        args.job, "write", "completed", "发布前最终写作体检通过",
+        details={
+            "quality_score": quality["score"] if quality.get("score") is not None else "skipped",
+            "quality_grade": quality.get("grade") or "n/a",
+            "quality_blocking_count": quality["blocking_count"],
+            "quality_checked_after_humanize": (
+                "false" if quality.get("skipped") else "true"
+            ),
+        },
+        artifacts={"article": artifacts["article"]},
+    )
+    job, artifacts = job_paths(args.job)
+    render_result = render_body(args.job, job, artifacts, roots)
+    job, artifacts = job_paths(args.job)
+    # HTML 封面已停用：只验收固定降级链产物 cover/cover.png
+    cover_result, generated_cover = accept_cover(
+        args.job, job, artifacts, config_path
+    )
+    job, artifacts = job_paths(args.job)
+    lightweight_gate(args.job)
+    draft_result = publish_draft(
+        args, job, artifacts, roots, generated_cover, config_path
+    )
+    final_job = pipeline_job.load_job(args.job)
+    try:
+        from visual_policy import content_mode as detect_mode
+        mode = detect_mode(final_job, final_job.get("job_dir"))
+    except Exception:
+        mode = ""
+    extra = {
+        "theme": (final_job["stages"].get("format") or {}).get("details", {}).get("theme"),
+        "cover_backend": (final_job["stages"].get("cover") or {}).get("details", {}).get("backend"),
+        "content_mode": mode,
+        "content_fingerprint": content_fingerprint(artifacts),
+    }
+    result_path = artifacts.get("draft_result")
+    if result_path and Path(result_path).is_file():
+        try:
+            data = json.loads(Path(result_path).read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                data.update({key: value for key, value in extra.items() if value})
+                Path(result_path).write_text(
+                    json.dumps(data, ensure_ascii=False, indent=2) + "\n",
+                    encoding="utf-8",
+                )
+                if isinstance(draft_result, dict):
+                    draft_result.update({key: value for key, value in extra.items() if value})
+        except (OSError, ValueError):
+            pass
+    reported_state = final_job["state"]
+    if args.dry_run:
+        reported_state = "validated-dry-run"
+    elif args.skip_draft:
+        reported_state = "ready-for-draft"
+    
+    # 归档 article.md 到历史目录（仅草稿成功时）
+    if reported_state == "drafted":
+        try:
+            import re
+            from datetime import datetime
+            account = final_job["account"]
+            topic = final_job.get("topic", "untitled")
+            # 清理主题成目录名：去特殊字符，空格转连字符，截断 50 字
+            slug = re.sub(r'[^\w\s\u4e00-\u9fff-]', '', topic)
+            slug = re.sub(r'\s+', '-', slug.strip())[:50]
+            date_str = datetime.now().strftime("%Y-%m-%d")
+            archive_dir = roots["project"] / "work" / account / "archive" / f"{date_str}-{slug}"
+            pipeline_job.ensure_dir(archive_dir)
+            article_src = artifacts["article"]
+            article_dst = archive_dir / "article.md"
+            import shutil
+            shutil.copy2(str(article_src), str(article_dst))
+        except Exception as e:
+            # 归档失败不阻塞主流程
+            pass
+    
+    return {
+        "status": "ok", "state": reported_state, "account": final_job["account"],
+        "topic": final_job["topic"],
+        "theme": final_job["stages"]["format"]["details"]["theme"],
+        "image_count": len(MARKDOWN_IMAGE_RE.findall(
+            artifacts["article"].read_text(encoding="utf-8")
+        )),
+        "cover": cover_result.get("status"),
+        "writing_quality": quality,
+        "draft": draft_result, "resumed": False,
+        "stage_timings_ms": {
+            name: item.get("duration_ms") for name, item in final_job["stages"].items()
+        },
+        "artifacts": final_job["artifacts"],
+    }
+
+
+def build_parser():
+    parser = argparse.ArgumentParser(
+        description="公众号流水线固定运行器；禁止用临时脚本替代"
+    )
+    sub = parser.add_subparsers(dest="command", required=True)
+    begin = sub.add_parser("begin", help="在 Agent 写作前启动计时并输出写作契约卡")
+    begin.add_argument("--job", required=True)
+    check = sub.add_parser("check", help="写作后自检：列出全部问题与修法，不改状态")
+    check.add_argument("--job", required=True)
+    prepare = sub.add_parser("prepare", help="核验最终稿质量与产物契约，并固定排版主题")
+    prepare.add_argument("--job", required=True)
+    finish = sub.add_parser("finish", help="一次完成排版、验收生图封面、校验和草稿")
+    finish.add_argument("--job", required=True)
+    finish.add_argument("--config", default="wechat-accounts.json")
+    finish_mode = finish.add_mutually_exclusive_group()
+    finish_mode.add_argument(
+        "--dry-run", action="store_true", help="校验草稿输入但不连接微信 API"
+    )
+    finish_mode.add_argument(
+        "--skip-draft", action="store_true", help="通过门禁后停止；不得用于定时生产"
+    )
+    return parser
+
+
+def main():
+    args = build_parser().parse_args()
+    try:
+        result = {
+            "begin": cmd_begin,
+            "check": cmd_check,
+            "prepare": cmd_prepare,
+            "finish": cmd_finish,
+        }[args.command](args)
+    except (RuntimeFailure, pipeline_job.JobError) as exc:
+        print(json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False), file=sys.stderr)
+        return 1
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

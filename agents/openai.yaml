@@ -1,0 +1,4 @@
+interface:
+  display_name: "微信公众号排版与草稿"
+  short_description: "将文章排成公众号 HTML，并按账号安全写入草稿箱"
+  default_prompt: "使用 $wechat-skill 把这篇 Markdown 排成微信公众号 HTML，并写入指定账号草稿箱。"

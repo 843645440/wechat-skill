@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "preset": "tech-ai",
+  "enabled": true,
+  "account": "a",
+  "output_target": "draft",
+  "state": {
+    "path": "state/tech-ai-series.sqlite3",
+    "reservation_ttl_hours": 24
+  },
+  "selection": {
+    "min_source_count": 2,
+    "categories": [
+      "人工智能",
+      "科技产品",
+      "中国高新技术",
+      "就业变化"
+    ]
+  }
+}

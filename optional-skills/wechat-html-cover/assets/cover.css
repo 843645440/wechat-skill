@@ -1,0 +1,276 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 1410px;
+  height: 600px;
+  margin: 0;
+  overflow: hidden;
+}
+
+body {
+  font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.canvas {
+  position: relative;
+  width: 1410px;
+  height: 600px;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.cover-eyebrow,
+.cover-subtitle,
+.cover-title {
+  position: absolute;
+  z-index: 4;
+  margin: 0;
+}
+
+.cover-title {
+  font-size: var(--title-size);
+  font-weight: 900;
+  letter-spacing: -0.045em;
+}
+
+.cover-title > span {
+  display: block;
+  white-space: nowrap;
+}
+
+/* Template: signal-editorial */
+
+.signal-canvas {
+  color: #111111;
+  background: #F5F1E8;
+}
+
+.signal-blue-rail {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 56px;
+  width: 40px;
+  background: #1457D9;
+}
+
+.signal-yellow-rule {
+  position: absolute;
+  top: 119px;
+  left: 160px;
+  width: 128px;
+  height: 8px;
+  background: #F3D900;
+}
+
+.signal-yellow-mark {
+  position: absolute;
+  right: 70px;
+  bottom: 38px;
+  width: 28px;
+  height: 28px;
+  background: #F3D900;
+}
+
+.signal-eyebrow {
+  top: 58px;
+  left: 160px;
+  color: #111111;
+  font-size: 25px;
+  font-weight: 760;
+  letter-spacing: 0.12em;
+  line-height: 1.35;
+}
+
+.signal-title {
+  top: 160px;
+  left: 154px;
+  width: 1150px;
+  color: #111111;
+  font-family: "Songti SC", STSong, "Source Han Serif SC", "Noto Serif CJK SC", serif;
+  line-height: 1.02;
+}
+
+.signal-title > span + span {
+  margin-top: 5px;
+}
+
+.signal-title-highlight {
+  display: none;
+}
+
+.signal-subtitle {
+  left: 160px;
+  bottom: 50px;
+  color: #242424;
+  font-size: 24px;
+  font-weight: 680;
+  letter-spacing: 0.12em;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+/* Template: night-signal */
+
+.night-canvas {
+  color: #F8F6EF;
+  background: #06142F;
+}
+
+.night-orange-short,
+.night-orange-long {
+  position: absolute;
+  left: 72px;
+  width: 12px;
+  background: #FF5A1F;
+}
+
+.night-orange-short {
+  top: 72px;
+  height: 38px;
+}
+
+.night-orange-long {
+  top: 174px;
+  height: 334px;
+}
+
+.night-cyan-rule {
+  position: absolute;
+  right: 0;
+  width: 150px;
+  height: 2px;
+  background: #31C7F5;
+}
+
+.night-cyan-rule-one {
+  top: 78px;
+}
+
+.night-cyan-rule-two {
+  bottom: 78px;
+}
+
+.night-eyebrow {
+  top: 66px;
+  left: 116px;
+  color: #F8F6EF;
+  font-size: 24px;
+  font-weight: 760;
+  letter-spacing: 0.1em;
+  line-height: 1.4;
+}
+
+.night-title {
+  top: 158px;
+  left: 112px;
+  width: 1130px;
+  color: #F8F6EF;
+  font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif;
+  line-height: 1.03;
+}
+
+.night-title > span + span {
+  margin-top: 7px;
+}
+
+.night-title-highlight {
+  display: none;
+}
+
+.night-subtitle {
+  left: 116px;
+  bottom: 49px;
+  color: #7DDBF8;
+  font-size: 24px;
+  font-weight: 720;
+  letter-spacing: 0.1em;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+/* Template: redaction-poster */
+
+.redaction-canvas {
+  color: #181818;
+  background: #F5F1E9;
+}
+
+.redaction-top-rule {
+  position: absolute;
+  top: 59px;
+  right: 54px;
+  left: 340px;
+  height: 2px;
+  background: #0C0C0C;
+}
+
+.redaction-eyebrow {
+  top: 38px;
+  left: 82px;
+  color: #181818;
+  font-size: 25px;
+  font-weight: 780;
+  letter-spacing: 0.09em;
+  line-height: 1.4;
+}
+
+.redaction-panel {
+  position: absolute;
+  top: 104px;
+  left: 50px;
+  width: 1310px;
+  height: 410px;
+  overflow: hidden;
+  background: #0C0C0C;
+}
+
+.redaction-title {
+  top: 48px;
+  left: 105px;
+  width: 1090px;
+  color: #F8F5ED;
+  font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif;
+  line-height: 1.02;
+}
+
+.redaction-title > span + span {
+  margin-top: 5px;
+}
+
+.redaction-title-highlight {
+  color: #F03B33;
+}
+
+.redaction-accent-rule {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 22px;
+  background: #F03B33;
+}
+
+.redaction-bottom-rule {
+  position: absolute;
+  left: 50px;
+  bottom: 41px;
+  width: 64px;
+  height: 2px;
+  background: #181818;
+}
+
+.redaction-subtitle {
+  left: 136px;
+  bottom: 24px;
+  color: #181818;
+  font-size: 23px;
+  font-weight: 680;
+  letter-spacing: 0.09em;
+  line-height: 1.4;
+  white-space: nowrap;
+}
