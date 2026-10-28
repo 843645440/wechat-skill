@@ -461,12 +461,17 @@ def read_image(source, base_dir, allow_outside=False, strict_declared=True):
         if len(data) > MAX_IMAGE_BYTES:
             raise PublishError(f"图片超过 20 MiB：{source}")
         filename = os.path.basename(parsed.path) or "image"
-    elif parsed.scheme == "":
+    elif parsed.scheme == "" or os.path.isabs(source):
         base_real = os.path.realpath(base_dir)
         path = source if os.path.isabs(source) else os.path.join(base_real, source)
         path = os.path.realpath(path)
-        if not allow_outside and os.path.commonpath((base_real, path)) != base_real:
-            raise PublishError(f"本地图片路径越出 HTML 目录：{source}")
+        if not allow_outside:
+            try:
+                inside_base = os.path.commonpath((base_real, path)) == base_real
+            except ValueError:  # Windows paths on different drives have no common path.
+                inside_base = False
+            if not inside_base:
+                raise PublishError(f"本地图片路径越出 HTML 目录：{source}")
         try:
             with open(path, "rb") as f:
                 data = f.read(MAX_IMAGE_BYTES + 1)
