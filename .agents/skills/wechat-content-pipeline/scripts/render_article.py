@@ -343,6 +343,9 @@ def parse_article(source):
         elif line.startswith(("- ", "* ", "+ ")):
             flush_paragraph()
             bullets.append(line[2:])
+        elif ordered := re.match(r"^[0-9]+\.[ \t]+(.+)$", line):
+            flush_paragraph()
+            bullets.append(ordered.group(1))
         elif line.startswith("> "):
             flush_paragraph()
             flush_bullets()
