@@ -9,7 +9,7 @@ selection, body rendering, cover acceptance, and optional draft creation.
 
 import argparse
 import contextlib
-import fcntl
+import errno
 import hashlib
 import importlib.util
 import io
@@ -19,7 +19,13 @@ import re
 import shlex
 import subprocess
 import sys
+import time
 from pathlib import Path
+
+if os.name == "nt":
+    import msvcrt
+else:
+    import fcntl
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -1086,18 +1092,43 @@ def publish_draft(args, job, artifacts, roots, generated_cover, config_path):
     return result
 
 
+@contextlib.contextmanager
+def finish_lock(lock_path):
+    """Lock a stable file across processes on both Windows and POSIX."""
+    pipeline_job.ensure_dir(lock_path.parent)
+    # Keep this file after release: unlinking can let a new caller lock a different
+    # inode while an existing waiter still holds the old one.
+    with lock_path.open("a+b") as lock_file:
+        if os.name == "nt":
+            lock_file.seek(0, os.SEEK_END)
+            if lock_file.tell() == 0:
+                lock_file.write(b"\0")
+                lock_file.flush()
+            lock_file.seek(0)
+            while True:
+                try:
+                    msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, 1)
+                    break
+                except OSError as exc:
+                    if exc.errno not in (errno.EACCES, errno.EAGAIN, errno.EDEADLK):
+                        raise
+                    time.sleep(0.05)
+        else:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            if os.name == "nt":
+                lock_file.seek(0)
+                msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+
 def cmd_finish(args):
     lock_path = Path(args.job).resolve().parent / ".finish.lock"
-    pipeline_job.ensure_dir(lock_path.parent)
-    try:
-        with lock_path.open("a+", encoding="utf-8") as lock_file:
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
-            return _cmd_finish(args)
-    finally:
-        try:
-            lock_path.unlink()
-        except OSError:
-            pass
+    with finish_lock(lock_path):
+        return _cmd_finish(args)
 
 
 def _cmd_finish(args):
